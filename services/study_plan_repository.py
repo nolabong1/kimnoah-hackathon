@@ -102,3 +102,66 @@ def save_weekly_study_plan(
                 pass
 
         raise
+
+def get_user_study_plans(
+    supabase: Client,
+    user_id: str,
+) -> list[dict]:
+    """사용자의 학습계획을 최신순으로 불러옵니다."""
+
+    response = (
+        supabase.table("study_plans")
+        .select(
+            "id, title, course_name, goal, current_level, "
+            "start_date, target_date, status, created_at"
+        )
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+
+    return response.data or []
+
+
+def get_study_plan_tasks(
+    supabase: Client,
+    user_id: str,
+    plan_id: str,
+) -> list[dict]:
+    """선택한 학습계획의 상세 과제를 불러옵니다."""
+
+    response = (
+        supabase.table("study_tasks")
+        .select(
+            "id, scheduled_date, title, description, "
+            "task_type, estimated_minutes, status"
+        )
+        .eq("user_id", user_id)
+        .eq("plan_id", plan_id)
+        .order("scheduled_date")
+        .order("created_at")
+        .execute()
+    )
+
+    return response.data or []
+
+def complete_study_task(
+    supabase: Client,
+    task_id: str,
+) -> dict:
+    """과제를 완료하고 EXP와 연속 학습 정보를 갱신합니다."""
+
+    response = (
+        supabase.rpc(
+            "complete_study_task",
+            {
+                "p_task_id": task_id,
+            },
+        )
+        .execute()
+    )
+
+    if response.data is None:
+        raise RuntimeError("과제 완료 처리 결과가 비어 있습니다.")
+
+    return response.data
