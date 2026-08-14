@@ -1,0 +1,14 @@
+# 프로젝트 전용 Python 가상환경
+.venv/
+
+# Python 임시 파일
+__pycache__/
+*.pyc
+
+# API 키와 비밀 설정
+.env
+.streamlit/secrets.toml
+
+# 개발 도구의 개인 설정
+.vscode/
+.agents/
