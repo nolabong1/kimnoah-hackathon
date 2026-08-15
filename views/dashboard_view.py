@@ -15,6 +15,18 @@ from views.review_material_ui import (
 )
 
 
+DASHBOARD_PLAN_SELECT_KEY = "dashboard_selected_plan_id"
+
+
+def get_dashboard_plan_label(plan: dict) -> str:
+    """오늘 학습 계획 선택지에 표시할 라벨을 만듭니다."""
+
+    return (
+        f"{plan['title']} · {plan['course_name']} · "
+        f"{plan['start_date']}"
+    )
+
+
 def render_dashboard(supabase, user):
     st.subheader("오늘의 학습")
     st.caption(
@@ -39,38 +51,48 @@ def render_dashboard(supabase, user):
         )
         return
 
-    today_tasks = []
+    if not saved_plans:
+        st.info(
+            "저장된 학습계획이 없습니다. "
+            "먼저 새로운 계획을 만들어 저장해보세요."
+        )
+        return
+
+    plan_by_id = {
+        plan["id"]: plan
+        for plan in saved_plans
+    }
+    plan_ids = list(plan_by_id)
+
+    if st.session_state.get(
+        DASHBOARD_PLAN_SELECT_KEY
+    ) not in plan_by_id:
+        st.session_state[DASHBOARD_PLAN_SELECT_KEY] = (
+            plan_ids[0]
+        )
+
+    selected_plan_id = st.selectbox(
+        "오늘 학습에 표시할 계획",
+        options=plan_ids,
+        key=DASHBOARD_PLAN_SELECT_KEY,
+        format_func=lambda plan_id: get_dashboard_plan_label(
+            plan_by_id[plan_id]
+        ),
+        help="선택한 계획에 예정된 오늘 과제만 표시합니다.",
+        persist_state="session",
+    )
+    selected_plan = plan_by_id[selected_plan_id]
+
+    st.caption(
+        "선택한 계획의 오늘 과제와 진행률을 표시합니다."
+    )
 
     try:
-        for saved_plan in saved_plans:
-            plan_tasks = get_study_plan_tasks(
-                supabase=supabase,
-                user_id=user.id,
-                plan_id=saved_plan["id"],
-            )
-
-            for task in plan_tasks:
-                if task["scheduled_date"] != today:
-                    continue
-
-                task_with_plan = dict(task)
-                task_with_plan["plan_title"] = (
-                    saved_plan["title"]
-                )
-                task_with_plan["course_name"] = (
-                    saved_plan["course_name"]
-                )
-                task_with_plan["plan_id"] = (
-                    saved_plan["id"]
-                )
-                task_with_plan["goal"] = (
-                    saved_plan["goal"]
-                )
-                task_with_plan["current_level"] = (
-                    saved_plan["current_level"]
-                )
-
-                today_tasks.append(task_with_plan)
+        plan_tasks = get_study_plan_tasks(
+            supabase=supabase,
+            user_id=user.id,
+            plan_id=selected_plan_id,
+        )
 
     except Exception as error:
         st.error(
@@ -78,10 +100,31 @@ def render_dashboard(supabase, user):
         )
         return
 
+    today_tasks = []
+
+    for task in plan_tasks:
+        if task["scheduled_date"] != today:
+            continue
+
+        task_with_plan = dict(task)
+        task_with_plan["plan_title"] = (
+            selected_plan["title"]
+        )
+        task_with_plan["course_name"] = (
+            selected_plan["course_name"]
+        )
+        task_with_plan["plan_id"] = selected_plan_id
+        task_with_plan["goal"] = selected_plan["goal"]
+        task_with_plan["current_level"] = (
+            selected_plan["current_level"]
+        )
+
+        today_tasks.append(task_with_plan)
+
     if not today_tasks:
         st.info(
-            "오늘 예정된 과제가 없습니다. "
-            "새로운 계획을 만들거나 저장된 계획을 확인해보세요."
+            "선택한 계획에는 오늘 예정된 과제가 없습니다. "
+            "다른 계획을 선택하거나 저장된 계획을 확인해보세요."
         )
         return
 
@@ -101,7 +144,7 @@ def render_dashboard(supabase, user):
     )
 
     metric_column1.metric(
-        "오늘의 과제",
+        "이 계획의 오늘 과제",
         f"{total_count}개",
     )
     metric_column2.metric(
@@ -118,14 +161,14 @@ def render_dashboard(supabase, user):
     st.progress(
         progress,
         text=(
-            f"오늘의 진행률 "
+            f"이 계획의 오늘 진행률 "
             f"{completed_count}/{total_count}"
         ),
     )
 
     if completed_count == total_count:
         st.success(
-            "오늘의 모든 학습을 완료했습니다! 🎉"
+            "선택한 계획의 오늘 학습을 모두 완료했습니다! 🎉"
         )
     else:
         st.write(

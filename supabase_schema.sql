@@ -47,7 +47,7 @@ create table public.study_plans (
   title text not null check (char_length(btrim(title)) between 1 and 100),
   course_name text not null check (char_length(btrim(course_name)) between 1 and 100),
   goal text not null check (char_length(btrim(goal)) between 1 and 1000),
-  current_level smallint not null check (current_level between 1 and 5),
+  current_level smallint not null check (current_level between 1 and 10),
   start_date date not null,
   target_date date not null,
   available_schedule jsonb not null default '{}'::jsonb
@@ -405,4 +405,3 @@ grant select on public.exp_events to authenticated;
 grant select on public.learning_activity to authenticated;
 
 commit;
-

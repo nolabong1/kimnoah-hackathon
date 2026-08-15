@@ -21,6 +21,7 @@ SYSTEM_PROMPT = """
 다음 원칙을 반드시 지키세요.
 
 - 사용자의 과목, 학습 목표, 현재 수준을 반영합니다.
+- current_level은 1부터 10까지이며 숫자가 클수록 숙련도가 높습니다.
 - 퀴즈는 정확히 5문항으로 구성합니다.
 - 각 문항에는 서로 다른 선택지 4개를 제공합니다.
 - 정답은 반드시 하나만 존재해야 합니다.
@@ -82,9 +83,9 @@ def _validate_quiz_context(
             "퀴즈는 quiz 과제에서만 생성할 수 있습니다."
         )
 
-    if not 1 <= current_level <= 5:
+    if not 1 <= current_level <= 10:
         raise ValueError(
-            "현재 수준은 1부터 5 사이여야 합니다."
+            "현재 수준은 1부터 10 사이여야 합니다."
         )
 
     if not 1 <= estimated_minutes <= 1440:

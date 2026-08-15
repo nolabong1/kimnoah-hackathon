@@ -10,7 +10,8 @@ SYSTEM_PROMPT = """
 다음 원칙에 따라 7일 학습계획을 작성하세요.
 
 - day_offset은 0부터 6까지 각각 한 번씩 사용합니다.
-- 최근 점수를 자기평가 수준보다 우선하여 현재 실력을 판단합니다.
+- current_level은 사용자가 자기평가한 1부터 10까지의 수준입니다.
+- 1은 처음 배우는 단계이고, 10은 설명하고 확장할 수 있는 단계입니다.
 - 사용자가 각 요일에 사용할 수 있는 시간을 초과하지 않습니다.
 - 과제는 사용자가 바로 실행할 수 있을 정도로 구체적으로 작성합니다.
 - description에는 학습 방법과 명확한 완료 기준을 포함합니다.
@@ -57,10 +58,14 @@ def generate_weekly_study_plan(
     course_name: str,
     goal: str,
     current_level: int,
-    recent_score: int,
     available_schedule: dict[str, int],
 ) -> WeeklyStudyPlan:
     """사용자 정보를 반영한 7일 학습계획을 생성합니다."""
+
+    if not 1 <= current_level <= 10:
+        raise ValueError(
+            "현재 수준은 1부터 10 사이여야 합니다."
+        )
 
     client = get_openai_client()
 
@@ -68,7 +73,6 @@ def generate_weekly_study_plan(
         "course_name": course_name,
         "goal": goal,
         "current_level": current_level,
-        "recent_score": recent_score,
         "available_schedule_minutes": available_schedule,
     }
 

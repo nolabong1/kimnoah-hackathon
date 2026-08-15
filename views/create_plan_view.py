@@ -7,10 +7,24 @@ from services.study_plan_repository import save_weekly_study_plan
 from services.study_plan_service import generate_weekly_study_plan
 
 
+CURRENT_LEVEL_OPTIONS = {
+    1: "처음 시작 · 관련 내용을 처음 배우는 단계",
+    2: "입문 · 기본 용어를 조금 아는 단계",
+    3: "기초 · 핵심 개념을 따라갈 수 있는 단계",
+    4: "기초 활용 · 안내를 받으면 기본 문제를 푸는 단계",
+    5: "보통 · 기본 문제를 스스로 해결하는 단계",
+    6: "중급 · 익숙한 응용 문제를 해결하는 단계",
+    7: "중상급 · 새로운 유형에도 개념을 적용하는 단계",
+    8: "고급 · 복합 문제를 분석하고 해결하는 단계",
+    9: "심화 · 어려운 문제를 효율적으로 해결하는 단계",
+    10: "숙련 · 다른 사람에게 설명하고 확장하는 단계",
+}
+
+
 def render_create_plan(supabase, user):
     st.subheader("나만의 7일 학습계획")
     st.caption(
-        "현재 수준과 최근 점수, 하루 학습 가능 시간을 반영합니다."
+        "현재 수준과 하루 학습 가능 시간을 반영합니다."
     )
 
     with st.form("study_plan_form"):
@@ -29,24 +43,21 @@ def render_create_plan(supabase, user):
             max_chars=1000,
         )
 
-        current_level = st.slider(
-            "현재 수준",
-            min_value=1,
-            max_value=5,
-            value=2,
+        current_level = st.selectbox(
+            "현재 수준 (1~10단계)",
+            options=list(CURRENT_LEVEL_OPTIONS),
+            index=1,
+            format_func=lambda level: (
+                f"{level}단계 · {CURRENT_LEVEL_OPTIONS[level]}"
+            ),
             help=(
-                "1은 처음 배우는 단계, "
-                "5는 능숙한 단계입니다."
+                "현재 과목에 대한 자신의 수준과 가장 가까운 "
+                "단계를 선택하세요."
             ),
         )
-
-        recent_score = st.number_input(
-            "최근 평가 점수",
-            min_value=0,
-            max_value=100,
-            value=50,
-            step=1,
-            help="최근 퀴즈나 시험 점수를 입력하세요.",
+        st.caption(
+            "1단계는 처음 배우는 수준, "
+            "10단계는 설명하고 확장할 수 있는 수준입니다."
         )
 
         start_date = st.date_input(
@@ -56,7 +67,7 @@ def render_create_plan(supabase, user):
             ).date(),
         )
 
-        st.write("**하루 학습 가능 시간**")
+        st.write("**하루 학습 가능 시간 (단위: 분)**")
         st.caption(
             "공부하지 않는 날은 0분으로 설정할 수 있습니다."
         )
@@ -74,7 +85,7 @@ def render_create_plan(supabase, user):
                     st.number_input(
                         (
                             f"{day_offset + 1}일차 · "
-                            f"{actual_date:%m/%d}"
+                            f"{actual_date:%m/%d} (분)"
                         ),
                         min_value=0,
                         max_value=480,
@@ -117,7 +128,6 @@ def render_create_plan(supabase, user):
                             course_name=course_name.strip(),
                             goal=study_goal.strip(),
                             current_level=current_level,
-                            recent_score=int(recent_score),
                             available_schedule=(
                                 available_schedule
                             ),

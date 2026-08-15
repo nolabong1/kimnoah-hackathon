@@ -26,7 +26,7 @@ class WeeklyStudyPlan(BaseModel):
     title: str
     course_name: str
     level_assessment: str = Field(
-        description="현재 수준과 최근 점수를 반영한 짧은 진단"
+        description="사용자가 선택한 10단계 현재 수준을 반영한 짧은 진단"
     )
     weekly_goal: str = Field(description="7일 후 달성해야 할 구체적인 목표")
     strategy: str = Field(description="현재 수준에 맞춘 학습전략")
