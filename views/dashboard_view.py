@@ -1,4 +1,5 @@
 from datetime import date
+from views.completion_feedback import render_completion_feedback
 
 import streamlit as st
 
@@ -15,22 +16,7 @@ def render_dashboard(supabase, user):
         "오늘 해야 할 과제와 현재 진행 상황을 확인하세요."
     )
 
-    if "task_completion_message" in st.session_state:
-        completion_message = st.session_state.pop(
-            "task_completion_message"
-        )
-
-        st.toast(
-            completion_message,
-            icon="🎉",
-        )
-        st.success(completion_message)
-
-    if st.session_state.pop(
-        "daily_completion_celebration",
-        False,
-    ):
-        st.balloons()
+    render_completion_feedback()
 
     today = date.today().isoformat()
 
@@ -200,17 +186,13 @@ def render_dashboard(supabase, user):
                             f"{result['total_exp']}"
                         )
 
-                    st.session_state.task_completion_message = (
-                        message
-                    )
-                    st.session_state.daily_completion_celebration = (
-                        result.get(
+                    st.session_state.task_completion_feedback = {
+                        "message": message,
+                        "daily_bonus_exp": result.get(
                             "daily_bonus_exp",
                             0,
-                        )
-                        > 0
-                    )
-
+                        ),
+                    }
                     st.rerun()
 
                 except Exception as error:

@@ -165,3 +165,23 @@ def complete_study_task(
         raise RuntimeError("과제 완료 처리 결과가 비어 있습니다.")
 
     return response.data
+
+def reset_today_test_progress(
+    supabase: Client,
+) -> dict:
+    """오늘 완료한 테스트 과제와 보상을 초기화합니다."""
+
+    response = (
+        supabase.rpc(
+            "reset_today_test_progress",
+            {},
+        )
+        .execute()
+    )
+
+    if response.data is None:
+        raise RuntimeError(
+            "테스트 초기화 결과가 비어 있습니다."
+        )
+
+    return response.data
