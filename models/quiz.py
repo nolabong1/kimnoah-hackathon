@@ -39,10 +39,24 @@ class QuizQuestionDraft(BaseModel):
         max_length=1000,
         description="정답의 근거를 설명하는 한국어 해설",
     )
+    concept_key: str = Field(
+        min_length=1,
+        max_length=100,
+        pattern=r"^[a-z0-9]+(_[a-z0-9]+)*$",
+        description=(
+            "대표 개념을 식별하는 영문 소문자 snake_case 키"
+        ),
+    )
+    concept_name: str = Field(
+        min_length=1,
+        max_length=100,
+        description="숙련도를 측정할 대표 개념의 간결한 한국어 이름",
+    )
 
     @field_validator(
         "question",
         "explanation",
+        "concept_name",
     )
     @classmethod
     def strip_and_validate_text(

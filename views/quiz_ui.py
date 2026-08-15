@@ -1,6 +1,13 @@
+from uuid import uuid4
+
 import streamlit as st
 
+from services.concept_service import (
+    canonicalize_quiz_concepts,
+    normalize_course_key,
+)
 from services.quiz_repository import (
+    get_learning_concept_catalog,
     get_quiz_by_task,
     get_quiz_attempts,
     save_quiz,
@@ -29,6 +36,11 @@ def _clear_quiz_answer_state(
             f"{state_prefix}_answer_{question_index}",
             None,
         )
+
+    st.session_state.pop(
+        f"{state_prefix}_submission_request",
+        None,
+    )
 
 
 def _is_current_quiz_attempt(
@@ -239,6 +251,32 @@ def _render_quiz_form(
         st.warning("모든 문항에 답한 후 제출해주세요.")
         return
 
+    submission_request_state_key = (
+        f"{state_prefix}_submission_request"
+    )
+    submission_request = st.session_state.get(
+        submission_request_state_key
+    )
+
+    if (
+        not isinstance(submission_request, dict)
+        or submission_request.get("answers") != answers
+        or submission_request.get("quiz_updated_at")
+        != quiz["updated_at"]
+    ):
+        submission_request = {
+            "submission_key": str(uuid4()),
+            "quiz_updated_at": quiz["updated_at"],
+            "answers": answers,
+        }
+        st.session_state[
+            submission_request_state_key
+        ] = submission_request
+
+    submission_key = submission_request[
+        "submission_key"
+    ]
+
     try:
         with st.spinner(
             "답안을 채점하고 응시 기록을 저장하고 있습니다..."
@@ -248,8 +286,13 @@ def _render_quiz_form(
                 quiz_id=quiz["id"],
                 quiz_updated_at=quiz["updated_at"],
                 answers=answers,
+                submission_key=submission_key,
             )
 
+        st.session_state.pop(
+            submission_request_state_key,
+            None,
+        )
         st.session_state[retake_state_key] = False
         st.session_state[feedback_state_key] = (
             f"답안을 제출했습니다. "
@@ -382,6 +425,16 @@ def render_quiz_section(
                     "과제에 맞는 AI 퀴즈를 "
                     "생성하고 저장하고 있습니다..."
                 ):
+                    course_key = normalize_course_key(
+                        course_name
+                    )
+                    concept_catalog = (
+                        get_learning_concept_catalog(
+                            supabase=supabase,
+                            user_id=user_id,
+                            course_key=course_key,
+                        )
+                    )
                     quiz_draft = generate_quiz(
                         course_name=course_name,
                         goal=goal,
@@ -394,6 +447,11 @@ def render_quiz_section(
                         estimated_minutes=task[
                             "estimated_minutes"
                         ],
+                        existing_concepts=concept_catalog,
+                    )
+                    quiz_draft = canonicalize_quiz_concepts(
+                        quiz=quiz_draft,
+                        concept_catalog=concept_catalog,
                     )
 
                     quiz = save_quiz(
@@ -401,6 +459,8 @@ def render_quiz_section(
                         user_id=user_id,
                         plan_id=plan_id,
                         task_id=task["id"],
+                        course_key=course_key,
+                        course_name=course_name,
                         quiz=quiz_draft,
                     )
 
