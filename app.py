@@ -5,6 +5,7 @@ from services.auth_service import (
     sign_out,
     sign_up,
 )
+from services.profile_service import get_profile
 from services.supabase_client import get_supabase_client
 
 from views.auth_session_storage import (
@@ -102,14 +103,7 @@ if st.session_state.auth_user is None:
 user = st.session_state.auth_user
 
 try:
-    profile_response = (
-        supabase.table("profiles")
-        .select("nickname, total_exp, level, current_streak")
-        .eq("id", user.id)
-        .single()
-        .execute()
-    )
-    profile = profile_response.data
+    profile = get_profile(supabase, user.id)
 except Exception as error:
     st.error(f"프로필을 불러오지 못했습니다: {error}")
     st.stop()
