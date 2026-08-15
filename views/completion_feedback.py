@@ -22,7 +22,7 @@ def show_completion_dialog(
     if st.button(
         "확인",
         type="primary",
-        use_container_width=True,
+        width="stretch",
     ):
         st.rerun()
 

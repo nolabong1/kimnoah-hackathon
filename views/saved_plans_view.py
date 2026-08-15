@@ -5,6 +5,7 @@ import streamlit as st
 
 from services.study_plan_repository import (
     complete_study_task,
+    delete_study_plan,
     get_study_plan_tasks,
     get_user_study_plans,
     reset_today_test_progress,
@@ -18,6 +19,11 @@ from views.review_material_ui import (
 )
 
 
+SAVED_PLAN_SELECT_KEY = "saved_plan_selected_id"
+DELETED_PLAN_CLEANUP_KEY = "saved_plan_deleted_plan_id"
+DELETE_PLAN_MESSAGE_KEY = "saved_plan_delete_message"
+
+
 def get_date_expander_key(
     plan_id,
     scheduled_date,
@@ -28,6 +34,95 @@ def get_date_expander_key(
         f"saved_plan_date_expander_"
         f"{plan_id}_{scheduled_date}"
     )
+
+
+def apply_deleted_plan_state() -> None:
+    """삭제 후 rerun에서 선택된 계획과 관련 상태를 정리합니다."""
+
+    deleted_plan_id = st.session_state.pop(
+        DELETED_PLAN_CLEANUP_KEY,
+        None,
+    )
+
+    if deleted_plan_id is None:
+        return
+
+    st.session_state.pop(SAVED_PLAN_SELECT_KEY, None)
+    st.session_state.pop("pending_future_task_id", None)
+    st.session_state.pop(
+        "saved_plan_pending_open_date",
+        None,
+    )
+
+    if st.session_state.get("saved_plan_id") == deleted_plan_id:
+        st.session_state.pop("saved_plan_id", None)
+        st.session_state["generated_plan_saved"] = False
+
+    expander_prefix = (
+        f"saved_plan_date_expander_{deleted_plan_id}_"
+    )
+
+    for state_key in list(st.session_state.keys()):
+        if state_key.startswith(expander_prefix):
+            st.session_state.pop(state_key, None)
+
+
+@st.dialog("학습계획 삭제")
+def show_delete_plan_dialog(
+    supabase,
+    user_id,
+    plan,
+) -> None:
+    """선택한 학습계획의 영구 삭제를 다시 확인합니다."""
+
+    st.warning(
+        "삭제한 학습계획은 복구할 수 없습니다.",
+        icon=":material/warning:",
+    )
+    st.write(f"**{plan['title']}** 계획을 삭제할까요?")
+    st.caption(
+        "상세 과제, AI 학습자료, 퀴즈와 응시 결과가 "
+        "함께 삭제됩니다. 이미 획득한 EXP와 성장 기록은 유지됩니다."
+    )
+
+    with st.container(
+        horizontal=True,
+        horizontal_alignment="right",
+    ):
+        if st.button(
+            "취소",
+            key=f"cancel_delete_plan_{plan['id']}",
+        ):
+            st.rerun()
+
+        if st.button(
+            "삭제하기",
+            key=f"confirm_delete_plan_{plan['id']}",
+            type="primary",
+            icon=":material/delete:",
+        ):
+            try:
+                with st.spinner(
+                    "학습계획과 연결된 데이터를 삭제하고 있습니다..."
+                ):
+                    delete_study_plan(
+                        supabase=supabase,
+                        user_id=user_id,
+                        plan_id=plan["id"],
+                    )
+
+                st.session_state[DELETED_PLAN_CLEANUP_KEY] = (
+                    plan["id"]
+                )
+                st.session_state[DELETE_PLAN_MESSAGE_KEY] = (
+                    f"'{plan['title']}' 학습계획을 삭제했습니다."
+                )
+                st.rerun()
+
+            except Exception as error:
+                st.error(
+                    f"학습계획 삭제에 실패했습니다: {error}"
+                )
 
 
 def complete_task_and_rerun(
@@ -83,10 +178,19 @@ def complete_task_and_rerun(
 
 
 def render_saved_plans(supabase, user):
+    apply_deleted_plan_state()
+
     st.divider()
     st.subheader("저장된 학습계획")
 
     render_completion_feedback()
+
+    if DELETE_PLAN_MESSAGE_KEY in st.session_state:
+        st.success(
+            st.session_state.pop(
+                DELETE_PLAN_MESSAGE_KEY
+            )
+        )
 
     if "test_reset_message" in st.session_state:
         st.success(
@@ -124,6 +228,7 @@ def render_saved_plans(supabase, user):
             f"{plan_by_id[plan_id]['title']} · "
             f"{plan_by_id[plan_id]['start_date']}"
         ),
+        key=SAVED_PLAN_SELECT_KEY,
     )
 
     selected_plan = plan_by_id[selected_plan_id]
@@ -148,6 +253,22 @@ def render_saved_plans(supabase, user):
     st.write(
         f"**학습 목표:** {selected_plan['goal']}"
     )
+
+    with st.container(
+        horizontal=True,
+        horizontal_alignment="right",
+    ):
+        if st.button(
+            "계획 삭제",
+            key=f"delete_plan_{selected_plan_id}",
+            type="tertiary",
+            icon=":material/delete:",
+        ):
+            show_delete_plan_dialog(
+                supabase=supabase,
+                user_id=user.id,
+                plan=selected_plan,
+            )
 
     with st.expander("🧪 테스트 도구"):
         st.caption(

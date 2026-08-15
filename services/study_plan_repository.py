@@ -123,6 +123,35 @@ def get_user_study_plans(
     return response.data or []
 
 
+def delete_study_plan(
+    supabase: Client,
+    user_id: str,
+    plan_id: str,
+) -> dict:
+    """사용자 본인의 학습계획과 연결된 데이터를 삭제합니다."""
+
+    if not isinstance(user_id, str) or not user_id.strip():
+        raise ValueError("사용자 ID가 필요합니다.")
+
+    if not isinstance(plan_id, str) or not plan_id.strip():
+        raise ValueError("학습계획 ID가 필요합니다.")
+
+    response = (
+        supabase.table("study_plans")
+        .delete()
+        .eq("id", plan_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+
+    if not response.data:
+        raise RuntimeError(
+            "삭제할 학습계획을 찾을 수 없습니다."
+        )
+
+    return response.data[0]
+
+
 def get_study_plan_tasks(
     supabase: Client,
     user_id: str,

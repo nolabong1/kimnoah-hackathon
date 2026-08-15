@@ -1,4 +1,5 @@
-from datetime import date, timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
@@ -50,7 +51,9 @@ def render_create_plan(supabase, user):
 
         start_date = st.date_input(
             "학습 시작일",
-            value=date.today(),
+            value=datetime.now(
+                ZoneInfo("Asia/Seoul")
+            ).date(),
         )
 
         st.write("**하루 학습 가능 시간**")
@@ -214,7 +217,7 @@ def render_create_plan(supabase, user):
     if st.button(
         "이 계획 저장하기",
         type="primary",
-        use_container_width=True,
+        width="stretch",
     ):
         metadata = (
             st.session_state.generated_plan_metadata
