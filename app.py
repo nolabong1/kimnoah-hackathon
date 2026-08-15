@@ -1,8 +1,17 @@
 import streamlit as st
 
-from services.auth_service import sign_in, sign_out, sign_up
+from services.auth_service import (
+    sign_in,
+    sign_out,
+    sign_up,
+)
 from services.supabase_client import get_supabase_client
 
+from views.auth_session_storage import (
+    activate_auth_response,
+    clear_auth_session_state,
+    initialize_auth_session,
+)
 from views.saved_plans_view import render_saved_plans
 from views.create_plan_view import render_create_plan
 from views.dashboard_view import render_dashboard
@@ -15,12 +24,9 @@ st.set_page_config(
 
 supabase = get_supabase_client()
 
-if "auth_user" not in st.session_state:
-    st.session_state.auth_user = None
-
-
 st.title("🎓 AI 학습 코치")
 st.write("나의 목표와 수준에 맞는 학습계획을 만들어보세요.")
+initialize_auth_session(supabase)
 
 
 # 로그인하지 않은 사용자에게 인증 화면 표시
@@ -40,7 +46,7 @@ if st.session_state.auth_user is None:
                     login_email,
                     login_password,
                 )
-                st.session_state.auth_user = response.user
+                activate_auth_response(response)
                 st.rerun()
             except Exception as error:
                 st.error(f"로그인에 실패했습니다: {error}")
@@ -77,8 +83,15 @@ if st.session_state.auth_user is None:
                         signup_email,
                         signup_password,
                     )
-                    st.session_state.auth_user = response.user
-                    st.rerun()
+
+                    if response.session is None:
+                        st.success(
+                            "회원가입이 완료되었습니다. "
+                            "이메일 확인 후 로그인해주세요."
+                        )
+                    else:
+                        activate_auth_response(response)
+                        st.rerun()
                 except Exception as error:
                     st.error(f"회원가입에 실패했습니다: {error}")
 
@@ -130,7 +143,7 @@ with st.sidebar:
         ]:
             st.session_state.pop(key, None)
 
-        st.session_state.auth_user = None
+        clear_auth_session_state()
         st.rerun()
 
 
