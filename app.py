@@ -1,8 +1,11 @@
 import streamlit as st
+
 from services.auth_service import sign_in, sign_out, sign_up
 from services.supabase_client import get_supabase_client
+
 from views.saved_plans_view import render_saved_plans
 from views.create_plan_view import render_create_plan
+from views.dashboard_view import render_dashboard
 
 st.set_page_config(
     page_title="AI 학습 코치",
@@ -105,6 +108,16 @@ with st.sidebar:
     st.metric("총 EXP", profile["total_exp"])
     st.metric("연속 학습", f"{profile['current_streak']}일")
 
+    selected_page = st.radio(
+        "메뉴",
+        options=[
+            "오늘 학습",
+            "계획 만들기",
+            "저장된 계획",
+        ],
+    )
+
+    st.divider()
     if st.button("로그아웃"):
         sign_out(supabase)
 
@@ -123,12 +136,20 @@ with st.sidebar:
 
 st.success(f"{profile['nickname']}님, 환영합니다!")
 
-render_create_plan(
-    supabase=supabase,
-    user=user,
-)
+if selected_page == "오늘 학습":
+    render_dashboard(
+        supabase=supabase,
+        user=user,
+    )
 
-render_saved_plans(
-    supabase=supabase,
-    user=user,
-)
+elif selected_page == "계획 만들기":
+    render_create_plan(
+        supabase=supabase,
+        user=user,
+    )
+
+else:
+    render_saved_plans(
+        supabase=supabase,
+        user=user,
+    )
