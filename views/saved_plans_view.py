@@ -3,6 +3,24 @@ from zoneinfo import ZoneInfo
 
 import streamlit as st
 
+from services.review_material_repository import (
+    get_review_material_by_task,
+    save_review_material,
+)
+from services.review_material_service import (
+    generate_review_material,
+)
+from services.study_plan_repository import (
+    complete_study_task,
+    get_study_plan_tasks,
+    get_user_study_plans,
+    reset_today_test_progress,
+)
+from views.completion_feedback import (
+    render_completion_feedback,
+)
+
+
 def get_date_expander_key(
     plan_id,
     scheduled_date,
@@ -14,15 +32,123 @@ def get_date_expander_key(
         f"{plan_id}_{scheduled_date}"
     )
 
-from services.study_plan_repository import (
-    complete_study_task,
-    get_study_plan_tasks,
-    get_user_study_plans,
-    reset_today_test_progress,
-)
-from views.completion_feedback import (
-    render_completion_feedback,
-)
+
+def render_review_material_section(
+    supabase,
+    user_id,
+    selected_plan,
+    task,
+):
+    """과제의 AI 학습자료 생성·저장·조회 UI를 표시합니다."""
+
+    material_section_open = st.toggle(
+        "AI 학습자료 열기",
+        key=(
+            f"review_material_section_"
+            f"{task['id']}"
+        ),
+    )
+
+    if not material_section_open:
+        return
+
+    with st.container(border=True):
+        try:
+            material = get_review_material_by_task(
+                supabase=supabase,
+                user_id=user_id,
+                task_id=task["id"],
+            )
+
+        except Exception as error:
+            st.error(
+                "저장된 AI 학습자료를 불러오지 "
+                f"못했습니다: {error}"
+            )
+            return
+
+        is_regeneration = material is not None
+
+        if material is None:
+            st.info(
+                "아직 저장된 AI 학습자료가 없습니다. "
+                "과제 정보를 바탕으로 새 자료를 "
+                "생성할 수 있습니다."
+            )
+
+        generate_button_label = (
+            "AI 학습자료 다시 생성하기"
+            if is_regeneration
+            else "AI 학습자료 생성하기"
+        )
+
+        if st.button(
+            generate_button_label,
+            key=(
+                f"generate_review_material_"
+                f"{task['id']}"
+            ),
+            type=(
+                "secondary"
+                if is_regeneration
+                else "primary"
+            ),
+        ):
+            try:
+                with st.spinner(
+                    "과제에 맞는 AI 학습자료를 "
+                    "생성하고 저장하고 있습니다..."
+                ):
+                    material_draft = (
+                        generate_review_material(
+                            course_name=selected_plan[
+                                "course_name"
+                            ],
+                            goal=selected_plan["goal"],
+                            current_level=selected_plan[
+                                "current_level"
+                            ],
+                            task_title=task["title"],
+                            task_description=task[
+                                "description"
+                            ],
+                            task_type=task["task_type"],
+                            estimated_minutes=task[
+                                "estimated_minutes"
+                            ],
+                        )
+                    )
+
+                    material = save_review_material(
+                        supabase=supabase,
+                        user_id=user_id,
+                        plan_id=selected_plan["id"],
+                        task_id=task["id"],
+                        material=material_draft,
+                    )
+
+                if is_regeneration:
+                    st.success(
+                        "AI 학습자료를 새 내용으로 "
+                        "갱신했습니다."
+                    )
+                else:
+                    st.success(
+                        "AI 학습자료를 생성하고 "
+                        "저장했습니다."
+                    )
+
+            except Exception as error:
+                st.error(
+                    "AI 학습자료 생성 또는 저장에 "
+                    f"실패했습니다: {error}"
+                )
+
+        if material is None:
+            return
+
+        st.markdown(f"### {material['title']}")
+        st.markdown(material["content_markdown"])
 
 
 def complete_task_and_rerun(
@@ -334,6 +460,17 @@ def render_saved_plans(supabase, user):
                     f"{task_status}"
                 )
                 st.write(task["description"])
+
+                if task["task_type"] in {
+                    "learn",
+                    "review",
+                }:
+                    render_review_material_section(
+                        supabase=supabase,
+                        user_id=user.id,
+                        selected_plan=selected_plan,
+                        task=task,
+                    )
 
                 if task["status"] == "completed":
                     st.caption(
