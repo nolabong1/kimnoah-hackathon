@@ -9,6 +9,7 @@ from services.study_plan_repository import (
     get_user_study_plans,
 )
 from views.completion_feedback import render_completion_feedback
+from views.quiz_ui import render_quiz_section
 from views.review_material_ui import (
     render_review_material_section,
 )
@@ -146,6 +147,8 @@ def render_dashboard(supabase, user):
         )
 
         with st.container(border=True):
+            quiz_completion_unlocked = True
+
             st.caption(
                 f"{task['course_name']} · "
                 f"{task['plan_title']}"
@@ -176,15 +179,39 @@ def render_dashboard(supabase, user):
                     widget_scope="dashboard",
                 )
 
+            elif task["task_type"] == "quiz":
+                quiz_completion_unlocked = render_quiz_section(
+                    supabase=supabase,
+                    user_id=user.id,
+                    plan_id=task["plan_id"],
+                    course_name=task["course_name"],
+                    goal=task["goal"],
+                    current_level=task["current_level"],
+                    task=task,
+                    widget_scope="dashboard",
+                )
+
             if task["status"] == "completed":
                 st.success("완료된 과제입니다. ✅")
                 continue
+
+            quiz_completion_locked = (
+                task["task_type"] == "quiz"
+                and not quiz_completion_unlocked
+            )
 
             if st.button(
                 "과제 완료하기",
                 key=f"dashboard_complete_{task['id']}",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
+                disabled=quiz_completion_locked,
+                help=(
+                    "현재 퀴즈의 모든 문항을 맞히면 "
+                    "완료할 수 있습니다."
+                    if quiz_completion_locked
+                    else None
+                ),
             ):
                 try:
                     with st.spinner(

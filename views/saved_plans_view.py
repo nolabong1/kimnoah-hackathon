@@ -12,6 +12,7 @@ from services.study_plan_repository import (
 from views.completion_feedback import (
     render_completion_feedback,
 )
+from views.quiz_ui import render_quiz_section
 from views.review_material_ui import (
     render_review_material_section,
 )
@@ -170,7 +171,7 @@ def render_saved_plans(supabase, user):
             if confirm_column.button(
                 "초기화 실행",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
             ):
                 try:
                     with st.spinner(
@@ -213,7 +214,7 @@ def render_saved_plans(supabase, user):
 
             if cancel_column.button(
                 "취소",
-                use_container_width=True,
+                width="stretch",
             ):
                 st.session_state.pop(
                     "test_reset_confirmation",
@@ -223,7 +224,7 @@ def render_saved_plans(supabase, user):
 
         elif st.button(
             "오늘 테스트 기록 초기화",
-            use_container_width=True,
+            width="stretch",
         ):
             st.session_state.test_reset_confirmation = (
                 True
@@ -325,6 +326,8 @@ def render_saved_plans(supabase, user):
             # 기존의 for task in daily_tasks 이하 코드는
             # 이 위치에 그대로 유지
             for task in daily_tasks:
+                quiz_completion_unlocked = True
+
                 task_type = task_type_names[
                     task["task_type"]
                 ]
@@ -358,6 +361,22 @@ def render_saved_plans(supabase, user):
                         widget_scope="saved_plan",
                     )
 
+                elif task["task_type"] == "quiz":
+                    quiz_completion_unlocked = render_quiz_section(
+                        supabase=supabase,
+                        user_id=user.id,
+                        plan_id=selected_plan["id"],
+                        course_name=selected_plan[
+                            "course_name"
+                        ],
+                        goal=selected_plan["goal"],
+                        current_level=selected_plan[
+                            "current_level"
+                        ],
+                        task=task,
+                        widget_scope="saved_plan",
+                    )
+
                 if task["status"] == "completed":
                     st.caption(
                         "✅ 완료된 과제입니다."
@@ -372,6 +391,30 @@ def render_saved_plans(supabase, user):
                         "pending_future_task_id"
                     )
                 )
+                quiz_completion_locked = (
+                    task["task_type"] == "quiz"
+                    and not quiz_completion_unlocked
+                )
+
+                if quiz_completion_locked:
+                    if pending_future_task_id == task["id"]:
+                        st.session_state.pop(
+                            "pending_future_task_id",
+                            None,
+                        )
+
+                    st.button(
+                        "완료하기",
+                        key=(
+                            f"complete_task_{task['id']}"
+                        ),
+                        disabled=True,
+                        help=(
+                            "현재 퀴즈의 모든 문항을 "
+                            "맞히면 완료할 수 있습니다."
+                        ),
+                    )
+                    continue
 
                 if (
                     is_future_task
@@ -396,7 +439,7 @@ def render_saved_plans(supabase, user):
                             f"{task['id']}"
                         ),
                         type="primary",
-                        use_container_width=True,
+                        width="stretch",
                     ):
                         st.session_state.pop(
                             "pending_future_task_id",
@@ -415,7 +458,7 @@ def render_saved_plans(supabase, user):
                             f"cancel_future_"
                             f"{task['id']}"
                         ),
-                        use_container_width=True,
+                        width="stretch",
                     ):
                         st.session_state.pop(
                             "pending_future_task_id",

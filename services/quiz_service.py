@@ -1,0 +1,217 @@
+import json
+
+from pydantic import ValidationError
+
+from models.quiz import QuizDraft
+from services.openai_client import (
+    get_openai_client,
+    get_openai_model,
+)
+
+
+QUIZ_QUESTION_COUNT = 5
+
+
+SYSTEM_PROMPT = """
+당신은 대학생의 자기주도학습을 돕는 전문 학습 코치입니다.
+
+사용자에게 주어진 퀴즈 과제 정보를 바탕으로 정확하고 명확한
+한국어 객관식 퀴즈를 작성하세요.
+
+다음 원칙을 반드시 지키세요.
+
+- 사용자의 과목, 학습 목표, 현재 수준을 반영합니다.
+- 퀴즈는 정확히 5문항으로 구성합니다.
+- 각 문항에는 서로 다른 선택지 4개를 제공합니다.
+- 정답은 반드시 하나만 존재해야 합니다.
+- correct_answer_index는 정답 선택지의 0부터 시작하는 인덱스입니다.
+- 단순 암기뿐 아니라 핵심 개념의 이해와 적용도 확인합니다.
+- 문제끼리 같은 내용을 반복하지 않습니다.
+- 정답을 문제나 선택지 표현으로 노골적으로 암시하지 않습니다.
+- '모두 정답', '정답 없음'과 같은 선택지는 사용하지 않습니다.
+- 각 문항에는 정답의 근거를 설명하는 구체적인 해설을 제공합니다.
+- 예상 학습시간 안에 풀고 해설을 확인할 수 있는 난이도로 작성합니다.
+- 원본 학습자료를 받지 않았으므로 특정 교재나 자료를 봤다고
+  주장하지 않습니다.
+- 제공되지 않은 시험 범위, 교재 내용, 수업 내용을 임의로
+  만들어내지 않습니다.
+- 정보가 제한적이라면 검증된 일반 개념과 기초 내용을 중심으로
+  문제를 작성합니다.
+- title은 200자 이하의 간결한 제목으로 작성합니다.
+"""
+
+
+def _validate_quiz_context(
+    course_name: str,
+    goal: str,
+    current_level: int,
+    task_title: str,
+    task_description: str,
+    task_type: str,
+    estimated_minutes: int,
+) -> dict:
+    """AI 호출 전에 퀴즈 과제 입력값을 검증하고 정리합니다."""
+
+    cleaned_course_name = course_name.strip()
+    cleaned_goal = goal.strip()
+    cleaned_task_title = task_title.strip()
+    cleaned_task_description = task_description.strip()
+
+    if not cleaned_course_name or len(cleaned_course_name) > 100:
+        raise ValueError(
+            "과목명은 1자 이상 100자 이하여야 합니다."
+        )
+
+    if not cleaned_goal or len(cleaned_goal) > 1000:
+        raise ValueError(
+            "학습 목표는 1자 이상 1000자 이하여야 합니다."
+        )
+
+    if not cleaned_task_title or len(cleaned_task_title) > 200:
+        raise ValueError(
+            "퀴즈 과제명은 1자 이상 200자 이하여야 합니다."
+        )
+
+    if len(cleaned_task_description) > 4000:
+        raise ValueError(
+            "퀴즈 과제 설명은 4000자 이하여야 합니다."
+        )
+
+    if task_type != "quiz":
+        raise ValueError(
+            "퀴즈는 quiz 과제에서만 생성할 수 있습니다."
+        )
+
+    if not 1 <= current_level <= 5:
+        raise ValueError(
+            "현재 수준은 1부터 5 사이여야 합니다."
+        )
+
+    if not 1 <= estimated_minutes <= 1440:
+        raise ValueError(
+            "예상 학습시간은 1분부터 1440분 사이여야 합니다."
+        )
+
+    return {
+        "course_name": cleaned_course_name,
+        "goal": cleaned_goal,
+        "current_level": current_level,
+        "task": {
+            "title": cleaned_task_title,
+            "description": cleaned_task_description,
+            "task_type": task_type,
+            "estimated_minutes": estimated_minutes,
+        },
+    }
+
+
+def _is_valid_quiz(quiz: QuizDraft) -> bool:
+    """문항 수, 정답 범위, 중복 문항과 선택지를 검사합니다."""
+
+    if not quiz.title.strip() or len(quiz.title) > 200:
+        return False
+
+    if len(quiz.questions) != QUIZ_QUESTION_COUNT:
+        return False
+
+    normalized_questions = {
+        question.question.strip().casefold()
+        for question in quiz.questions
+    }
+
+    if len(normalized_questions) != QUIZ_QUESTION_COUNT:
+        return False
+
+    for question in quiz.questions:
+        if not question.question.strip():
+            return False
+
+        if len(question.choices) != 4:
+            return False
+
+        normalized_choices = {
+            choice.strip().casefold()
+            for choice in question.choices
+        }
+
+        if (
+            "" in normalized_choices
+            or len(normalized_choices) != 4
+        ):
+            return False
+
+        if question.correct_answer_index not in range(4):
+            return False
+
+        if not question.explanation.strip():
+            return False
+
+    return True
+
+
+def generate_quiz(
+    course_name: str,
+    goal: str,
+    current_level: int,
+    task_title: str,
+    task_description: str,
+    task_type: str,
+    estimated_minutes: int,
+) -> QuizDraft:
+    """퀴즈 과제 정보를 기반으로 5문항 퀴즈를 생성합니다."""
+
+    user_input = _validate_quiz_context(
+        course_name=course_name,
+        goal=goal,
+        current_level=current_level,
+        task_title=task_title,
+        task_description=task_description,
+        task_type=task_type,
+        estimated_minutes=estimated_minutes,
+    )
+
+    client = get_openai_client()
+
+    for attempt in range(2):
+        correction = ""
+
+        if attempt == 1:
+            correction = """
+            이전 결과가 퀴즈 구성 규칙을 위반했습니다.
+            서로 다른 문제를 정확히 5개 작성하고,
+            각 문제에는 중복되지 않는 선택지 4개와
+            0부터 3 사이의 정답 인덱스, 구체적인 해설을 포함하세요.
+            """
+
+        try:
+            response = client.responses.parse(
+                model=get_openai_model(),
+                reasoning={
+                    "effort": "low",
+                },
+                input=[
+                    {
+                        "role": "system",
+                        "content": SYSTEM_PROMPT + correction,
+                    },
+                    {
+                        "role": "user",
+                        "content": json.dumps(
+                            user_input,
+                            ensure_ascii=False,
+                        ),
+                    },
+                ],
+                text_format=QuizDraft,
+            )
+        except ValidationError:
+            continue
+
+        quiz = response.output_parsed
+
+        if quiz is not None and _is_valid_quiz(quiz):
+            return quiz
+
+    raise RuntimeError(
+        "AI가 객관식 퀴즈 구성 규칙에 맞는 결과를 생성하지 못했습니다."
+    )
