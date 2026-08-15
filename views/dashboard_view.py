@@ -9,6 +9,9 @@ from services.study_plan_repository import (
     get_user_study_plans,
 )
 from views.completion_feedback import render_completion_feedback
+from views.review_material_ui import (
+    render_review_material_section,
+)
 
 
 def render_dashboard(supabase, user):
@@ -55,6 +58,15 @@ def render_dashboard(supabase, user):
                 )
                 task_with_plan["course_name"] = (
                     saved_plan["course_name"]
+                )
+                task_with_plan["plan_id"] = (
+                    saved_plan["id"]
+                )
+                task_with_plan["goal"] = (
+                    saved_plan["goal"]
+                )
+                task_with_plan["current_level"] = (
+                    saved_plan["current_level"]
                 )
 
                 today_tasks.append(task_with_plan)
@@ -148,6 +160,21 @@ def render_dashboard(supabase, user):
                 f"예상 학습시간: "
                 f"{task['estimated_minutes']}분"
             )
+
+            if task["task_type"] in {
+                "learn",
+                "review",
+            }:
+                render_review_material_section(
+                    supabase=supabase,
+                    user_id=user.id,
+                    plan_id=task["plan_id"],
+                    course_name=task["course_name"],
+                    goal=task["goal"],
+                    current_level=task["current_level"],
+                    task=task,
+                    widget_scope="dashboard",
+                )
 
             if task["status"] == "completed":
                 st.success("완료된 과제입니다. ✅")
