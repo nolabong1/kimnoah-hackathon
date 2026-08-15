@@ -1,5 +1,5 @@
-from datetime import date
-from views.completion_feedback import render_completion_feedback
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
@@ -8,6 +8,7 @@ from services.study_plan_repository import (
     get_study_plan_tasks,
     get_user_study_plans,
 )
+from views.completion_feedback import render_completion_feedback
 
 
 def render_dashboard(supabase, user):
@@ -18,7 +19,9 @@ def render_dashboard(supabase, user):
 
     render_completion_feedback()
 
-    today = date.today().isoformat()
+    today = datetime.now(
+        ZoneInfo("Asia/Seoul")
+    ).date().isoformat()
 
     try:
         saved_plans = get_user_study_plans(
