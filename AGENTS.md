@@ -80,7 +80,8 @@ DB 구조, 보상 규칙, 제품 동작, 아키텍처를 바꾸는 작업은 구
 ### `models/`
 
 - `models/study_plan.py`: AI가 반환하는 7일 계획과 과제 Pydantic 모델
-- `models/review_material.py`: AI 학습자료 초안 모델
+- `models/review_material.py`: 과제 기반 AI 학습자료 초안과
+  원본 기반 구조화 복습자료 모델
 - `models/quiz.py`: 객관식 퀴즈와 문항 모델, 대표 개념 태그 검증
 - `models/concept_mastery.py`: 숙련도 현재값, 문항별 변화,
   자동 복습 요약, 적응형 분석 응답 모델
@@ -96,8 +97,11 @@ AI Structured Output과 RPC 응답은 가능한 한 Pydantic 모델로 검증한
 - `study_plan_service.py`: AI 7일 학습계획 생성과 업무 규칙 검증
 - `study_plan_repository.py`: 계획·과제 저장/조회/삭제,
   완료 RPC와 테스트 초기화 RPC 연결
-- `review_material_service.py`: AI 학습자료 생성과 내용 검증
-- `review_material_repository.py`: 과제별 학습자료 조회 및 upsert
+- `source_material_service.py`: 원본 제목·텍스트 검증과
+  메모리 기반 PDF 텍스트 추출
+- `review_material_service.py`: 과제·원본 기반 AI 학습자료 생성과 내용 검증
+- `review_material_repository.py`: 과제별 학습자료 조회/upsert와
+  원본·복습자료 순차 저장 및 부분 실패 정리
 - `quiz_service.py`: 5문항 객관식 퀴즈 생성과 업무 규칙 검증
 - `quiz_repository.py`: 퀴즈·응시 조회, 개념 포함 퀴즈 저장 RPC,
   원자적 제출 RPC 연결
@@ -118,6 +122,8 @@ AI 호출과 DB 저장 책임도 분리한다.
 - `saved_plans_view.py`: 저장된 계획/과제 조회, 완료,
   삭제 확인, 테스트 초기화
 - `review_material_ui.py`: `learn`과 `review` 과제의 자료 생성·저장·조회
+- `source_review_material_view.py`: 붙여넣은 텍스트 또는 PDF에서 추출한
+  텍스트 기반 AI 복습자료 생성·저장·미리보기
 - `quiz_ui.py`: 퀴즈 생성·응시·재응시·결과,
   숙련도 변화와 자동 복습 표시
 - `completion_feedback.py`: 과제 완료/레벨업 피드백과 팝업
@@ -161,6 +167,16 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
 
 자료 생성이나 조회 자체는 과제를 완료하지 않으며 EXP도 지급하지 않는다.
 
+원본 기반 복습자료는 다음 순서로 처리한다.
+
+1. 사용자가 본인의 저장된 계획과 `text` 또는 `pdf` 원본을 선택한다.
+2. 제목, PDF 크기, 추출 결과, 최대 30,000자를 OpenAI 호출 전에 검증한다.
+3. PDF는 메모리에서만 읽고 원본 파일은 저장하지 않는다.
+4. OpenAI Structured Output을 고정된 한국어 Markdown 섹션으로 변환한다.
+5. 생성 성공 후 `learning_materials`에 추출 텍스트를 저장하고,
+   `review_materials.source_material_id`로 결과를 연결한다.
+6. 두 번째 저장이 실패하면 이번 요청에서 생성한 원본 행만 정리한다.
+
 ### 퀴즈와 적응형 학습
 
 1. AI가 객관식 5문항을 만들며 문항마다 대표 개념 하나를 생성한다.
@@ -199,8 +215,8 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
 - `study_plans`: 사용자 계획, 7일 가능 시간, 계획 기간,
   `weekly_overview`, 상태
 - `study_tasks`: 계획별 실제 과제와 완료 상태
-- `learning_materials`: 향후 원본 텍스트/PDF용 기본 테이블
-- `review_materials`: 과제별 AI 생성 학습자료
+- `learning_materials`: 붙여넣은 원본 또는 PDF 추출 텍스트
+- `review_materials`: 과제 또는 사용자 원본 기반 AI 생성 학습자료
 - `quizzes`: 과제별 현재 퀴즈와 JSON 문항
 - `quiz_attempts`: 재응시별 답안, 스냅샷, 점수, 제출 식별 키
 - `exp_events`: `source_key`로 멱등성을 보장하는 EXP 원장
@@ -255,6 +271,9 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
 - 재생성 시 기존 행을 갱신한다.
 - 원본 자료가 없는데 교재, 강의, PDF를 보았다고 주장하지 않는다.
 - 자료 생성·조회만으로 과제 완료나 EXP 지급을 하지 않는다.
+- PDF 원본 파일은 저장하지 않고 `content_text`에 추출 텍스트만 저장한다.
+- PDF 자료의 `material_type`은 `pdf`, 붙여넣기 자료는 `text`이다.
+- 스캔본·이미지 전용 PDF와 OCR은 현재 지원하지 않는다.
 
 ### 퀴즈
 
@@ -345,6 +364,11 @@ Python 변경 전후로 함수와 제어 흐름의 범위를 다시 확인한다
 기능 SQL에서 `create or replace` 또는 rename/wrapper 방식으로 갱신될 수 있다.
 파일 하나만 보고 현재 DB 동작을 판단하지 않는다.
 
+`supabase_review_materials_upgrade.sql` 적용 후 원본 기반 자료를 사용하려면
+`supabase_source_material_review_upgrade.sql`을 적용해
+`review_materials.task_id`를 선택 사항으로 변경한다. 과제 기반 자료는
+기존처럼 `task_id`를 사용하고 원본 기반 자료는 `source_material_id`를 사용한다.
+
 현재 적응형 학습 계층의 주요 순서는 다음과 같다.
 
 1. `supabase_concept_mastery_upgrade.sql`
@@ -400,7 +424,8 @@ SQL 변경 후:
 다음 항목은 명시적 승인 없이 현재 작업 범위에 포함하지 않는다.
 
 - AI 학습자료 버전 기록
-- PDF·텍스트 원본 자료 업로드와 내용 기반 생성
+- PDF 원본 파일의 Storage 저장과 버전 관리
+- 스캔 PDF OCR
 - 모바일 전용 UI 최적화
 - 복잡한 숙련도 차트나 과도한 분석 화면
 - 별도의 퀴즈 응시 기록 제품 기능 확장

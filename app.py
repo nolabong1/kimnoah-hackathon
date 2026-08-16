@@ -16,6 +16,10 @@ from views.auth_session_storage import (
 from views.saved_plans_view import render_saved_plans
 from views.create_plan_view import render_create_plan
 from views.dashboard_view import render_dashboard
+from views.source_review_material_view import (
+    SOURCE_REVIEW_SESSION_KEYS,
+    render_source_review_material,
+)
 
 st.set_page_config(
     page_title="AI 학습 코치",
@@ -121,7 +125,9 @@ with st.sidebar:
             "오늘 학습",
             "계획 만들기",
             "저장된 계획",
+            "AI 복습 자료 만들기",
         ],
+        key="main_navigation",
     )
 
     st.divider()
@@ -134,6 +140,7 @@ with st.sidebar:
             "generated_plan_metadata",
             "generated_plan_saved",
             "saved_plan_id",
+            *SOURCE_REVIEW_SESSION_KEYS,
         ]:
             st.session_state.pop(key, None)
 
@@ -155,8 +162,14 @@ elif selected_page == "계획 만들기":
         user=user,
     )
 
-else:
+elif selected_page == "저장된 계획":
     render_saved_plans(
+        supabase=supabase,
+        user=user,
+    )
+
+else:
+    render_source_review_material(
         supabase=supabase,
         user=user,
     )
