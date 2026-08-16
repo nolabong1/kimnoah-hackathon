@@ -164,7 +164,8 @@ def get_study_plan_tasks(
         .select(
             "id, scheduled_date, title, description, "
             "task_type, estimated_minutes, status, "
-            "source_type, concept_id"
+            "source_type, concept_id, review_stage, "
+            "review_interval_days"
         )
         .eq("user_id", user_id)
         .eq("plan_id", plan_id)

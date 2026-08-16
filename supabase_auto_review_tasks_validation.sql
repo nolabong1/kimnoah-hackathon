@@ -1,4 +1,5 @@
--- supabase_auto_review_tasks.sql 실행 후 사용하는 읽기 전용 검증입니다.
+-- supabase_auto_review_tasks.sql과 supabase_spaced_repetition.sql 실행 후
+-- 사용하는 읽기 전용 검증입니다.
 begin;
 
 do $$
@@ -86,6 +87,14 @@ begin
         or task.concept_id is null
         or task.source_quiz_id is null
         or task.source_quiz_attempt_id is null
+        or task.review_stage is null
+        or task.review_interval_days is null
+        or task.review_stage not between 1 and 3
+        or task.review_interval_days <> case task.review_stage
+          when 1 then 1
+          when 2 then 3
+          when 3 then 7
+        end
       )
   ) then
     raise exception '자동 복습 과제 형식이 올바르지 않습니다.';
@@ -99,9 +108,9 @@ begin
      and attempt.quiz_id = task.source_quiz_id
      and attempt.user_id = task.user_id
     where task.source_type = 'weakness_review'
-      and task.scheduled_date <= (
+      and task.scheduled_date < (
         attempt.submitted_at at time zone 'Asia/Seoul'
-      )::date
+      )::date + task.review_interval_days
   ) then
     raise exception '자동 복습 과제가 응시 당일 이전에 배치됐습니다.';
   end if;
@@ -125,10 +134,26 @@ begin
     group by
       task.user_id,
       task.source_quiz_attempt_id,
-      task.concept_id
+      task.concept_id,
+      task.review_stage
     having count(*) > 1
   ) then
-    raise exception '같은 응시·개념의 자동 복습 과제가 중복됐습니다.';
+    raise exception '같은 응시·개념·단계의 자동 복습 과제가 중복됐습니다.';
+  end if;
+
+  if exists (
+    select 1
+    from public.study_tasks as task
+    where task.source_type = 'weakness_review'
+      and task.status = 'pending'
+    group by
+      task.user_id,
+      task.plan_id,
+      task.concept_id,
+      task.review_stage
+    having count(*) > 1
+  ) then
+    raise exception '같은 계획·개념·단계의 미완료 복습 과제가 중복됐습니다.';
   end if;
 
   if exists (
@@ -137,9 +162,9 @@ begin
     where task.source_type = 'weakness_review'
       and task.status = 'pending'
     group by task.user_id, task.plan_id, task.concept_id
-    having count(*) > 1
+    having count(distinct task.source_quiz_attempt_id) > 1
   ) then
-    raise exception '같은 계획·개념의 미완료 복습 과제가 중복됐습니다.';
+    raise exception '같은 개념에 서로 다른 미완료 복습 묶음이 겹칩니다.';
   end if;
 
   if exists (
@@ -273,6 +298,8 @@ select
   concept.canonical_name as concept_name,
   task.scheduled_date,
   task.estimated_minutes,
+  task.review_stage,
+  task.review_interval_days,
   task.status,
   task.source_quiz_attempt_id
 from public.study_tasks as task

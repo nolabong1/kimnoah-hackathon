@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ConceptMasterySummary(BaseModel):
@@ -43,6 +43,27 @@ class AutoReviewTaskSummary(BaseModel):
     title: str
     scheduled_date: date
     estimated_minutes: int = Field(ge=1, le=1440)
+    review_stage: int = Field(ge=1, le=3)
+    review_interval_days: int = Field(ge=1, le=7)
+
+    @model_validator(mode="after")
+    def validate_review_interval(
+        self,
+    ) -> "AutoReviewTaskSummary":
+        """반복 단계별 1·3·7일 목표 간격을 검증합니다."""
+
+        expected_interval = {
+            1: 1,
+            2: 3,
+            3: 7,
+        }[self.review_stage]
+
+        if self.review_interval_days != expected_interval:
+            raise ValueError(
+                "간격 반복 단계와 목표 간격이 일치하지 않습니다."
+            )
+
+        return self
 
 
 class AdaptiveQuizAnalysis(BaseModel):

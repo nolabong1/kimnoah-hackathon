@@ -1,4 +1,4 @@
--- 약점 분석·자동 재계획 1~9단계를 최종 확인하는 읽기 전용 검증입니다.
+-- 약점 분석·간격 반복·자동 재계획을 최종 확인하는 읽기 전용 검증입니다.
 -- 관련 마이그레이션을 모두 적용한 뒤 Supabase SQL Editor에서 실행하세요.
 begin;
 set transaction read only;
@@ -327,6 +327,14 @@ begin
         or task.concept_id is null
         or task.source_quiz_id is null
         or task.source_quiz_attempt_id is null
+        or task.review_stage is null
+        or task.review_interval_days is null
+        or task.review_stage not between 1 and 3
+        or task.review_interval_days <> case task.review_stage
+          when 1 then 1
+          when 2 then 3
+          when 3 then 7
+        end
       )
   ) then
     raise exception '자동 복습 과제의 필수 메타데이터가 올바르지 않습니다.';
@@ -344,9 +352,9 @@ begin
      and plan.user_id = task.user_id
     where task.source_type = 'weakness_review'
       and (
-        task.scheduled_date <= (
+        task.scheduled_date < (
           attempt.submitted_at at time zone 'Asia/Seoul'
-        )::date
+        )::date + task.review_interval_days
         or task.scheduled_date > plan.start_date + 13
         or task.scheduled_date > plan.target_date
       )
@@ -374,10 +382,29 @@ begin
     select 1
     from public.study_tasks as task
     where task.source_type = 'weakness_review'
-    group by task.user_id, task.source_quiz_attempt_id, task.concept_id
+    group by
+      task.user_id,
+      task.source_quiz_attempt_id,
+      task.concept_id,
+      task.review_stage
     having count(*) > 1
   ) then
-    raise exception '같은 응시·개념의 자동 복습 과제가 중복됐습니다.';
+    raise exception '같은 응시·개념·단계의 자동 복습 과제가 중복됐습니다.';
+  end if;
+
+  if exists (
+    select 1
+    from public.study_tasks as task
+    where task.source_type = 'weakness_review'
+      and task.status = 'pending'
+    group by
+      task.user_id,
+      task.plan_id,
+      task.concept_id,
+      task.review_stage
+    having count(*) > 1
+  ) then
+    raise exception '같은 계획·개념·단계의 미완료 자동 복습 과제가 중복됐습니다.';
   end if;
 
   if exists (
@@ -386,9 +413,9 @@ begin
     where task.source_type = 'weakness_review'
       and task.status = 'pending'
     group by task.user_id, task.plan_id, task.concept_id
-    having count(*) > 1
+    having count(distinct task.source_quiz_attempt_id) > 1
   ) then
-    raise exception '같은 계획·개념의 미완료 자동 복습 과제가 중복됐습니다.';
+    raise exception '같은 개념에 서로 다른 미완료 복습 묶음이 겹칩니다.';
   end if;
 end;
 $$;

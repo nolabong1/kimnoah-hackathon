@@ -2,7 +2,12 @@ import unittest
 from copy import deepcopy
 from uuid import UUID
 
-from models.concept_mastery import AdaptiveQuizAnalysis
+from pydantic import ValidationError
+
+from models.concept_mastery import (
+    AdaptiveQuizAnalysis,
+    AutoReviewTaskSummary,
+)
 from services.concept_mastery_repository import (
     get_course_concept_masteries,
     get_quiz_attempt_analysis,
@@ -10,6 +15,7 @@ from services.concept_mastery_repository import (
 from services.quiz_repository import submit_quiz_attempt
 from services.study_plan_repository import reset_today_test_progress
 from views.dashboard_view import _get_next_auto_review_tasks
+from views.spaced_review_ui import get_spaced_review_label
 
 
 USER_ID = "11111111-1111-4111-8111-111111111111"
@@ -121,6 +127,20 @@ class AdaptiveLearningModelTests(unittest.TestCase):
         self.assertEqual(analysis.concept_masteries, [])
         self.assertEqual(analysis.weak_concepts, [])
         self.assertEqual(analysis.auto_review_tasks, [])
+
+    def test_review_stage_requires_matching_interval(self):
+        with self.assertRaises(ValidationError):
+            AutoReviewTaskSummary(
+                task_id=TASK_ID,
+                plan_id=PLAN_ID,
+                concept_id=CONCEPT_A_ID,
+                concept_name="반복문",
+                title="반복문 간격 복습",
+                scheduled_date="2026-08-17",
+                estimated_minutes=20,
+                review_stage=2,
+                review_interval_days=1,
+            )
 
 
 class AdaptiveLearningRepositoryTests(unittest.TestCase):
@@ -250,6 +270,8 @@ class AdaptiveLearningRepositoryTests(unittest.TestCase):
                         "status": "pending",
                         "source_type": "weakness_review",
                         "source_quiz_attempt_id": ATTEMPT_ID,
+                        "review_stage": 1,
+                        "review_interval_days": 1,
                         "created_at": "2026-08-16T02:00:00+00:00",
                     }
                 ],
@@ -270,6 +292,16 @@ class AdaptiveLearningRepositoryTests(unittest.TestCase):
         self.assertEqual(result["concept_masteries"][0]["mastery_score"], 45)
         self.assertEqual(result["weak_concepts"][0]["concept_name"], "반복문")
         self.assertEqual(result["auto_review_tasks"][0]["task_id"], TASK_ID)
+        self.assertEqual(
+            result["auto_review_tasks"][0]["review_stage"],
+            1,
+        )
+        self.assertEqual(
+            result["auto_review_tasks"][0][
+                "review_interval_days"
+            ],
+            1,
+        )
 
     def test_submission_key_and_answers_are_forwarded_to_rpc(self):
         supabase = FakeSupabase(
@@ -330,6 +362,31 @@ class AdaptiveLearningRepositoryTests(unittest.TestCase):
 
 
 class AdaptiveLearningDashboardTests(unittest.TestCase):
+    def test_spaced_review_label_describes_stage_and_interval(self):
+        label = get_spaced_review_label(
+            {
+                "source_type": "weakness_review",
+                "review_stage": 2,
+                "review_interval_days": 3,
+            }
+        )
+
+        self.assertEqual(
+            label,
+            "간격 반복 2/3 · 목표 간격 3일",
+        )
+
+    def test_regular_task_has_no_spaced_review_label(self):
+        self.assertIsNone(
+            get_spaced_review_label(
+                {
+                    "source_type": "weekly_plan",
+                    "review_stage": None,
+                    "review_interval_days": None,
+                }
+            )
+        )
+
     def test_next_review_uses_nearest_pending_date(self):
         tasks = [
             {

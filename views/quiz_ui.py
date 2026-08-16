@@ -17,6 +17,9 @@ from services.quiz_repository import (
     submit_quiz_attempt,
 )
 from services.quiz_service import generate_quiz
+from views.spaced_review_ui import (
+    get_spaced_review_label,
+)
 
 
 def _get_quiz_state_prefix(
@@ -303,6 +306,15 @@ def _render_adaptive_quiz_analysis(
                     f"{review_task.get('concept_name', '개념')} · "
                     f"예상 {review_task.get('estimated_minutes', 0)}분"
                 )
+                review_label = get_spaced_review_label(
+                    {
+                        **review_task,
+                        "source_type": "weakness_review",
+                    }
+                )
+
+                if review_label:
+                    st.caption(review_label)
     else:
         st.info(
             "이번 응시에 연결된 새 자동 복습 일정은 없습니다."

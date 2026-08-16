@@ -17,6 +17,9 @@ from views.quiz_ui import render_quiz_section
 from views.review_material_ui import (
     render_review_material_section,
 )
+from views.spaced_review_ui import (
+    get_spaced_review_label,
+)
 
 
 DASHBOARD_PLAN_SELECT_KEY = "dashboard_selected_plan_id"
@@ -191,9 +194,15 @@ def _render_learning_diagnostics(
     for task in next_review_tasks:
         with st.container(border=True):
             st.markdown(f"**{task['title']}**")
+            review_label = get_spaced_review_label(task)
             st.caption(
                 f"{review_date_label} · "
                 f"예상 {task['estimated_minutes']}분"
+                + (
+                    f" · {review_label}"
+                    if review_label
+                    else ""
+                )
             )
 
 
@@ -386,6 +395,11 @@ def render_dashboard(supabase, user):
                 f"예상 학습시간: "
                 f"{task['estimated_minutes']}분"
             )
+
+            review_label = get_spaced_review_label(task)
+
+            if review_label:
+                st.caption(review_label)
 
             if task["task_type"] in {
                 "learn",

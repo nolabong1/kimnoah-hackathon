@@ -374,7 +374,8 @@ def get_quiz_attempt_analysis(
             .select(
                 "id, plan_id, concept_id, title, "
                 "scheduled_date, estimated_minutes, status, "
-                "source_quiz_attempt_id"
+                "source_quiz_attempt_id, review_stage, "
+                "review_interval_days"
             )
             .eq("user_id", normalized_user_id)
             .eq("plan_id", normalized_plan_id)
@@ -423,6 +424,10 @@ def get_quiz_attempt_analysis(
                     "scheduled_date": task["scheduled_date"],
                     "estimated_minutes": task[
                         "estimated_minutes"
+                    ],
+                    "review_stage": task["review_stage"],
+                    "review_interval_days": task[
+                        "review_interval_days"
                     ],
                 }
             )

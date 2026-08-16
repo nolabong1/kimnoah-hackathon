@@ -17,6 +17,9 @@ from views.quiz_ui import render_quiz_section
 from views.review_material_ui import (
     render_review_material_section,
 )
+from views.spaced_review_ui import (
+    get_spaced_review_label,
+)
 
 
 SAVED_PLAN_SELECT_KEY = "saved_plan_selected_id"
@@ -494,6 +497,11 @@ def render_saved_plans(supabase, user):
                     f"{task_status}"
                 )
                 st.write(task["description"])
+
+                review_label = get_spaced_review_label(task)
+
+                if review_label:
+                    st.caption(review_label)
 
                 if task["task_type"] in {
                     "learn",
