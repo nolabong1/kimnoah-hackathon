@@ -282,7 +282,9 @@ def render_saved_plans(supabase, user):
         ):
             st.warning(
                 "오늘 실제로 완료 처리한 모든 과제와 "
-                "해당 EXP가 초기화됩니다. 진행할까요?"
+                "해당 EXP뿐 아니라 오늘의 퀴즈 응시, "
+                "숙련도 변화, 자동 복습 과제도 "
+                "초기화됩니다. 진행할까요?"
             )
 
             confirm_column, cancel_column = (
@@ -314,9 +316,39 @@ def render_saved_plans(supabase, user):
                         None,
                     )
 
+                    for state_key in list(st.session_state):
+                        if "_quiz_attempt_" in str(state_key):
+                            st.session_state.pop(
+                                state_key,
+                                None,
+                            )
+
+                    removed_attempt_count = reset_result.get(
+                        "removed_quiz_attempt_count",
+                        0,
+                    )
+                    removed_mastery_event_count = (
+                        reset_result.get(
+                            "removed_mastery_event_count",
+                            0,
+                        )
+                    )
+                    removed_auto_review_count = (
+                        reset_result.get(
+                            "removed_auto_review_task_count",
+                            0,
+                        )
+                    )
+
                     st.session_state.test_reset_message = (
                         f"오늘 완료한 과제 "
                         f"{reset_result['reset_task_count']}개와 "
+                        "퀴즈 응시 "
+                        f"{removed_attempt_count}회, "
+                        "숙련도 변경 "
+                        f"{removed_mastery_event_count}건, "
+                        "자동 복습 과제 "
+                        f"{removed_auto_review_count}개, "
                         f"{reset_result['removed_total_exp']} EXP를 "
                         "초기화했습니다."
                     )

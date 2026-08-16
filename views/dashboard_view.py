@@ -3,6 +3,10 @@ from zoneinfo import ZoneInfo
 
 import streamlit as st
 
+from services.concept_mastery_repository import (
+    get_course_concept_masteries,
+)
+from services.concept_service import normalize_course_key
 from services.study_plan_repository import (
     complete_study_task,
     get_study_plan_tasks,
@@ -25,6 +29,172 @@ def get_dashboard_plan_label(plan: dict) -> str:
         f"{plan['title']} · {plan['course_name']} · "
         f"{plan['start_date']}"
     )
+
+
+def _get_next_auto_review_tasks(
+    plan_tasks: list[dict],
+    today: str,
+) -> list[dict]:
+    """오늘 또는 가장 가까운 날짜의 미완료 자동 복습을 반환합니다."""
+
+    upcoming_tasks = [
+        task
+        for task in plan_tasks
+        if task.get("source_type") == "weakness_review"
+        and task.get("status") == "pending"
+        and isinstance(task.get("scheduled_date"), str)
+        and task["scheduled_date"] >= today
+    ]
+
+    if not upcoming_tasks:
+        return []
+
+    next_review_date = min(
+        task["scheduled_date"]
+        for task in upcoming_tasks
+    )
+
+    return [
+        task
+        for task in upcoming_tasks
+        if task["scheduled_date"] == next_review_date
+    ]
+
+
+def _render_learning_diagnostics(
+    supabase,
+    user_id: str,
+    selected_plan: dict,
+    plan_tasks: list[dict],
+    today: str,
+) -> None:
+    """선택한 계획의 개념 숙련도와 다음 자동 복습을 표시합니다."""
+
+    st.markdown("### 학습 진단")
+
+    try:
+        course_key = normalize_course_key(
+            selected_plan["course_name"]
+        )
+        concept_masteries = get_course_concept_masteries(
+            supabase=supabase,
+            user_id=user_id,
+            course_key=course_key,
+        )
+    except Exception as error:
+        st.warning(
+            "개념 숙련도를 불러오지 못했습니다: "
+            f"{error}"
+        )
+        concept_masteries = None
+
+    weak_masteries = [
+        mastery
+        for mastery in concept_masteries or []
+        if mastery.get("is_weak") is True
+    ]
+    next_review_tasks = _get_next_auto_review_tasks(
+        plan_tasks=plan_tasks,
+        today=today,
+    )
+    next_review_date = (
+        next_review_tasks[0]["scheduled_date"]
+        if next_review_tasks
+        else None
+    )
+    next_review_minutes = sum(
+        task["estimated_minutes"]
+        for task in next_review_tasks
+    )
+
+    with st.container(horizontal=True):
+        st.metric(
+            "평가된 개념",
+            (
+                f"{len(concept_masteries)}개"
+                if concept_masteries is not None
+                else "확인 실패"
+            ),
+            border=True,
+        )
+        st.metric(
+            "현재 취약 개념",
+            (
+                f"{len(weak_masteries)}개"
+                if concept_masteries is not None
+                else "확인 실패"
+            ),
+            border=True,
+        )
+        st.metric(
+            "다음 자동 복습",
+            (
+                "오늘"
+                if next_review_date == today
+                else next_review_date or "없음"
+            ),
+            delta=(
+                f"예상 {next_review_minutes}분"
+                if next_review_tasks
+                else None
+            ),
+            delta_color="off",
+            border=True,
+        )
+
+    st.markdown("#### 개념별 현재 숙련도")
+
+    if concept_masteries is None:
+        st.info("숙련도 정보를 다시 불러와 확인해주세요.")
+    elif not concept_masteries:
+        st.info(
+            "선택한 과목에서 아직 평가된 개념이 없습니다. "
+            "개념 태그가 포함된 퀴즈를 응시하면 표시됩니다."
+        )
+    else:
+        for mastery in concept_masteries:
+            mastery_score = mastery["mastery_score"]
+
+            with st.container(border=True):
+                st.metric(
+                    mastery["concept_name"],
+                    f"{mastery_score}점",
+                )
+                st.progress(
+                    mastery_score,
+                    text=f"숙련도 {mastery_score}/100",
+                )
+                st.caption(
+                    f"누적 정답 {mastery['correct_count']}회 · "
+                    f"누적 오답 {mastery['incorrect_count']}회 · "
+                    "연속 오답 "
+                    f"{mastery['consecutive_incorrect_count']}회"
+                )
+
+                if mastery["is_weak"]:
+                    st.warning("현재 복습이 필요한 취약 개념입니다.")
+                else:
+                    st.caption("현재 취약 기준 이상입니다.")
+
+    st.markdown("#### 오늘 또는 다음 자동 복습")
+
+    if not next_review_tasks:
+        st.info("현재 예정된 자동 복습 과제가 없습니다.")
+        return
+
+    review_date_label = (
+        "오늘"
+        if next_review_date == today
+        else next_review_date
+    )
+
+    for task in next_review_tasks:
+        with st.container(border=True):
+            st.markdown(f"**{task['title']}**")
+            st.caption(
+                f"{review_date_label} · "
+                f"예상 {task['estimated_minutes']}분"
+            )
 
 
 def render_dashboard(supabase, user):
@@ -99,6 +269,16 @@ def render_dashboard(supabase, user):
             f"오늘의 과제를 불러오지 못했습니다: {error}"
         )
         return
+
+    _render_learning_diagnostics(
+        supabase=supabase,
+        user_id=user.id,
+        selected_plan=selected_plan,
+        plan_tasks=plan_tasks,
+        today=today,
+    )
+
+    st.divider()
 
     today_tasks = []
 

@@ -1,7 +1,9 @@
 from uuid import UUID
 
+from pydantic import ValidationError
 from supabase import Client
 
+from models.concept_mastery import AdaptiveQuizAnalysis
 from models.quiz import QuizDraft
 from services.concept_service import build_quiz_concept_payload
 
@@ -225,9 +227,23 @@ def submit_quiz_attempt(
         .execute()
     )
 
-    if response.data is None:
+    if not isinstance(response.data, dict):
         raise RuntimeError(
             "퀴즈 응시 저장 결과가 비어 있습니다."
         )
 
-    return response.data
+    try:
+        analysis = AdaptiveQuizAnalysis.model_validate(
+            response.data
+        )
+    except ValidationError as error:
+        raise RuntimeError(
+            "퀴즈 약점 분석 결과 형식이 올바르지 않습니다."
+        ) from error
+
+    normalized_result = dict(response.data)
+    normalized_result.update(
+        analysis.model_dump(mode="json")
+    )
+
+    return normalized_result

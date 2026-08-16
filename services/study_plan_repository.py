@@ -163,7 +163,8 @@ def get_study_plan_tasks(
         supabase.table("study_tasks")
         .select(
             "id, scheduled_date, title, description, "
-            "task_type, estimated_minutes, status"
+            "task_type, estimated_minutes, status, "
+            "source_type, concept_id"
         )
         .eq("user_id", user_id)
         .eq("plan_id", plan_id)
@@ -198,7 +199,7 @@ def complete_study_task(
 def reset_today_test_progress(
     supabase: Client,
 ) -> dict:
-    """오늘 완료한 테스트 과제와 보상을 초기화합니다."""
+    """오늘의 과제·보상·퀴즈·숙련도 테스트 기록을 초기화합니다."""
 
     response = (
         supabase.rpc(
@@ -208,7 +209,7 @@ def reset_today_test_progress(
         .execute()
     )
 
-    if response.data is None:
+    if not isinstance(response.data, dict):
         raise RuntimeError(
             "테스트 초기화 결과가 비어 있습니다."
         )

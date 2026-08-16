@@ -2,6 +2,9 @@ from uuid import uuid4
 
 import streamlit as st
 
+from services.concept_mastery_repository import (
+    get_quiz_attempt_analysis,
+)
 from services.concept_service import (
     canonicalize_quiz_concepts,
     normalize_course_key,
@@ -117,7 +120,199 @@ def _get_display_questions(quiz: dict) -> list[dict] | None:
     return questions
 
 
-def _render_quiz_result(attempt: dict) -> None:
+def _render_adaptive_quiz_analysis(
+    analysis: dict,
+) -> None:
+    """개념별 숙련도 변화와 연결된 자동 복습 일정을 표시합니다."""
+
+    mastery_changes = analysis.get("mastery_changes", [])
+    concept_masteries = analysis.get(
+        "concept_masteries",
+        [],
+    )
+    weak_concepts = analysis.get("weak_concepts", [])
+    auto_review_tasks = analysis.get(
+        "auto_review_tasks",
+        [],
+    )
+
+    if not all(
+        isinstance(items, list)
+        for items in (
+            mastery_changes,
+            concept_masteries,
+            weak_concepts,
+            auto_review_tasks,
+        )
+    ):
+        st.warning(
+            "저장된 개념 분석 결과 형식이 올바르지 않습니다."
+        )
+        return
+
+    st.markdown("#### 개념별 숙련도")
+
+    if not concept_masteries:
+        st.info(
+            "이 응시에는 분석할 수 있는 개념 태그가 없습니다."
+        )
+    else:
+        changes_by_concept: dict[str, list[dict]] = {}
+
+        for change in mastery_changes:
+            if not isinstance(change, dict):
+                continue
+
+            concept_id = change.get("concept_id")
+
+            if isinstance(concept_id, str):
+                changes_by_concept.setdefault(
+                    concept_id,
+                    [],
+                ).append(change)
+
+        weak_concept_ids = {
+            concept.get("concept_id")
+            for concept in weak_concepts
+            if isinstance(concept, dict)
+        }
+
+        for mastery in concept_masteries:
+            if not isinstance(mastery, dict):
+                continue
+
+            concept_id = mastery.get("concept_id")
+            concept_changes = changes_by_concept.get(
+                concept_id,
+                [],
+            )
+            score_delta = sum(
+                change.get("score_delta", 0)
+                for change in concept_changes
+                if isinstance(
+                    change.get("score_delta"),
+                    int,
+                )
+                and not isinstance(
+                    change.get("score_delta"),
+                    bool,
+                )
+            )
+            correct_count = sum(
+                change.get("is_correct") is True
+                for change in concept_changes
+            )
+            mastery_score = mastery.get("mastery_score", 0)
+            score_before = (
+                concept_changes[0].get("score_before")
+                if concept_changes
+                else mastery_score
+            )
+            score_after = (
+                concept_changes[-1].get("score_after")
+                if concept_changes
+                else mastery_score
+            )
+
+            with st.container(border=True):
+                st.markdown(
+                    f"**{mastery.get('concept_name', '개념')}**"
+                )
+
+                score_column, result_column = st.columns(2)
+                score_column.metric(
+                    "현재 숙련도",
+                    f"{mastery_score}점",
+                    delta=f"{score_delta:+d}점",
+                    delta_description="이번 응시 변화",
+                )
+                result_column.metric(
+                    "이번 응시",
+                    (
+                        f"{correct_count}/"
+                        f"{len(concept_changes)}문항 정답"
+                    ),
+                )
+                st.progress(
+                    mastery_score,
+                    text=f"숙련도 {mastery_score}/100",
+                )
+
+                question_results = []
+
+                for change in concept_changes:
+                    question_number = (
+                        change.get("question_index", 0) + 1
+                    )
+                    result_label = (
+                        "정답"
+                        if change.get("is_correct") is True
+                        else "오답"
+                    )
+                    question_results.append(
+                        f"{question_number}번 {result_label}"
+                    )
+
+                if question_results:
+                    st.caption(
+                        f"이번 응시 숙련도: {score_before}점 → "
+                        f"{score_after}점 · 결과: "
+                        + ", ".join(question_results)
+                    )
+
+                if concept_id in weak_concept_ids:
+                    st.warning(
+                        "현재 추가 복습이 필요한 취약 개념입니다."
+                    )
+
+    st.markdown("#### 이번 응시에서 확인된 취약 개념")
+
+    if weak_concepts:
+        for concept in weak_concepts:
+            if not isinstance(concept, dict):
+                continue
+
+            st.warning(
+                f"{concept.get('concept_name', '개념')} · "
+                f"숙련도 {concept.get('mastery_score', 0)}점 · "
+                "연속 오답 "
+                f"{concept.get('consecutive_incorrect_count', 0)}회"
+            )
+    else:
+        st.success(
+            "이번 응시에서 현재 취약 기준에 해당하는 "
+            "개념은 없습니다."
+        )
+
+    st.markdown("#### 연결된 자동 복습 일정")
+
+    if auto_review_tasks:
+        for review_task in auto_review_tasks:
+            if not isinstance(review_task, dict):
+                continue
+
+            with st.container(border=True):
+                st.markdown(
+                    f"**{review_task.get('title', '자동 복습')}**"
+                )
+                st.write(
+                    "복습 예정일: "
+                    f"{review_task.get('scheduled_date', '-')}"
+                )
+                st.caption(
+                    f"{review_task.get('concept_name', '개념')} · "
+                    f"예상 {review_task.get('estimated_minutes', 0)}분"
+                )
+    else:
+        st.info(
+            "이번 응시에 연결된 새 자동 복습 일정은 없습니다."
+        )
+
+
+def _render_quiz_result(
+    attempt: dict,
+    analysis: dict | None,
+) -> None:
     """서버에 저장된 응시 점수와 문항별 해설을 표시합니다."""
 
     questions = attempt.get("questions_snapshot")
@@ -147,11 +342,18 @@ def _render_quiz_result(attempt: dict) -> None:
 
     questions = display_questions
 
-    st.success(
-        f"{attempt['attempt_number']}번째 응시 결과 · "
-        f"{attempt['score']}점 · "
+    st.markdown(
+        f"#### {attempt['attempt_number']}번째 응시 결과"
+    )
+    score_column, correct_column = st.columns(2)
+    score_column.metric(
+        "퀴즈 점수",
+        f"{attempt['score']}점",
+    )
+    correct_column.metric(
+        "정답 문항",
         f"{attempt['correct_count']}/"
-        f"{attempt['total_questions']}문항 정답"
+        f"{attempt['total_questions']}",
     )
 
     for question_index, question in enumerate(questions):
@@ -198,6 +400,9 @@ def _render_quiz_result(attempt: dict) -> None:
             f"**해설:** "
             f"{question.get('explanation', '')}"
         )
+
+    if analysis is not None:
+        _render_adaptive_quiz_analysis(analysis)
 
 
 def _render_quiz_form(
@@ -574,7 +779,25 @@ def render_quiz_section(
             current_attempt is not None
             and not st.session_state[retake_state_key]
         ):
-            _render_quiz_result(current_attempt)
+            analysis = None
+
+            try:
+                analysis = get_quiz_attempt_analysis(
+                    supabase=supabase,
+                    user_id=user_id,
+                    plan_id=plan_id,
+                    quiz_attempt_id=current_attempt["id"],
+                )
+            except Exception as error:
+                st.warning(
+                    "개념별 숙련도와 자동 복습 정보를 "
+                    f"불러오지 못했습니다: {error}"
+                )
+
+            _render_quiz_result(
+                attempt=current_attempt,
+                analysis=analysis,
+            )
 
             if st.button(
                 "다시 응시하기",

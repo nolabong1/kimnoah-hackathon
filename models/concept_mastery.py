@@ -52,6 +52,9 @@ class AdaptiveQuizAnalysis(BaseModel):
     mastery_changes: list[ConceptMasteryChange] = Field(
         default_factory=list
     )
+    concept_masteries: list[ConceptMasterySummary] = Field(
+        default_factory=list
+    )
     weak_concepts: list[ConceptMasterySummary] = Field(
         default_factory=list
     )
