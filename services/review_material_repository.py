@@ -3,6 +3,48 @@ from supabase import Client
 from models.review_material import ReviewMaterialDraft
 
 
+def get_learning_materials_by_plan(
+    supabase: Client,
+    user_id: str,
+    plan_id: str,
+) -> list[dict]:
+    """본인 계획에 저장된 원본 학습자료 목록을 불러옵니다."""
+
+    response = (
+        supabase.table("learning_materials")
+        .select(
+            "id, user_id, plan_id, title, material_type, "
+            "content_text, created_at"
+        )
+        .eq("user_id", user_id)
+        .eq("plan_id", plan_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return response.data or []
+
+
+def get_review_materials_by_plan(
+    supabase: Client,
+    user_id: str,
+    plan_id: str,
+) -> list[dict]:
+    """본인 계획에 저장된 AI 학습·복습자료 목록을 불러옵니다."""
+
+    response = (
+        supabase.table("review_materials")
+        .select(
+            "id, user_id, plan_id, task_id, source_material_id, "
+            "title, content_markdown, created_at, updated_at"
+        )
+        .eq("user_id", user_id)
+        .eq("plan_id", plan_id)
+        .order("updated_at", desc=True)
+        .execute()
+    )
+    return response.data or []
+
+
 def get_review_material_by_task(
     supabase: Client,
     user_id: str,

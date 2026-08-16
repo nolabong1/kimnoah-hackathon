@@ -1,0 +1,618 @@
+from uuid import uuid4
+
+import streamlit as st
+from pydantic import ValidationError
+
+from models.tutor import (
+    TutorAttemptFeedback,
+    TutorGuidance,
+)
+from services.review_material_repository import (
+    get_learning_materials_by_plan,
+    get_review_materials_by_plan,
+)
+from services.study_plan_repository import (
+    get_study_plan_tasks,
+    get_user_study_plans,
+)
+from services.tutor_service import (
+    MAX_TUTOR_ATTEMPT_CHARS,
+    MAX_TUTOR_QUESTION_CHARS,
+    MAX_TUTOR_REFERENCE_CHARS,
+    TutorInputValidationError,
+    generate_tutor_attempt_feedback,
+    generate_tutor_guidance,
+    validate_tutor_attempt,
+    validate_tutor_question,
+)
+from views.tutor_state import (
+    ACTIVE_SESSION_ID_KEY,
+    ACTIVE_USER_ID_KEY,
+    COURSE_NAME_KEY,
+    FEEDBACK_FINGERPRINT_KEY,
+    FEEDBACK_IN_PROGRESS_KEY,
+    FINAL_ANSWER_CONFIRMED_KEY,
+    FINAL_CONFIRMATION_PENDING_KEY,
+    GUIDANCE_KEY,
+    LATEST_FEEDBACK_KEY,
+    ORIGINAL_ATTEMPT_KEY,
+    QUESTION_KEY,
+    REFERENCE_CONTEXT_KEY,
+    REFERENCE_LIMITED_KEY,
+    REFERENCE_TITLE_KEY,
+    REQUEST_IN_PROGRESS_KEY,
+    TASK_TITLE_KEY,
+    VISIBLE_HINT_LEVEL_KEY,
+    advance_hint_level,
+    build_feedback_fingerprint,
+    clear_tutor_state,
+    create_tutor_session_state,
+    get_visible_hints,
+    is_final_solution_visible,
+    previous_hint_level,
+)
+
+
+SETUP_PLAN_KEY = "tutor_setup_plan_id"
+SETUP_TASK_KEY = "tutor_setup_task_id"
+SETUP_MATERIAL_KEY = "tutor_setup_material_key"
+SETUP_QUESTION_KEY = "tutor_setup_question"
+SETUP_ATTEMPT_KEY = "tutor_setup_attempt"
+REVISED_ATTEMPT_KEY = "tutor_revised_attempt"
+
+
+def _clear_current_tutor() -> None:
+    """콜백에서 현재 튜터 관련 상태만 안전하게 제거합니다."""
+
+    clear_tutor_state(st.session_state)
+
+
+def _ensure_valid_widget_value(
+    state_key: str,
+    allowed_values: list[str | None],
+) -> bool:
+    """옵션 변경 후 남은 오래된 위젯 값을 생성 전에 정리합니다."""
+
+    had_existing_value = state_key in st.session_state
+    if st.session_state.get(state_key) not in allowed_values:
+        st.session_state[state_key] = allowed_values[0]
+        return had_existing_value
+    return False
+
+
+def _build_material_options(
+    learning_materials: list[dict],
+    review_materials: list[dict],
+) -> dict[str, dict]:
+    """두 자료 테이블을 충돌 없는 선택 옵션으로 합칩니다."""
+
+    material_options = {}
+    for material in learning_materials:
+        material_key = f"learning:{material['id']}"
+        material_type = material.get("material_type", "text")
+        material_options[material_key] = {
+            "id": str(material["id"]),
+            "kind": "learning",
+            "title": material["title"],
+            "label": (
+                f"원본 자료 · {material['title']} "
+                f"({'PDF' if material_type == 'pdf' else '텍스트'})"
+            ),
+            "content": material.get("content_text"),
+        }
+
+    for material in review_materials:
+        material_key = f"review:{material['id']}"
+        material_options[material_key] = {
+            "id": str(material["id"]),
+            "kind": "review",
+            "title": material["title"],
+            "label": f"AI 학습·복습 자료 · {material['title']}",
+            "content": material.get("content_markdown"),
+        }
+    return material_options
+
+
+def _render_feedback(feedback_data: dict | None) -> None:
+    """저장된 최신 풀이 피드백을 검증해 표시합니다."""
+
+    if feedback_data is None:
+        return
+    try:
+        feedback = TutorAttemptFeedback.model_validate(feedback_data)
+    except ValidationError:
+        st.warning("저장된 풀이 피드백을 표시할 수 없습니다.")
+        return
+
+    assessment_labels = {
+        "correct": "핵심 접근이 적절합니다",
+        "partially_correct": "일부 접근이 적절합니다",
+        "needs_revision": "풀이를 조금 더 다듬어야 합니다",
+        "insufficient_information": "판단할 풀이 정보가 부족합니다",
+    }
+    with st.container(border=True):
+        st.markdown("### 풀이 점검 결과")
+        st.write(assessment_labels[feedback.assessment])
+        st.markdown(f"**잘한 점**\n\n{feedback.what_was_done_well}")
+        st.markdown(f"**다시 볼 부분**\n\n{feedback.issue}")
+        st.markdown(f"**다음 단계**\n\n{feedback.next_step}")
+        st.caption(
+            f"추천 힌트 단계: Hint {feedback.recommended_hint_level} · "
+            "힌트 공개 여부는 직접 선택할 수 있습니다."
+        )
+
+
+def _render_final_solution(guidance: TutorGuidance) -> None:
+    """명시적 확인 뒤 최종 정답과 풀이를 표시합니다."""
+
+    solution = guidance.final_solution
+    with st.container(border=True):
+        st.markdown("## 최종 정답과 전체 풀이")
+        st.markdown("### 최종 답")
+        st.markdown(solution.final_answer)
+        st.markdown("### 단계별 풀이")
+        for index, step in enumerate(solution.reasoning_steps, start=1):
+            st.markdown(f"{index}. {step}")
+        st.markdown("### 풀이가 성립하는 이유")
+        st.markdown(solution.why_solution_works)
+        st.markdown("### 자주 하는 실수")
+        for mistake in solution.common_mistakes:
+            st.markdown(f"- {mistake}")
+        st.markdown("### 짧은 자기 점검")
+        st.info(solution.self_check_question)
+
+
+def _render_active_tutor_session(user_id: str) -> None:
+    """저장된 안내로 힌트·피드백·정답 확인 UI를 렌더링합니다."""
+
+    if st.session_state.get(ACTIVE_USER_ID_KEY) != user_id:
+        clear_tutor_state(st.session_state)
+        st.warning("현재 사용자와 다른 튜터 세션을 정리했습니다.")
+        st.rerun()
+
+    try:
+        guidance = TutorGuidance.model_validate(
+            st.session_state.get(GUIDANCE_KEY)
+        )
+    except ValidationError:
+        st.error("진행 중인 튜터 세션을 복원하지 못했습니다.")
+        st.button(
+            "새 질문 시작하기",
+            key="tutor_invalid_session_reset",
+            on_click=_clear_current_tutor,
+        )
+        return
+
+    with st.container(horizontal=True, horizontal_alignment="right"):
+        st.button(
+            "새 질문 시작하기",
+            key="tutor_new_question_button",
+            icon=":material/restart_alt:",
+            on_click=_clear_current_tutor,
+        )
+
+    st.caption(
+        f"과목: {st.session_state[COURSE_NAME_KEY]} · "
+        f"과제: {st.session_state.get(TASK_TITLE_KEY) or '직접 질문'}"
+    )
+    if st.session_state.get(REFERENCE_TITLE_KEY):
+        st.caption(
+            f"참고자료: {st.session_state[REFERENCE_TITLE_KEY]}"
+        )
+    if st.session_state.get(REFERENCE_LIMITED_KEY):
+        st.info(
+            "선택한 참고자료가 길어 앞부분 "
+            f"최대 {MAX_TUTOR_REFERENCE_CHARS:,}자 범위만 튜터 문맥으로 "
+            "사용했습니다."
+        )
+
+    with st.container(border=True):
+        st.markdown("### 내가 입력한 문제")
+        st.write(st.session_state[QUESTION_KEY])
+        if st.session_state.get(ORIGINAL_ATTEMPT_KEY):
+            st.markdown("**처음 시도한 풀이**")
+            st.write(st.session_state[ORIGINAL_ATTEMPT_KEY])
+
+    with st.container(border=True):
+        st.markdown("### 문제 이해")
+        st.write(guidance.problem_summary)
+        st.markdown("**필요한 개념**")
+        st.markdown(
+            "\n".join(
+                f"- {concept}"
+                for concept in guidance.required_concepts
+            )
+        )
+
+    visible_hint_level = int(
+        st.session_state.get(VISIBLE_HINT_LEVEL_KEY, 1)
+    )
+    for hint in get_visible_hints(guidance, visible_hint_level):
+        with st.container(border=True):
+            st.markdown(f"### Hint {hint.level} · {hint.title}")
+            st.markdown(hint.content)
+            st.info(f"생각해볼 질문: {hint.guiding_question}")
+
+    if is_final_solution_visible(st.session_state):
+        _render_final_solution(guidance)
+        return
+
+    with st.container(horizontal=True):
+        if st.button(
+            "이전 힌트",
+            key="tutor_previous_hint_button",
+            icon=":material/arrow_back:",
+            disabled=visible_hint_level <= 1,
+        ):
+            st.session_state[VISIBLE_HINT_LEVEL_KEY] = previous_hint_level(
+                visible_hint_level
+            )
+            st.rerun()
+
+        if st.button(
+            "다음 힌트",
+            key="tutor_next_hint_button",
+            icon=":material/arrow_forward:",
+            disabled=visible_hint_level >= 3,
+        ):
+            st.session_state[VISIBLE_HINT_LEVEL_KEY] = advance_hint_level(
+                visible_hint_level
+            )
+            st.rerun()
+
+        if st.button(
+            "정답 보기",
+            key="tutor_show_answer_button",
+            icon=":material/visibility:",
+        ):
+            st.session_state[FINAL_CONFIRMATION_PENDING_KEY] = True
+
+    if st.session_state.get(FINAL_CONFIRMATION_PENDING_KEY):
+        with st.container(border=True):
+            st.warning(
+                "정답과 전체 풀이를 확인하면 단계별 힌트 학습이 "
+                "종료됩니다. 확인할까요?"
+            )
+            with st.container(horizontal=True):
+                if st.button(
+                    "정답 확인하기",
+                    key="tutor_confirm_answer_button",
+                    type="primary",
+                ):
+                    st.session_state[FINAL_ANSWER_CONFIRMED_KEY] = True
+                    st.session_state[FINAL_CONFIRMATION_PENDING_KEY] = False
+                    st.rerun()
+                if st.button(
+                    "계속 풀어보기",
+                    key="tutor_cancel_answer_button",
+                ):
+                    st.session_state[FINAL_CONFIRMATION_PENDING_KEY] = False
+                    st.rerun()
+
+    st.divider()
+    st.subheader("수정한 풀이 점검하기")
+    with st.form("tutor_feedback_form"):
+        revised_attempt = st.text_area(
+            "수정한 풀이",
+            height=180,
+            placeholder="힌트를 참고해 다시 시도한 풀이를 입력하세요.",
+            key=REVISED_ATTEMPT_KEY,
+        )
+        feedback_submitted = st.form_submit_button(
+            "내 풀이 점검하기",
+            key="tutor_feedback_submit",
+            icon=":material/rate_review:",
+            disabled=bool(
+                st.session_state.get(FEEDBACK_IN_PROGRESS_KEY, False)
+            ),
+        )
+
+    if feedback_submitted:
+        try:
+            cleaned_revised_attempt = validate_tutor_attempt(
+                revised_attempt,
+                required=True,
+            )
+            fingerprint = build_feedback_fingerprint(
+                session_id=st.session_state[ACTIVE_SESSION_ID_KEY],
+                visible_hint_level=visible_hint_level,
+                revised_attempt=cleaned_revised_attempt,
+            )
+            if (
+                fingerprint
+                == st.session_state.get(FEEDBACK_FINGERPRINT_KEY)
+                and st.session_state.get(LATEST_FEEDBACK_KEY) is not None
+            ):
+                st.info("같은 풀이의 최근 점검 결과를 표시합니다.")
+            else:
+                st.session_state[FEEDBACK_IN_PROGRESS_KEY] = True
+                with st.spinner("수정한 풀이를 점검하고 있습니다..."):
+                    feedback = generate_tutor_attempt_feedback(
+                        course_name=st.session_state[COURSE_NAME_KEY],
+                        task_title=st.session_state.get(TASK_TITLE_KEY),
+                        reference_title=st.session_state.get(
+                            REFERENCE_TITLE_KEY
+                        ),
+                        reference_context=st.session_state.get(
+                            REFERENCE_CONTEXT_KEY
+                        ),
+                        question=st.session_state[QUESTION_KEY],
+                        original_attempt=st.session_state.get(
+                            ORIGINAL_ATTEMPT_KEY
+                        ),
+                        revised_attempt=cleaned_revised_attempt,
+                        guidance=guidance,
+                        revealed_hint_level=visible_hint_level,
+                    )
+                st.session_state[LATEST_FEEDBACK_KEY] = feedback.model_dump()
+                st.session_state[FEEDBACK_FINGERPRINT_KEY] = fingerprint
+                st.success("수정한 풀이를 점검했습니다.")
+        except TutorInputValidationError as error:
+            st.warning(str(error))
+        except Exception:
+            st.error(
+                "풀이 점검 중 오류가 발생했습니다. "
+                "잠시 후 다시 시도해주세요."
+            )
+        finally:
+            st.session_state[FEEDBACK_IN_PROGRESS_KEY] = False
+
+    _render_feedback(st.session_state.get(LATEST_FEEDBACK_KEY))
+
+
+def _render_tutor_setup(supabase, user_id: str) -> None:
+    """새 튜터 세션에 필요한 계획·과제·자료·질문을 입력받습니다."""
+
+    try:
+        study_plans = get_user_study_plans(
+            supabase=supabase,
+            user_id=user_id,
+        )
+    except Exception:
+        st.error("저장된 학습계획을 불러오지 못했습니다.")
+        return
+    if not study_plans:
+        st.info("AI 튜터를 사용하려면 먼저 학습계획을 저장해주세요.")
+        return
+
+    plan_by_id = {str(plan["id"]): plan for plan in study_plans}
+    plan_ids = list(plan_by_id)
+    if _ensure_valid_widget_value(SETUP_PLAN_KEY, plan_ids):
+        st.warning(
+            "이전에 선택한 계획을 찾을 수 없어 다른 저장 계획을 표시합니다."
+        )
+    selected_plan_id = st.selectbox(
+        "학습계획",
+        options=plan_ids,
+        format_func=lambda plan_id: (
+            f"{plan_by_id[plan_id]['title']} · "
+            f"{plan_by_id[plan_id]['course_name']}"
+        ),
+        key=SETUP_PLAN_KEY,
+    )
+
+    try:
+        tasks = get_study_plan_tasks(
+            supabase=supabase,
+            user_id=user_id,
+            plan_id=selected_plan_id,
+        )
+    except Exception:
+        tasks = []
+        st.warning("선택한 계획의 과제를 불러오지 못했습니다.")
+
+    try:
+        learning_materials = get_learning_materials_by_plan(
+            supabase=supabase,
+            user_id=user_id,
+            plan_id=selected_plan_id,
+        )
+        review_materials = get_review_materials_by_plan(
+            supabase=supabase,
+            user_id=user_id,
+            plan_id=selected_plan_id,
+        )
+    except Exception:
+        learning_materials = []
+        review_materials = []
+        st.warning("선택한 계획의 참고자료를 불러오지 못했습니다.")
+
+    task_by_id = {str(task["id"]): task for task in tasks}
+    material_by_key = _build_material_options(
+        learning_materials,
+        review_materials,
+    )
+    task_options: list[str | None] = [None, *task_by_id]
+    material_options: list[str | None] = [None, *material_by_key]
+    task_selection_reset = _ensure_valid_widget_value(
+        SETUP_TASK_KEY,
+        task_options,
+    )
+    material_selection_reset = _ensure_valid_widget_value(
+        SETUP_MATERIAL_KEY,
+        material_options,
+    )
+    if task_selection_reset:
+        st.info(
+            "계획이 바뀌었거나 선택한 과제가 없어 과제 선택을 초기화했습니다."
+        )
+    if material_selection_reset:
+        st.info(
+            "계획이 바뀌었거나 선택한 자료가 없어 참고자료 선택을 "
+            "초기화했습니다."
+        )
+
+    if not tasks:
+        st.caption("선택한 계획에 과제가 없어 직접 질문으로 진행합니다.")
+    if not material_by_key:
+        st.caption("선택할 저장 자료가 없어 참고자료 없이 진행합니다.")
+
+    with st.form("tutor_setup_form"):
+        selected_task_id = st.selectbox(
+            "연결할 과제 (선택)",
+            options=task_options,
+            format_func=lambda task_id: (
+                "선택하지 않음 · 직접 질문"
+                if task_id is None
+                else (
+                    f"{task_by_id[task_id]['scheduled_date']} · "
+                    f"{task_by_id[task_id]['title']}"
+                )
+            ),
+            key=SETUP_TASK_KEY,
+        )
+        selected_material_key = st.selectbox(
+            "참고자료 (선택)",
+            options=material_options,
+            format_func=lambda material_key: (
+                "선택하지 않음"
+                if material_key is None
+                else material_by_key[material_key]["label"]
+            ),
+            key=SETUP_MATERIAL_KEY,
+        )
+        question = st.text_area(
+            "질문 또는 문제",
+            height=180,
+            placeholder="풀이 과정을 도움받고 싶은 문제를 입력하세요.",
+            key=SETUP_QUESTION_KEY,
+        )
+        user_attempt = st.text_area(
+            "현재 풀이 또는 생각 (선택)",
+            height=150,
+            placeholder="지금까지 시도한 방법이나 막힌 지점을 적어주세요.",
+            key=SETUP_ATTEMPT_KEY,
+        )
+        st.caption(
+            f"질문과 풀이는 각각 최대 {MAX_TUTOR_QUESTION_CHARS:,}자, "
+            f"{MAX_TUTOR_ATTEMPT_CHARS:,}자까지 사용할 수 있습니다."
+        )
+        start_submitted = st.form_submit_button(
+            "AI 튜터 시작하기",
+            key="tutor_start_submit",
+            type="primary",
+            icon=":material/explore:",
+            disabled=bool(
+                st.session_state.get(REQUEST_IN_PROGRESS_KEY, False)
+            ),
+        )
+
+    if not start_submitted:
+        return
+
+    started = False
+    try:
+        if selected_plan_id not in plan_by_id:
+            raise TutorInputValidationError(
+                "본인의 저장된 학습계획을 다시 선택해주세요."
+            )
+        if selected_task_id is not None and selected_task_id not in task_by_id:
+            raise TutorInputValidationError(
+                "선택한 과제를 찾을 수 없습니다. 다시 선택해주세요."
+            )
+        if (
+            selected_material_key is not None
+            and selected_material_key not in material_by_key
+        ):
+            raise TutorInputValidationError(
+                "선택한 참고자료를 찾을 수 없습니다. 다시 선택해주세요."
+            )
+
+        cleaned_question = validate_tutor_question(question)
+        cleaned_attempt = validate_tutor_attempt(user_attempt)
+        selected_plan = plan_by_id[selected_plan_id]
+        selected_task = (
+            task_by_id[selected_task_id]
+            if selected_task_id is not None
+            else None
+        )
+        selected_material = (
+            material_by_key[selected_material_key]
+            if selected_material_key is not None
+            else None
+        )
+
+        st.session_state[REQUEST_IN_PROGRESS_KEY] = True
+        with st.spinner("세 단계 힌트와 풀이 구조를 준비하고 있습니다..."):
+            generation_result = generate_tutor_guidance(
+                course_name=selected_plan["course_name"],
+                goal=selected_plan["goal"],
+                current_level=selected_plan["current_level"],
+                task_title=(
+                    selected_task["title"] if selected_task else None
+                ),
+                task_description=(
+                    selected_task["description"] if selected_task else None
+                ),
+                reference_title=(
+                    selected_material["title"]
+                    if selected_material
+                    else None
+                ),
+                reference_context=(
+                    selected_material["content"]
+                    if selected_material
+                    else None
+                ),
+                question=cleaned_question,
+                user_attempt=cleaned_attempt,
+            )
+
+        st.session_state.update(
+            create_tutor_session_state(
+                session_id=str(uuid4()),
+                user_id=user_id,
+                plan_id=selected_plan_id,
+                task_id=selected_task_id,
+                material_key=selected_material_key,
+                course_name=selected_plan["course_name"],
+                task_title=(
+                    selected_task["title"] if selected_task else None
+                ),
+                reference_title=(
+                    selected_material["title"]
+                    if selected_material
+                    else None
+                ),
+                reference_context=generation_result.reference_context,
+                reference_was_limited=(
+                    generation_result.reference_was_limited
+                ),
+                question=cleaned_question,
+                original_attempt=cleaned_attempt,
+                guidance=generation_result.guidance,
+            )
+        )
+        started = True
+    except TutorInputValidationError as error:
+        st.warning(str(error))
+    except Exception:
+        st.error(
+            "AI 튜터를 시작하지 못했습니다. 잠시 후 다시 시도해주세요."
+        )
+    finally:
+        st.session_state[REQUEST_IN_PROGRESS_KEY] = False
+
+    if started:
+        st.rerun()
+
+
+def render_tutor(supabase, user) -> None:
+    """단계별 힌트 AI 튜터 화면을 표시합니다."""
+
+    user_id = str(user.id)
+    st.header("🧭 단계별 힌트 AI 튜터")
+    st.write(
+        "정답을 바로 보여주지 않고 세 단계 힌트로 풀이 방향을 잡아드립니다."
+    )
+
+    active_user_id = st.session_state.get(ACTIVE_USER_ID_KEY)
+    if active_user_id is not None and active_user_id != user_id:
+        clear_tutor_state(st.session_state)
+
+    if st.session_state.get(ACTIVE_SESSION_ID_KEY):
+        _render_active_tutor_session(user_id)
+    else:
+        st.session_state.setdefault(REQUEST_IN_PROGRESS_KEY, False)
+        st.session_state.setdefault(FEEDBACK_IN_PROGRESS_KEY, False)
+        _render_tutor_setup(supabase, user_id)

@@ -20,6 +20,8 @@ from views.source_review_material_view import (
     SOURCE_REVIEW_SESSION_KEYS,
     render_source_review_material,
 )
+from views.tutor_state import clear_tutor_state
+from views.tutor_view import render_tutor
 
 st.set_page_config(
     page_title="AI 학습 코치",
@@ -126,6 +128,7 @@ with st.sidebar:
             "계획 만들기",
             "저장된 계획",
             "AI 복습 자료 만들기",
+            "단계별 힌트 AI 튜터",
         ],
         key="main_navigation",
     )
@@ -143,6 +146,8 @@ with st.sidebar:
             *SOURCE_REVIEW_SESSION_KEYS,
         ]:
             st.session_state.pop(key, None)
+
+        clear_tutor_state(st.session_state)
 
         clear_auth_session_state()
         st.rerun()
@@ -168,8 +173,14 @@ elif selected_page == "저장된 계획":
         user=user,
     )
 
-else:
+elif selected_page == "AI 복습 자료 만들기":
     render_source_review_material(
+        supabase=supabase,
+        user=user,
+    )
+
+else:
+    render_tutor(
         supabase=supabase,
         user=user,
     )
