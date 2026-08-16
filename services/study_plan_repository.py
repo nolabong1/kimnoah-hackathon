@@ -113,7 +113,8 @@ def get_user_study_plans(
         supabase.table("study_plans")
         .select(
             "id, title, course_name, goal, current_level, "
-            "start_date, target_date, status, created_at"
+            "start_date, target_date, available_schedule, "
+            "weekly_overview, status, created_at"
         )
         .eq("user_id", user_id)
         .order("created_at", desc=True)
@@ -194,6 +195,63 @@ def complete_study_task(
 
     if response.data is None:
         raise RuntimeError("과제 완료 처리 결과가 비어 있습니다.")
+
+    return response.data
+
+
+def complete_study_plan_for_weekly_review_test(
+    supabase: Client,
+    plan_id: str,
+) -> dict:
+    """본인 계획의 미완료 과제와 기존 보상을 테스트용으로 일괄 처리합니다."""
+
+    if not isinstance(plan_id, str) or not plan_id.strip():
+        raise ValueError("테스트 완료할 학습계획 ID가 필요합니다.")
+
+    response = (
+        supabase.rpc(
+            "complete_study_plan_for_weekly_review_test",
+            {
+                "p_plan_id": plan_id,
+            },
+        )
+        .execute()
+    )
+
+    if not isinstance(response.data, dict):
+        raise RuntimeError("학습계획 테스트 완료 결과가 비어 있습니다.")
+
+    required_fields = {
+        "plan_id",
+        "completed_task_count",
+        "task_exp",
+        "daily_bonus_exp",
+        "total_exp",
+        "level",
+        "current_streak",
+        "already_completed",
+    }
+    if not required_fields.issubset(response.data):
+        raise RuntimeError("학습계획 테스트 완료 응답 형식이 올바르지 않습니다.")
+
+    if str(response.data["plan_id"]) != plan_id:
+        raise RuntimeError("학습계획 테스트 완료 응답의 계획 ID가 다릅니다.")
+
+    numeric_fields = {
+        "completed_task_count",
+        "task_exp",
+        "daily_bonus_exp",
+        "total_exp",
+        "level",
+        "current_streak",
+    }
+    if any(
+        not isinstance(response.data[field], int)
+        or isinstance(response.data[field], bool)
+        or response.data[field] < 0
+        for field in numeric_fields
+    ) or not isinstance(response.data["already_completed"], bool):
+        raise RuntimeError("학습계획 테스트 완료 응답 값이 올바르지 않습니다.")
 
     return response.data
 

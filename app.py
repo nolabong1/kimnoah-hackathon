@@ -22,6 +22,11 @@ from views.source_review_material_view import (
 )
 from views.tutor_state import clear_tutor_state
 from views.tutor_view import render_tutor
+from views.weekly_review_state import (
+    PENDING_NAVIGATION_KEY,
+    clear_weekly_review_state,
+)
+from views.weekly_review_view import render_weekly_review
 
 st.set_page_config(
     page_title="AI 학습 코치",
@@ -115,6 +120,14 @@ except Exception as error:
     st.stop()
 
 
+pending_navigation = st.session_state.pop(
+    PENDING_NAVIGATION_KEY,
+    None,
+)
+if pending_navigation is not None:
+    st.session_state["main_navigation"] = pending_navigation
+
+
 with st.sidebar:
     st.write(f"**{profile['nickname']}**")
     st.metric("레벨", profile["level"])
@@ -129,6 +142,7 @@ with st.sidebar:
             "저장된 계획",
             "AI 복습 자료 만들기",
             "단계별 힌트 AI 튜터",
+            "주간 학습 회고",
         ],
         key="main_navigation",
     )
@@ -148,6 +162,7 @@ with st.sidebar:
             st.session_state.pop(key, None)
 
         clear_tutor_state(st.session_state)
+        clear_weekly_review_state(st.session_state)
 
         clear_auth_session_state()
         st.rerun()
@@ -179,8 +194,14 @@ elif selected_page == "AI 복습 자료 만들기":
         user=user,
     )
 
-else:
+elif selected_page == "단계별 힌트 AI 튜터":
     render_tutor(
+        supabase=supabase,
+        user=user,
+    )
+
+else:
+    render_weekly_review(
         supabase=supabase,
         user=user,
     )

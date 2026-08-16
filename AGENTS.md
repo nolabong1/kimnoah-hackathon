@@ -86,6 +86,7 @@ DB 구조, 보상 규칙, 제품 동작, 아키텍처를 바꾸는 작업은 구
 - `models/concept_mastery.py`: 숙련도 현재값, 문항별 변화,
   자동 복습 요약, 적응형 분석 응답 모델
 - `models/tutor.py`: 세 단계 힌트, 최종 풀이, 수정 풀이 피드백 모델
+- `models/weekly_review.py`: 주간 통계 스냅샷과 구조화 AI 회고 모델
 
 AI Structured Output과 RPC 응답은 가능한 한 Pydantic 모델로 검증한다.
 
@@ -112,6 +113,9 @@ AI Structured Output과 RPC 응답은 가능한 한 Pydantic 모델로 검증한
   저장된 응시의 적응형 분석 조회
 - `tutor_service.py`: 튜터 입력·참고자료 길이 검증과 단계별 안내·
   수정 풀이 피드백 OpenAI 호출
+- `weekly_review_service.py`: 회고 자격·통계 계산, 답변 검증, AI 회고,
+  고정 Markdown 변환과 다음 계획 문맥 구성
+- `weekly_review_repository.py`: 사용자·계획별 주간 회고 조회·생성·갱신
 
 View에서 SQL/RPC 응답을 직접 조립하기보다 repository와 service에 둔다.
 AI 호출과 DB 저장 책임도 분리한다.
@@ -132,6 +136,8 @@ AI 호출과 DB 저장 책임도 분리한다.
 - `completion_feedback.py`: 과제 완료/레벨업 피드백과 팝업
 - `tutor_state.py`: `tutor_` 접두사 세션 상태와 힌트 이동·초기화
 - `tutor_view.py`: 단계별 힌트, 풀이 점검, 정답 확인 튜터 UI
+- `weekly_review_state.py`: `weekly_review_` 접두사 미리보기·저장 상태 관리
+- `weekly_review_view.py`: 주간 통계, 회고, 다음 7일 계획 미리보기·저장 UI
 
 View는 렌더링과 사용자 상호작용에 집중한다. DB와 업무 규칙은
 service/repository 또는 Supabase RPC로 이동한다.
@@ -220,6 +226,29 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
 설정 위젯은 모두 `tutor_` 접두사를 사용하고 새 질문 또는 로그아웃 시
 튜터 상태만 제거한다.
 
+### 주간 학습 회고와 다음 계획
+
+1. 서울 기준 종료일에 도달했거나 모든 과제를 완료한 본인 계획만 선택한다.
+2. `study_tasks`의 예정일·상태·예상 시간을 이용해 통계 스냅샷을 계산한다.
+3. 최소 한 개의 사용자 회고 답변과 스냅샷으로 AI 구조화 회고를 한 번 만든다.
+4. 통계, 답변, AI 데이터와 고정 Markdown을 계획당 한 행으로 저장한다.
+5. 기존 회고는 저장 스냅샷을 표시하며 명시적 확인 전에는 갱신하지 않는다.
+6. 회고의 최소 문맥만 기존 7일 계획 생성기에 선택 인자로 전달한다.
+7. 다음 계획은 세션에 미리보기로 보존하고 사용자가 저장 버튼을 누를 때만
+   기존 계획·과제 저장 흐름으로 삽입한다.
+
+주간 회고 화면의 테스트 도구는
+`complete_study_plan_for_weekly_review_test` RPC로 본인 계획의 미완료
+과제를 한 트랜잭션에서 완료한다. 테스트 RPC 안에서만 퀴즈 만점 조건을
+우회하며 과제당 10 EXP와 기존 조건의 일일 20 EXP를 그대로 적용한다.
+반복 호출은 완료 상태와 `exp_events.source_key`로 중복 지급하지 않는다.
+당일 테스트 완료는 기존 `reset_today_test_progress`로 과제·보상·활동·성장
+상태를 함께 되돌린다.
+
+주간 회고와 다음 계획 생성은 과제 상태, EXP, 레벨, 연속 학습을 변경하지
+않는다. `estimated_minutes`는 실제 학습시간이 아니며 UI에서는
+`완료 과제 기준 예상 학습량`으로 표시한다.
+
 ### 테스트 초기화
 
 `reset_today_test_progress` RPC는 서울 기준 오늘의 테스트 데이터를
@@ -245,6 +274,7 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
 - `concept_aliases`: 다양한 표현을 정규 개념으로 연결하는 별칭
 - `concept_mastery`: 사용자·개념별 현재 숙련도
 - `concept_mastery_events`: 응시 문항별 숙련도 변경 원장
+- `weekly_learning_reviews`: 계획별 통계·사용자 답변·AI 회고 고정 스냅샷
 
 ### 주요 관계
 
@@ -258,6 +288,8 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
   `review_stage`, `review_interval_days`로 원인과 반복 단계를 추적한다.
 - `weekly_overview`는 표시용 JSON이지만 실제 일정의 기준은
   `study_tasks`이다. 과제가 바뀌면 둘을 다시 일치시킨다.
+- 주간 회고는 `(user_id, plan_id)`당 한 행이며 `(plan_id, user_id)` 복합
+  외래 키로 본인 계획에만 연결된다. 다시 만들기는 같은 행을 갱신한다.
 
 ### RLS와 RPC
 
@@ -341,6 +373,14 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
 - 최종 답 확인은 과제 완료, EXP, 숙련도, 학습 활동을 변경하지 않는다.
 - 튜터 세션은 현재 `st.session_state`에만 보존하며 DB 이력을 만들지 않는다.
 
+### 주간 회고
+
+- 계획 종료일 도달 또는 모든 과제 완료 조건을 유지한다.
+- 저장된 통계 스냅샷은 과제 변경이나 테스트 초기화로 자동 갱신하지 않는다.
+- 다음 계획은 정확히 7일이고 기존 시간 제한·과제 유형 검증을 그대로 따른다.
+- 회고 생성과 다음 계획 생성·저장은 과제 완료나 EXP 지급을 만들지 않는다.
+- 다음 계획은 명시적인 저장 버튼 전에는 DB에 삽입하지 않는다.
+
 ## Streamlit 구현 규칙
 
 Streamlit은 상호작용마다 스크립트를 위에서 아래로 다시 실행한다.
@@ -405,6 +445,13 @@ Python 변경 전후로 함수와 제어 흐름의 범위를 다시 확인한다
 4. `supabase_auto_review_tasks.sql`
 5. `supabase_spaced_repetition.sql`
 6. `supabase_adaptive_test_reset.sql`
+
+주간 회고 기능은 위 계층과 별도로 기본·업그레이드 스키마 적용 후
+`supabase_weekly_learning_reviews.sql`을 한 번 적용하고
+`supabase_weekly_learning_reviews_validation.sql`로 검증한다.
+주간 회고의 계획 전체 완료 테스트 도구는 이어서
+`supabase_weekly_review_test_completion.sql`을 적용하고
+`supabase_weekly_review_test_completion_validation.sql`로 검증한다.
 
 각 기능 SQL과 이름이 대응하는 `*_validation.sql`을 함께 유지한다.
 최종 통합 상태는
