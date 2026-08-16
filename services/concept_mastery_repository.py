@@ -6,6 +6,7 @@ from supabase import Client
 from models.concept_mastery import (
     AdaptiveQuizAnalysis,
     ConceptMasterySummary,
+    CourseConceptMasterySummary,
 )
 
 
@@ -177,6 +178,131 @@ def get_course_concept_masteries(
     return sorted(
         dashboard_masteries,
         key=lambda mastery: (
+            not mastery["is_weak"],
+            mastery["mastery_score"],
+            mastery["concept_name"],
+        ),
+    )
+
+
+def get_user_concept_masteries(
+    supabase: Client,
+    user_id: str,
+) -> list[dict]:
+    """로그인 사용자의 모든 과목별 개념 숙련도를 조회합니다."""
+
+    normalized_user_id = _normalize_uuid(
+        user_id,
+        "사용자 ID",
+    )
+    concepts_response = (
+        supabase.table("learning_concepts")
+        .select(
+            "id, course_key, course_name, concept_key, "
+            "canonical_name"
+        )
+        .eq("user_id", normalized_user_id)
+        .execute()
+    )
+    concepts = concepts_response.data or []
+
+    if not isinstance(concepts, list):
+        raise RuntimeError(
+            "전체 과목 개념 조회 결과가 올바르지 않습니다."
+        )
+
+    concepts_by_id = {
+        concept["id"]: concept
+        for concept in concepts
+        if isinstance(concept, dict)
+        and isinstance(concept.get("id"), str)
+    }
+
+    if not concepts_by_id:
+        return []
+
+    mastery_response = (
+        supabase.table("concept_mastery")
+        .select(
+            "concept_id, mastery_score, correct_count, "
+            "incorrect_count, consecutive_incorrect_count, "
+            "last_answer_correct, last_assessed_at"
+        )
+        .eq("user_id", normalized_user_id)
+        .in_("concept_id", list(concepts_by_id))
+        .execute()
+    )
+    masteries = mastery_response.data or []
+
+    if not isinstance(masteries, list):
+        raise RuntimeError(
+            "전체 과목 숙련도 조회 결과가 올바르지 않습니다."
+        )
+
+    if not masteries:
+        return []
+
+    weak_concept_ids = {
+        concept["concept_id"]
+        for concept in get_current_weak_concepts(
+            supabase=supabase,
+        )
+    }
+    user_masteries = []
+
+    try:
+        for mastery in masteries:
+            if not isinstance(mastery, dict):
+                raise ValueError
+
+            concept_id = mastery.get("concept_id")
+            concept = concepts_by_id.get(concept_id)
+
+            if concept is None:
+                raise ValueError
+
+            user_masteries.append(
+                CourseConceptMasterySummary.model_validate(
+                    {
+                        "concept_id": concept_id,
+                        "course_key": concept["course_key"],
+                        "course_name": concept["course_name"],
+                        "concept_key": concept["concept_key"],
+                        "concept_name": concept[
+                            "canonical_name"
+                        ],
+                        "mastery_score": mastery[
+                            "mastery_score"
+                        ],
+                        "correct_count": mastery[
+                            "correct_count"
+                        ],
+                        "incorrect_count": mastery[
+                            "incorrect_count"
+                        ],
+                        "consecutive_incorrect_count": mastery[
+                            "consecutive_incorrect_count"
+                        ],
+                        "last_answer_correct": mastery[
+                            "last_answer_correct"
+                        ],
+                        "last_assessed_at": mastery[
+                            "last_assessed_at"
+                        ],
+                        "is_weak": concept_id
+                        in weak_concept_ids,
+                    }
+                ).model_dump(mode="json")
+            )
+    except (KeyError, ValidationError, ValueError) as error:
+        raise RuntimeError(
+            "저장된 전체 과목 숙련도 형식이 올바르지 않습니다."
+        ) from error
+
+    return sorted(
+        user_masteries,
+        key=lambda mastery: (
+            mastery["course_name"].casefold(),
             not mastery["is_weak"],
             mastery["mastery_score"],
             mastery["concept_name"],

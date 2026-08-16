@@ -16,6 +16,7 @@ from views.auth_session_storage import (
 from views.saved_plans_view import render_saved_plans
 from views.create_plan_view import render_create_plan
 from views.dashboard_view import render_dashboard
+from views.mastery_dashboard_view import render_mastery_dashboard
 from views.source_review_material_view import (
     SOURCE_REVIEW_SESSION_KEYS,
     render_source_review_material,
@@ -120,12 +121,139 @@ except Exception as error:
     st.stop()
 
 
+def show_dashboard() -> None:
+    """오늘 학습 화면을 표시합니다."""
+
+    render_dashboard(
+        supabase=supabase,
+        user=user,
+    )
+
+
+def show_create_plan() -> None:
+    """학습계획 생성 화면을 표시합니다."""
+
+    render_create_plan(
+        supabase=supabase,
+        user=user,
+    )
+
+
+def show_saved_plans() -> None:
+    """저장된 학습계획 화면을 표시합니다."""
+
+    render_saved_plans(
+        supabase=supabase,
+        user=user,
+    )
+
+
+def show_source_review_material() -> None:
+    """원본 기반 AI 복습 자료 화면을 표시합니다."""
+
+    render_source_review_material(
+        supabase=supabase,
+        user=user,
+    )
+
+
+def show_tutor() -> None:
+    """단계별 힌트 AI 튜터 화면을 표시합니다."""
+
+    render_tutor(
+        supabase=supabase,
+        user=user,
+    )
+
+
+def show_weekly_review() -> None:
+    """주간 학습 회고 화면을 표시합니다."""
+
+    render_weekly_review(
+        supabase=supabase,
+        user=user,
+    )
+
+
+def show_mastery_dashboard() -> None:
+    """과목별 숙련도 화면을 표시합니다."""
+
+    render_mastery_dashboard(
+        supabase=supabase,
+        user=user,
+    )
+
+
+dashboard_page = st.Page(
+    show_dashboard,
+    title="오늘 학습",
+    icon=":material/home:",
+    url_path="today",
+    default=True,
+)
+create_plan_page = st.Page(
+    show_create_plan,
+    title="계획 만들기",
+    icon=":material/add_circle:",
+    url_path="create-plan",
+)
+saved_plans_page = st.Page(
+    show_saved_plans,
+    title="저장된 계획",
+    icon=":material/folder:",
+    url_path="saved-plans",
+)
+source_review_page = st.Page(
+    show_source_review_material,
+    title="AI 복습 자료 만들기",
+    icon=":material/article:",
+    url_path="review-material",
+)
+tutor_page = st.Page(
+    show_tutor,
+    title="단계별 힌트 AI 튜터",
+    icon=":material/psychology:",
+    url_path="tutor",
+)
+weekly_review_page = st.Page(
+    show_weekly_review,
+    title="주간 학습 회고",
+    icon=":material/analytics:",
+    url_path="weekly-review",
+)
+mastery_dashboard_page = st.Page(
+    show_mastery_dashboard,
+    title="과목별 숙련도",
+    icon=":material/monitoring:",
+    url_path="mastery",
+)
+
+pages_by_title = {
+    "오늘 학습": dashboard_page,
+    "계획 만들기": create_plan_page,
+    "저장된 계획": saved_plans_page,
+    "AI 복습 자료 만들기": source_review_page,
+    "단계별 힌트 AI 튜터": tutor_page,
+    "과목별 숙련도": mastery_dashboard_page,
+    "주간 학습 회고": weekly_review_page,
+}
+
+selected_page = st.navigation(
+    {
+        "": [dashboard_page],
+        "계획": [create_plan_page, saved_plans_page],
+        "AI 도구": [source_review_page, tutor_page],
+        "성장": [mastery_dashboard_page, weekly_review_page],
+    },
+    position="top",
+)
+
 pending_navigation = st.session_state.pop(
     PENDING_NAVIGATION_KEY,
     None,
 )
-if pending_navigation is not None:
-    st.session_state["main_navigation"] = pending_navigation
+if pending_navigation in pages_by_title:
+    st.switch_page(pages_by_title[pending_navigation])
 
 
 with st.sidebar:
@@ -134,21 +262,13 @@ with st.sidebar:
     st.metric("총 EXP", profile["total_exp"])
     st.metric("연속 학습", f"{profile['current_streak']}일")
 
-    selected_page = st.radio(
-        "메뉴",
-        options=[
-            "오늘 학습",
-            "계획 만들기",
-            "저장된 계획",
-            "AI 복습 자료 만들기",
-            "단계별 힌트 AI 튜터",
-            "주간 학습 회고",
-        ],
-        key="main_navigation",
-    )
-
     st.divider()
-    if st.button("로그아웃"):
+    if st.button(
+        "로그아웃",
+        key="logout_button",
+        icon=":material/logout:",
+        width="stretch",
+    ):
         sign_out(supabase)
 
         for key in [
@@ -169,39 +289,4 @@ with st.sidebar:
 
 
 st.success(f"{profile['nickname']}님, 환영합니다!")
-
-if selected_page == "오늘 학습":
-    render_dashboard(
-        supabase=supabase,
-        user=user,
-    )
-
-elif selected_page == "계획 만들기":
-    render_create_plan(
-        supabase=supabase,
-        user=user,
-    )
-
-elif selected_page == "저장된 계획":
-    render_saved_plans(
-        supabase=supabase,
-        user=user,
-    )
-
-elif selected_page == "AI 복습 자료 만들기":
-    render_source_review_material(
-        supabase=supabase,
-        user=user,
-    )
-
-elif selected_page == "단계별 힌트 AI 튜터":
-    render_tutor(
-        supabase=supabase,
-        user=user,
-    )
-
-else:
-    render_weekly_review(
-        supabase=supabase,
-        user=user,
-    )
+selected_page.run()

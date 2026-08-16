@@ -19,6 +19,13 @@ class ConceptMasterySummary(BaseModel):
     last_assessed_at: datetime | None = None
 
 
+class CourseConceptMasterySummary(ConceptMasterySummary):
+    """과목 표시 정보와 취약 판정을 포함한 숙련도입니다."""
+
+    course_name: str = Field(min_length=1, max_length=100)
+    is_weak: bool = False
+
+
 class ConceptMasteryChange(BaseModel):
     """퀴즈 문항 하나로 발생한 숙련도 변경 결과입니다."""
 

@@ -11,6 +11,10 @@ from models.concept_mastery import (
 from services.concept_mastery_repository import (
     get_course_concept_masteries,
     get_quiz_attempt_analysis,
+    get_user_concept_masteries,
+)
+from services.concept_mastery_service import (
+    summarize_course_masteries,
 )
 from services.quiz_repository import submit_quiz_attempt
 from services.study_plan_repository import reset_today_test_progress
@@ -212,6 +216,130 @@ class AdaptiveLearningRepositoryTests(unittest.TestCase):
         )
         self.assertTrue(result[0]["is_weak"])
         self.assertFalse(result[1]["is_weak"])
+
+    def test_user_masteries_include_all_course_names(self):
+        weak = mastery_summary(
+            CONCEPT_A_ID,
+            "loop",
+            "반복문",
+            45,
+            2,
+            2,
+            False,
+        )
+        supabase = FakeSupabase(
+            table_rows={
+                "learning_concepts": [
+                    {
+                        "id": CONCEPT_A_ID,
+                        "user_id": USER_ID,
+                        "course_key": "python",
+                        "course_name": "Python",
+                        "concept_key": "loop",
+                        "canonical_name": "반복문",
+                    },
+                    {
+                        "id": CONCEPT_B_ID,
+                        "user_id": USER_ID,
+                        "course_key": "database",
+                        "course_name": "데이터베이스",
+                        "concept_key": "join",
+                        "canonical_name": "JOIN",
+                    },
+                ],
+                "concept_mastery": [
+                    {
+                        "concept_id": CONCEPT_A_ID,
+                        "user_id": USER_ID,
+                        "mastery_score": 45,
+                        "correct_count": 1,
+                        "incorrect_count": 2,
+                        "consecutive_incorrect_count": 2,
+                        "last_answer_correct": False,
+                        "last_assessed_at": (
+                            "2026-08-16T02:00:00+00:00"
+                        ),
+                    },
+                    {
+                        "concept_id": CONCEPT_B_ID,
+                        "user_id": USER_ID,
+                        "mastery_score": 80,
+                        "correct_count": 4,
+                        "incorrect_count": 1,
+                        "consecutive_incorrect_count": 0,
+                        "last_answer_correct": True,
+                        "last_assessed_at": (
+                            "2026-08-17T02:00:00+00:00"
+                        ),
+                    },
+                ],
+            },
+            rpc_results={"get_current_weak_concepts": [weak]},
+        )
+
+        result = get_user_concept_masteries(
+            supabase,
+            USER_ID,
+        )
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(
+            {row["course_name"] for row in result},
+            {"Python", "데이터베이스"},
+        )
+        self.assertTrue(
+            next(
+                row
+                for row in result
+                if row["concept_id"] == CONCEPT_A_ID
+            )["is_weak"]
+        )
+
+    def test_course_mastery_summary_aggregates_and_prioritizes_weak(self):
+        masteries = [
+            {
+                "course_key": "python",
+                "course_name": "Python",
+                "mastery_score": 40,
+                "correct_count": 1,
+                "incorrect_count": 2,
+                "is_weak": True,
+                "last_assessed_at": "2026-08-16T02:00:00+00:00",
+            },
+            {
+                "course_key": "python",
+                "course_name": "Python",
+                "mastery_score": 80,
+                "correct_count": 3,
+                "incorrect_count": 1,
+                "is_weak": False,
+                "last_assessed_at": "2026-08-17T02:00:00+00:00",
+            },
+            {
+                "course_key": "database",
+                "course_name": "데이터베이스",
+                "mastery_score": 90,
+                "correct_count": 5,
+                "incorrect_count": 0,
+                "is_weak": False,
+                "last_assessed_at": "2026-08-15T02:00:00+00:00",
+            },
+        ]
+
+        result = summarize_course_masteries(masteries)
+
+        self.assertEqual(
+            [summary["course_key"] for summary in result],
+            ["python", "database"],
+        )
+        self.assertEqual(result[0]["average_mastery_score"], 60.0)
+        self.assertEqual(result[0]["weak_concept_count"], 1)
+        self.assertEqual(result[0]["correct_count"], 4)
+        self.assertEqual(result[0]["incorrect_count"], 3)
+        self.assertEqual(
+            result[0]["last_assessed_at"],
+            "2026-08-17T02:00:00+00:00",
+        )
 
     def test_saved_attempt_analysis_rebuilds_changes_and_review(self):
         weak = mastery_summary(
