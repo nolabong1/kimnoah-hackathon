@@ -89,6 +89,7 @@ DB 구조, 보상 규칙, 제품 동작, 아키텍처를 바꾸는 작업은 구
   자동 복습 요약, 적응형 분석 응답 모델
 - `models/tutor.py`: 세 단계 힌트, 최종 풀이, 수정 풀이 피드백 모델
 - `models/weekly_review.py`: 주간 통계 스냅샷과 구조화 AI 회고 모델
+- `models/gamification.py`: 업적·배지·도전과제 카탈로그와 저장/RPC 응답 모델
 
 AI Structured Output과 RPC 응답은 가능한 한 Pydantic 모델로 검증한다.
 
@@ -118,6 +119,9 @@ AI Structured Output과 RPC 응답은 가능한 한 Pydantic 모델로 검증한
 - `weekly_review_service.py`: 회고 자격·통계 계산, 답변 검증, AI 회고,
   고정 Markdown 변환과 다음 계획 문맥 구성
 - `weekly_review_repository.py`: 사용자·계획별 주간 회고 조회·생성·갱신
+- `gamification_catalog.py`: 버전 관리되는 업적·배지·도전과제 정의
+- `gamification_service.py`: 서울 기준 기간, 진행도, 적격성, 결정론적 선택 계산
+- `gamification_repository.py`: 게임화 동기화·조회·보상 수령·대표 배지 RPC 연결
 
 View에서 SQL/RPC 응답을 직접 조립하기보다 repository와 service에 둔다.
 AI 호출과 DB 저장 책임도 분리한다.
@@ -142,6 +146,9 @@ AI 호출과 DB 저장 책임도 분리한다.
 - `tutor_view.py`: 단계별 힌트, 풀이 점검, 정답 확인 튜터 UI
 - `weekly_review_state.py`: `weekly_review_` 접두사 미리보기·저장 상태 관리
 - `weekly_review_view.py`: 주간 통계, 회고, 다음 7일 계획 미리보기·저장 UI
+- `gamification_state.py`: `gamification_` 접두사 알림·처리·이동 상태 관리
+- `gamification_view.py`: 일간·주간 도전과제, 업적 진행도,
+  대표 배지 설정과 오늘 학습 게임화 요약 UI
 
 View는 렌더링과 사용자 상호작용에 집중한다. DB와 업무 규칙은
 service/repository 또는 Supabase RPC로 이동한다.
@@ -212,8 +219,32 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
 
 ### 과제 완료와 보상
 
-과제 완료는 반드시 `complete_study_task` RPC를 사용한다.
+일반 과제 완료는 반드시 `complete_study_task_with_gamification` RPC를 사용한다.
+이 RPC는 기존 `complete_study_task`와 게임화 동기화를 같은 트랜잭션에서
+처리한다. 퀴즈 제출도 `submit_quiz_attempt_with_gamification` 래퍼를 사용한다.
+기존 완료·제출 RPC는 클라이언트가 직접 실행할 수 없다.
 클라이언트가 EXP 값을 정해서 직접 저장하면 안 된다.
+
+### 업적·배지·도전과제
+
+1. 업적 13개와 일간 5개·주간 6개 도전과제 템플릿은 코드와 서버 내부
+   카탈로그에 같은 안정 키와 보상값으로 보존한다.
+2. 과제 완료와 퀴즈 제출 성공 뒤 서버가 검증된 원장으로 진행도를 갱신한다.
+3. 업적은 조건 달성 시 한 번만 해금되고 `achievement:<key>` EXP 원장으로
+   보상을 즉시 한 번 지급한다. 해금 소유권은 이후 진행도가 변해도 유지한다.
+4. 도전과제는 사용자·서울 기준 기간별로 일간 최대 3개, 주간 최대 2개를
+   결정론적으로 선택해 저장하며 달성 불가능한 템플릿은 제외한다.
+5. 도전과제 완료만으로 EXP를 지급하지 않는다. 사용자가 수령할 때
+   `challenge:<challenge_id>` 원장과 프로필 갱신을 한 트랜잭션에서 처리한다.
+6. 완료한 도전과제는 기간이 지나도 수령할 수 있고 미완료 항목만 만료된다.
+7. 대표 배지는 해금한 업적의 배지만 최대 3개 슬롯에 중복 없이 장착한다.
+8. 게임화 사용자 테이블은 클라이언트 직접 쓰기를 허용하지 않고 소유권을
+   확인하는 서버 RPC만 상태를 변경한다.
+9. 게임화 화면의 일반 렌더링과 오늘 학습 요약은 읽기 전용이다. 보상 판정은
+   과제 완료·퀴즈 제출 래퍼 또는 사용자가 누른 명시적 동기화에서만 실행한다.
+10. 과제·퀴즈 동작에서 새로 해금된 업적만 `gamification_` 알림 큐에 넣고
+    다음 rerun에 한 번 표시한다. 로그아웃은 게임화 접두사 상태만 제거한다.
+11. 잠긴 비밀 업적은 이름·조건·보상·배지 정보를 해금 전까지 가린다.
 
 ### 단계별 힌트 AI 튜터
 
@@ -279,6 +310,9 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
 - `concept_mastery`: 사용자·개념별 현재 숙련도
 - `concept_mastery_events`: 응시 문항별 숙련도 변경 원장
 - `weekly_learning_reviews`: 계획별 통계·사용자 답변·AI 회고 고정 스냅샷
+- `user_achievements`: 사용자별 업적 진행, 영구 해금과 보상 시각
+- `user_challenges`: 기간별 고정 도전과제, 진행·완료·수령 상태와 보상 스냅샷
+- `user_badge_showcase`: 사용자별 최대 3개의 대표 업적 배지 슬롯
 
 ### 주요 관계
 
@@ -368,6 +402,10 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
 - 레벨은 정수 나눗셈 기준 `(total_exp / 100) + 1`이다.
 - 기존 연속 학습 계산을 유지한다.
 - 반복 완료 요청은 과제 EXP와 일일 보너스를 다시 지급하지 않는다.
+- 업적 EXP는 `achievement:<achievement_key>`, 도전과제 EXP는
+  `challenge:<challenge_id>` source key로 한 번만 지급한다.
+- 게임화 보상 후에도 레벨 계산식은 기존 규칙을 그대로 사용한다.
+- 일간 도전과제는 서울 자정, 주간 도전과제는 월요일 서울 자정에 시작한다.
 
 ### AI 튜터
 

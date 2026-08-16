@@ -16,6 +16,14 @@ from views.auth_session_storage import (
 from views.saved_plans_view import render_saved_plans
 from views.create_plan_view import render_create_plan
 from views.dashboard_view import render_dashboard
+from views.gamification_state import (
+    PENDING_NAVIGATION_KEY as GAMIFICATION_PENDING_NAVIGATION_KEY,
+    clear_gamification_state,
+)
+from views.gamification_view import (
+    render_gamification_notifications,
+    render_gamification_page,
+)
 from views.mastery_dashboard_view import render_mastery_dashboard
 from views.source_review_material_view import (
     SOURCE_REVIEW_SESSION_KEYS,
@@ -24,7 +32,7 @@ from views.source_review_material_view import (
 from views.tutor_state import clear_tutor_state
 from views.tutor_view import render_tutor
 from views.weekly_review_state import (
-    PENDING_NAVIGATION_KEY,
+    PENDING_NAVIGATION_KEY as WEEKLY_REVIEW_PENDING_NAVIGATION_KEY,
     clear_weekly_review_state,
 )
 from views.weekly_review_view import render_weekly_review
@@ -184,6 +192,15 @@ def show_mastery_dashboard() -> None:
     )
 
 
+def show_gamification() -> None:
+    """업적·도전과제 화면을 표시합니다."""
+
+    render_gamification_page(
+        supabase=supabase,
+        user=user,
+    )
+
+
 dashboard_page = st.Page(
     show_dashboard,
     title="오늘 학습",
@@ -227,6 +244,12 @@ mastery_dashboard_page = st.Page(
     icon=":material/monitoring:",
     url_path="mastery",
 )
+gamification_page = st.Page(
+    show_gamification,
+    title="업적·도전과제",
+    icon=":material/military_tech:",
+    url_path="gamification",
+)
 
 pages_by_title = {
     "오늘 학습": dashboard_page,
@@ -235,6 +258,7 @@ pages_by_title = {
     "AI 복습 자료 만들기": source_review_page,
     "단계별 힌트 AI 튜터": tutor_page,
     "과목별 숙련도": mastery_dashboard_page,
+    "업적·도전과제": gamification_page,
     "주간 학습 회고": weekly_review_page,
 }
 
@@ -243,17 +267,29 @@ selected_page = st.navigation(
         "": [dashboard_page],
         "계획": [create_plan_page, saved_plans_page],
         "AI 도구": [source_review_page, tutor_page],
-        "성장": [mastery_dashboard_page, weekly_review_page],
+        "성장": [
+            mastery_dashboard_page,
+            gamification_page,
+            weekly_review_page,
+        ],
     },
     position="top",
 )
 
 pending_navigation = st.session_state.pop(
-    PENDING_NAVIGATION_KEY,
+    WEEKLY_REVIEW_PENDING_NAVIGATION_KEY,
     None,
 )
+if pending_navigation is None:
+    pending_navigation = st.session_state.pop(
+        GAMIFICATION_PENDING_NAVIGATION_KEY,
+        None,
+    )
 if pending_navigation in pages_by_title:
     st.switch_page(pages_by_title[pending_navigation])
+
+
+render_gamification_notifications()
 
 
 with st.sidebar:
@@ -283,6 +319,7 @@ with st.sidebar:
 
         clear_tutor_state(st.session_state)
         clear_weekly_review_state(st.session_state)
+        clear_gamification_state(st.session_state)
 
         clear_auth_session_state()
         st.rerun()

@@ -17,6 +17,7 @@ from services.quiz_repository import (
     submit_quiz_attempt,
 )
 from services.quiz_service import generate_quiz
+from views.gamification_state import queue_gamification_notifications
 from views.spaced_review_ui import (
     get_spaced_review_label,
 )
@@ -505,6 +506,11 @@ def _render_quiz_form(
                 answers=answers,
                 submission_key=submission_key,
             )
+
+        queue_gamification_notifications(
+            st.session_state,
+            attempt.get("gamification"),
+        )
 
         st.session_state.pop(
             submission_request_state_key,

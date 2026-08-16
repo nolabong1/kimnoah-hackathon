@@ -13,6 +13,7 @@ from services.study_plan_repository import (
 from views.completion_feedback import (
     render_completion_feedback,
 )
+from views.gamification_state import queue_gamification_notifications
 from views.quiz_ui import render_quiz_section
 from views.review_material_ui import (
     render_review_material_section,
@@ -141,6 +142,11 @@ def complete_task_and_rerun(
                 supabase=supabase,
                 task_id=task_id,
             )
+
+        queue_gamification_notifications(
+            st.session_state,
+            result.get("gamification"),
+        )
 
         if result["already_completed"]:
             message = "이미 완료된 과제입니다."

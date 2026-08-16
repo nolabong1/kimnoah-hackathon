@@ -13,6 +13,10 @@ from services.study_plan_repository import (
     get_user_study_plans,
 )
 from views.completion_feedback import render_completion_feedback
+from views.gamification_state import queue_gamification_notifications
+from views.gamification_view import (
+    render_gamification_dashboard_summary,
+)
 from views.quiz_ui import render_quiz_section
 from views.review_material_ui import (
     render_review_material_section,
@@ -213,6 +217,10 @@ def render_dashboard(supabase, user):
     )
 
     render_completion_feedback()
+    render_gamification_dashboard_summary(
+        supabase=supabase,
+        user_id=str(user.id),
+    )
 
     today = datetime.now(
         ZoneInfo("Asia/Seoul")
@@ -458,6 +466,11 @@ def render_dashboard(supabase, user):
                             supabase=supabase,
                             task_id=task["id"],
                         )
+
+                    queue_gamification_notifications(
+                        st.session_state,
+                        result.get("gamification"),
+                    )
 
                     if result["already_completed"]:
                         message = (

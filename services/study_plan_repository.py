@@ -3,6 +3,9 @@ from datetime import date, timedelta
 from supabase import Client
 
 from models.study_plan import WeeklyStudyPlan
+from services.gamification_repository import (
+    validate_gamification_sync_result,
+)
 
 
 def save_weekly_study_plan(
@@ -185,7 +188,7 @@ def complete_study_task(
 
     response = (
         supabase.rpc(
-            "complete_study_task",
+            "complete_study_task_with_gamification",
             {
                 "p_task_id": task_id,
             },
@@ -193,10 +196,16 @@ def complete_study_task(
         .execute()
     )
 
-    if response.data is None:
+    if not isinstance(response.data, dict):
         raise RuntimeError("과제 완료 처리 결과가 비어 있습니다.")
 
-    return response.data
+    normalized_result = dict(response.data)
+    normalized_result["gamification"] = (
+        validate_gamification_sync_result(
+            response.data.get("gamification")
+        )
+    )
+    return normalized_result
 
 
 def complete_study_plan_for_weekly_review_test(

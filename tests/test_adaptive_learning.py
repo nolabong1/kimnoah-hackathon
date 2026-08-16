@@ -434,12 +434,20 @@ class AdaptiveLearningRepositoryTests(unittest.TestCase):
     def test_submission_key_and_answers_are_forwarded_to_rpc(self):
         supabase = FakeSupabase(
             rpc_results={
-                "submit_quiz_attempt": {
+                "submit_quiz_attempt_with_gamification": {
                     "attempt_id": ATTEMPT_ID,
                     "score": 100,
                     "mastery_changes": [],
                     "weak_concepts": [],
                     "auto_review_tasks": [],
+                    "gamification": {
+                        "total_exp": 100,
+                        "level": 2,
+                        "current_streak": 1,
+                        "achievement_exp_awarded": 0,
+                        "newly_unlocked": [],
+                        "newly_completed_challenges": [],
+                    },
                 }
             }
         )
@@ -455,7 +463,10 @@ class AdaptiveLearningRepositoryTests(unittest.TestCase):
         self.assertEqual(result["attempt_id"], ATTEMPT_ID)
         self.assertEqual(result["score"], 100)
         rpc_name, params = supabase.rpc_calls[0]
-        self.assertEqual(rpc_name, "submit_quiz_attempt")
+        self.assertEqual(
+            rpc_name,
+            "submit_quiz_attempt_with_gamification",
+        )
         self.assertEqual(params["p_answers"], [0, 1])
         self.assertEqual(
             params["p_submission_key"],

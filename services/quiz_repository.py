@@ -6,6 +6,9 @@ from supabase import Client
 from models.concept_mastery import AdaptiveQuizAnalysis
 from models.quiz import QuizDraft
 from services.concept_service import build_quiz_concept_payload
+from services.gamification_repository import (
+    validate_gamification_sync_result,
+)
 
 
 def get_learning_concept_catalog(
@@ -216,7 +219,7 @@ def submit_quiz_attempt(
 
     response = (
         supabase.rpc(
-            "submit_quiz_attempt",
+            "submit_quiz_attempt_with_gamification",
             {
                 "p_quiz_id": quiz_id,
                 "p_quiz_updated_at": quiz_updated_at,
@@ -244,6 +247,11 @@ def submit_quiz_attempt(
     normalized_result = dict(response.data)
     normalized_result.update(
         analysis.model_dump(mode="json")
+    )
+    normalized_result["gamification"] = (
+        validate_gamification_sync_result(
+            response.data.get("gamification")
+        )
     )
 
     return normalized_result
