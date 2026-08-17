@@ -18,7 +18,11 @@ from services.concept_mastery_service import (
 )
 from services.quiz_repository import submit_quiz_attempt
 from services.study_plan_repository import reset_today_test_progress
-from views.dashboard_view import _get_next_auto_review_tasks
+from views.dashboard_view import (
+    _build_today_tasks,
+    _get_next_auto_review_tasks,
+    _get_priority_weak_masteries,
+)
 from views.spaced_review_ui import get_spaced_review_label
 
 
@@ -501,6 +505,63 @@ class AdaptiveLearningRepositoryTests(unittest.TestCase):
 
 
 class AdaptiveLearningDashboardTests(unittest.TestCase):
+    def test_today_tasks_include_only_selected_date_and_plan_context(self):
+        plan = {
+            "id": PLAN_ID,
+            "title": "파이썬 계획",
+            "course_name": "파이썬",
+            "goal": "반복문 익히기",
+            "current_level": 3,
+        }
+        tasks = [
+            {
+                "id": "today",
+                "scheduled_date": "2026-08-17",
+                "title": "오늘 과제",
+            },
+            {
+                "id": "tomorrow",
+                "scheduled_date": "2026-08-18",
+                "title": "내일 과제",
+            },
+        ]
+
+        result = _build_today_tasks(tasks, plan, "2026-08-17")
+
+        self.assertEqual([task["id"] for task in result], ["today"])
+        self.assertEqual(result[0]["plan_id"], PLAN_ID)
+        self.assertEqual(result[0]["course_name"], "파이썬")
+        self.assertNotIn("plan_id", tasks[0])
+
+    def test_weak_concepts_are_prioritized_for_compact_dashboard(self):
+        masteries = [
+            {
+                "concept_name": "정상 개념",
+                "mastery_score": 40,
+                "consecutive_incorrect_count": 3,
+                "is_weak": False,
+            },
+            {
+                "concept_name": "조건문",
+                "mastery_score": 55,
+                "consecutive_incorrect_count": 1,
+                "is_weak": True,
+            },
+            {
+                "concept_name": "반복문",
+                "mastery_score": 35,
+                "consecutive_incorrect_count": 2,
+                "is_weak": True,
+            },
+        ]
+
+        result = _get_priority_weak_masteries(masteries)
+
+        self.assertEqual(
+            [mastery["concept_name"] for mastery in result],
+            ["반복문", "조건문"],
+        )
+
     def test_spaced_review_label_describes_stage_and_interval(self):
         label = get_spaced_review_label(
             {

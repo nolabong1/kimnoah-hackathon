@@ -22,7 +22,7 @@ CURRENT_LEVEL_OPTIONS = {
 
 
 def render_create_plan(supabase, user):
-    st.subheader("나만의 7일 학습계획")
+    st.header("계획 만들기")
     st.caption(
         "현재 수준과 하루 학습 가능 시간을 반영합니다."
     )

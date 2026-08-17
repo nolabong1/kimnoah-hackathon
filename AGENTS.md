@@ -72,10 +72,11 @@ DB 구조, 보상 규칙, 제품 동작, 아키텍처를 바꾸는 작업은 구
 - Streamlit 페이지 설정과 Supabase 클라이언트 생성
 - 인증 세션 초기화
 - 로그인·회원가입·로그아웃 UI
-- 프로필과 게임화 요약 표시
+- 로그인 사용자 프로필 요약 표시
 - `st.navigation` callable 페이지를 사용한 화면 라우팅
-- 상단 탐색을 `오늘 학습`, `계획`, `AI 도구`, `성장` 영역으로 그룹화
-- 사이드바에는 프로필·EXP·연속 학습·로그아웃만 표시
+- 확장된 사이드바 탐색을 `오늘 학습`, `계획`, `AI 도구`, `성장` 영역으로 그룹화
+- 사이드바에는 탐색과 프로필·EXP·연속 학습·로그아웃을 함께 표시
+- 인증 후 화면은 데스크톱 대시보드에 맞게 `wide` 레이아웃 사용
 
 새 비즈니스 로직을 `app.py`에 직접 넣지 않는다.
 
@@ -131,7 +132,9 @@ AI 호출과 DB 저장 책임도 분리한다.
 - `auth_session_storage.py`: 브라우저 `sessionStorage`를 이용한 로그인 유지
 - `create_plan_view.py`: 계획 입력, AI 생성, 저장 UI
 - `dashboard_view.py`: 선택한 활성 계획의 오늘 과제,
-  숙련도·취약 개념·다음 자동 복습 표시
+  숙련도·취약 개념·다음 자동 복습 표시. 데스크톱에서는 과제 선택 목록,
+  선택 과제 상세, 학습 진단·게임화 요약을 3영역으로 배치하고 취약 개념은
+  우선순위 3개만 요약
 - `mastery_dashboard_view.py`: 전체 과목의 평균 숙련도 비교와
   선택 과목의 개념별 현재 숙련도·취약 상태 표시
 - `saved_plans_view.py`: 저장된 계획/과제 조회, 완료,
@@ -551,3 +554,16 @@ SQL 변경 후:
 
 새 기능을 제안할 때는 기대 효과, 개발 노력, 주요 위험,
 MVP 필수 여부를 함께 설명한다.
+
+## UI design
+
+Before creating or modifying user-facing UI, read:
+
+- `docs/design/DESIGN_SYSTEM.md`
+- Reference images in `docs/design/references/`
+
+Treat these files as the visual source of truth.
+
+Reuse the existing theme, UI helpers, components, and spacing rules. Do not introduce new colors, button styles, card styles, typography scales, or layout conventions without explicit approval.
+
+Reference products are inspiration only. Do not copy their logos, proprietary illustrations, characters, text, or brand assets.

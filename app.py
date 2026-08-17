@@ -40,18 +40,20 @@ from views.weekly_review_view import render_weekly_review
 st.set_page_config(
     page_title="AI 학습 코치",
     page_icon="🎓",
-    layout="centered",
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
 
 supabase = get_supabase_client()
 
-st.title("🎓 AI 학습 코치")
-st.write("나의 목표와 수준에 맞는 학습계획을 만들어보세요.")
 initialize_auth_session(supabase)
 
 
 # 로그인하지 않은 사용자에게 인증 화면 표시
 if st.session_state.auth_user is None:
+    st.title("🎓 AI 학습 코치")
+    st.write("나의 목표와 수준에 맞는 학습계획을 만들어보세요.")
+
     login_tab, signup_tab = st.tabs(["로그인", "회원가입"])
 
     with login_tab:
@@ -273,7 +275,8 @@ selected_page = st.navigation(
             weekly_review_page,
         ],
     },
-    position="top",
+    position="sidebar",
+    expanded=True,
 )
 
 pending_navigation = st.session_state.pop(
@@ -293,12 +296,15 @@ render_gamification_notifications()
 
 
 with st.sidebar:
-    st.write(f"**{profile['nickname']}**")
-    st.metric("레벨", profile["level"])
-    st.metric("총 EXP", profile["total_exp"])
-    st.metric("연속 학습", f"{profile['current_streak']}일")
+    with st.container(border=True):
+        st.caption("로그인 사용자")
+        st.markdown(f"### {profile['nickname']}")
+        st.caption(
+            f"레벨 {profile['level']} · "
+            f"총 {profile['total_exp']} EXP · "
+            f"연속 학습 {profile['current_streak']}일"
+        )
 
-    st.divider()
     if st.button(
         "로그아웃",
         key="logout_button",
@@ -324,6 +330,4 @@ with st.sidebar:
         clear_auth_session_state()
         st.rerun()
 
-
-st.success(f"{profile['nickname']}님, 환영합니다!")
 selected_page.run()

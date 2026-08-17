@@ -253,11 +253,8 @@ def render_gamification_dashboard_summary(
                 ),
                 border=True,
             )
-            st.metric(
-                "대표 배지",
-                showcase_icons or "미설정",
-                border=True,
-            )
+
+        st.caption(f"대표 배지 · {showcase_icons or '미설정'}")
 
         if not achievements and not challenges:
             st.caption(

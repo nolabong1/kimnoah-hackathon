@@ -189,8 +189,7 @@ def complete_task_and_rerun(
 def render_saved_plans(supabase, user):
     apply_deleted_plan_state()
 
-    st.divider()
-    st.subheader("저장된 학습계획")
+    st.header("저장된 계획")
 
     render_completion_feedback()
 
