@@ -97,6 +97,9 @@ DB 구조, 보상 규칙, 제품 동작, 아키텍처를 바꾸는 작업은 구
 - `models/tutor.py`: 세 단계 힌트, 최종 풀이, 수정 풀이 피드백 모델
 - `models/weekly_review.py`: 주간 통계 스냅샷과 구조화 AI 회고 모델
 - `models/gamification.py`: 업적·배지·도전과제 카탈로그와 저장/RPC 응답 모델
+- `models/coin_economy.py`: 코인 지갑과 멱등 거래 원장 응답 모델
+- `models/shop.py`: 상점 아이템, 고정 슬롯, 인벤토리·구매와
+  사용자 학습방 장착 응답 모델
 
 AI Structured Output과 RPC 응답은 가능한 한 Pydantic 모델로 검증한다.
 
@@ -129,6 +132,11 @@ AI Structured Output과 RPC 응답은 가능한 한 Pydantic 모델로 검증한
 - `gamification_catalog.py`: 버전 관리되는 업적·배지·도전과제 정의
 - `gamification_service.py`: 서울 기준 기간, 진행도, 적격성, 결정론적 선택 계산
 - `gamification_repository.py`: 게임화 동기화·조회·보상 수령·대표 배지 RPC 연결
+- `shop_catalog.py`: 승인된 꾸미기 아이템 15종과 가격·슬롯·에셋 경로 정의
+- `shop_repository.py`: 코인 지갑·상점·인벤토리·학습방 조회와
+  구매·학습방 저장 RPC 연결
+- `study_room_service.py`: 보유·슬롯 규칙 검증과 로컬 에셋 기반
+  1600×900 학습방 미리보기 합성
 
 View에서 SQL/RPC 응답을 직접 조립하기보다 repository와 service에 둔다.
 AI 호출과 DB 저장 책임도 분리한다.
@@ -160,8 +168,17 @@ AI 호출과 DB 저장 책임도 분리한다.
 - `weekly_review_view.py`: 학습 기록·AI 회고·다음 계획을 탭으로 분리하고
   다음 7일 계획 미리보기·명시적 저장을 제공하는 UI
 - `gamification_state.py`: `gamification_` 접두사 알림·처리·이동 상태 관리
-- `gamification_view.py`: 일간·주간 도전과제, 업적 진행도와 대표 배지를
-  상태가 명시된 2~3열 카드로 표시하고 오늘 학습 요약도 제공
+- `gamification_view.py`: 일간·주간 도전과제, 업적 진행도, 대표 배지와
+  코인 상점·인벤토리·학습방 탭을 표시하고 오늘 학습 요약도 제공
+- `shop_state.py`: `shop_` 접두사 구매·학습방 저장 처리와 필터·알림 상태 관리
+- `shop_view.py`: 코인 지갑, 카테고리별 상점 카드, 구매 확인 dialog와
+  영구 보유 인벤토리 UI
+- `study_room_view.py`: 왼쪽 합성 미리보기와 오른쪽 일곱 슬롯 선택,
+  명시적 학습방 저장 UI
+- `assets/study_room/`: 기본 학습방, 초기 15종의 1600×900 투명 오버레이와
+  256×256 상점 썸네일, 합성 검수본, 카탈로그와 생성 출처 기록
+- `tools/prepare_study_room_asset.py`: 생성 원본을 고정 캔버스·썸네일로
+  규격화하고 합성 미리보기와 JSON 카탈로그를 만드는 개발 도구
 - `test_tools_view.py`: 사이드바의 개발용 계획 전체 완료·오늘 기록 초기화와
   확인 절차. 닫혀 있을 때는 계획 데이터를 조회하지 않음
 - `ui_components.py`: 데이터·세션 상태와 분리된 인증·읽기·일반·대시보드
@@ -263,6 +280,36 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
     다음 rerun에 한 번 표시한다. 로그아웃은 게임화 접두사 상태만 제거한다.
 11. 잠긴 비밀 업적은 이름·조건·보상·배지 정보를 해금 전까지 가린다.
 
+### 코인 상점
+
+1. 활성 상점 카탈로그는 서버의 `shop_items` 가격과 장착 규칙을 기준으로 한다.
+2. 클라이언트는 구매할 `item_key`만 보내고 가격이나 차감량을 보내지 않는다.
+3. `purchase_shop_item` RPC가 지갑 잠금, 잔액, 중복 소유, 서버 가격을 검증하고
+   구매 원장과 인벤토리를 한 트랜잭션으로 저장한다.
+4. 동일 아이템은 사용자당 한 번만 구매할 수 있으며 반복 요청은 추가 코인을
+   차감하지 않는다.
+5. 상점과 인벤토리는 인증 사용자에게 읽기만 허용하고 모든 쓰기는 서버 RPC로
+   처리한다.
+6. 상점 UI는 서버 카탈로그 가격과 본인 지갑·인벤토리를 한 번씩 조회하고,
+   구매 확인 후 `item_key`만 RPC에 전달한다. 이미 보유했거나 코인이 부족한
+   아이템은 구매할 수 없고 rerun 후 서버 상태를 다시 표시한다.
+7. 아직 제작되지 않은 썸네일은 카테고리 기본 아이콘으로 표시하며, 승인된
+   로컬 카탈로그 경로에 에셋이 생기면 같은 카드에서 자동으로 사용한다.
+
+### 학습방 꾸미기
+
+1. 사용자는 본인 인벤토리의 활성 아이템만 일곱 고정 슬롯에 장착한다.
+2. 슬롯 변경은 로컬 에셋 합성 미리보기에만 즉시 반영되고 명시적 저장 전에는
+   DB를 변경하지 않는다.
+3. `save_user_study_room` RPC가 `auth.uid()`, 인벤토리 소유권, 활성 상품,
+   `allowed_slots`와 좌우 소품 중복을 검증한 뒤 사용자당 한 행을 upsert한다.
+4. 클라이언트는 `user_study_rooms`를 직접 쓰지 못하고 본인 행만 읽는다.
+5. 기본 방은 무료 벽·바닥이 있는 빈 공간이며 장착하지 않은 가구·소품 슬롯은
+   비어 있다. 상점 아이템을 장착해 저장해야 이후 조회에도 유지된다.
+6. 좌우 소품은 같은 1600×900 원본의 유효 픽셀을 각 고정 중심점으로 이동해
+   합성하며, 같은 소품 하나를 양쪽에 동시에 장착할 수 없다.
+7. 학습방 장착·미리보기·저장은 EXP, 코인, 과제 상태를 변경하지 않는다.
+
 ### 단계별 힌트 AI 튜터
 
 1. 사용자가 본인의 계획과 선택 과제·참고자료, 문제, 현재 풀이를 입력한다.
@@ -330,6 +377,11 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
 - `user_achievements`: 사용자별 업적 진행, 영구 해금과 보상 시각
 - `user_challenges`: 기간별 고정 도전과제, 진행·완료·수령 상태와 보상 스냅샷
 - `user_badge_showcase`: 사용자별 최대 3개의 대표 업적 배지 슬롯
+- `user_coin_wallets`: 사용자별 현재 코인과 누적 획득·사용량
+- `coin_transactions`: `(user_id, source_key)`로 멱등성을 보장하는 코인 원장
+- `shop_items`: 서버가 신뢰하는 15종 아이템 가격·슬롯·에셋 경로 카탈로그
+- `user_inventory`: 구매 코인 원장과 같은 사용자를 강제하는 영구 보유 아이템
+- `user_study_rooms`: 사용자당 한 행의 일곱 고정 슬롯 현재 장착 상태
 
 ### 주요 관계
 
@@ -423,6 +475,12 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
   `challenge:<challenge_id>` source key로 한 번만 지급한다.
 - 게임화 보상 후에도 레벨 계산식은 기존 규칙을 그대로 사용한다.
 - 일간 도전과제는 서울 자정, 주간 도전과제는 월요일 서울 자정에 시작한다.
+- 코인은 EXP와 분리된 꾸미기 전용 재화이며 사용자당 시작 코인 30개를
+  `onboarding:shop_v1` 원장과 함께 한 번만 지급한다.
+- 코인 지갑과 원장은 클라이언트가 직접 수정하지 않으며 원장의
+  `(user_id, source_key)`로 중복 증감을 막는다.
+- 코인 보상·가격·학습방 규칙의 승인 기준은
+  `docs/GAMIFICATION_SHOP_ROOM_MVP.md`를 따른다.
 
 ### AI 튜터
 
@@ -511,6 +569,21 @@ Python 변경 전후로 함수와 제어 흐름의 범위를 다시 확인한다
 주간 회고의 계획 전체 완료 테스트 도구는 이어서
 `supabase_weekly_review_test_completion.sql`을 적용하고
 `supabase_weekly_review_test_completion_validation.sql`로 검증한다.
+
+코인 경제 기반 스키마는 `supabase_coin_economy_schema.sql`을 적용하고
+`supabase_coin_economy_schema_validation.sql`로 RLS, 소유권 외래 키,
+시작 코인과 원장 합계를 검증한다. 이어서 `supabase_coin_rewards.sql`을
+적용하고 `supabase_coin_rewards_validation.sql`로 기존 EXP 원장 기반 코인
+지급, 일일 상한, 금액과 추적 관계를 검증한다. 테스트 초기화 연동은
+`supabase_coin_test_reset.sql` 적용 후
+`supabase_coin_test_reset_validation.sql`로 검증한다. EXP 원장을 삭제하면
+기존 코인 보상 행은 보존하고 `test_reset_reversal` 음수 원장으로 취소한다.
+이어서 `supabase_shop_inventory.sql`을 적용하고
+`supabase_shop_inventory_validation.sql`로 카탈로그, 인벤토리 소유권,
+원자적 구매 RPC와 코인 원장 일치를 검증한다.
+마지막으로 `supabase_study_rooms.sql`을 적용하고
+`supabase_study_rooms_validation.sql`로 학습방 RLS, 슬롯 외래 키,
+인벤토리 소유권과 서버 전용 저장 RPC를 검증한다.
 
 각 기능 SQL과 이름이 대응하는 `*_validation.sql`을 함께 유지한다.
 최종 통합 상태는

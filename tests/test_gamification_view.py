@@ -71,7 +71,14 @@ class GamificationViewTests(unittest.TestCase):
         self.assertEqual(supabase.rpc_calls, [])
         self.assertEqual(
             [tab.label for tab in app.tabs],
-            ["도전과제", "업적", "배지 보관함"],
+            [
+                "도전과제",
+                "업적",
+                "배지 보관함",
+                "상점",
+                "내 아이템",
+                "학습방",
+            ],
         )
         self.assertIn(
             "학습 기록 새로 반영하기",

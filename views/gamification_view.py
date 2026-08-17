@@ -36,6 +36,17 @@ from views.gamification_state import (
     pop_gamification_notifications,
     queue_gamification_notifications,
 )
+from views.shop_view import (
+    load_shop_page_data,
+    render_shop_inventory,
+    render_shop_load_error,
+    render_shop_market,
+)
+from views.study_room_view import (
+    load_study_room_data,
+    render_study_room,
+    render_study_room_load_error,
+)
 from views.ui_components import (
     MetricItem,
     render_metric_row,
@@ -195,8 +206,36 @@ def render_gamification_page(supabase, user) -> None:
         ]
     )
 
-    challenge_tab, achievement_tab, badge_tab = st.tabs(
-        ["도전과제", "업적", "배지 보관함"]
+    shop_data = None
+    shop_error = None
+    try:
+        shop_data = load_shop_page_data(supabase, str(user_id))
+    except Exception as error:
+        shop_error = error
+
+    room_data = None
+    room_error = None
+    try:
+        room_data = load_study_room_data(supabase, str(user_id))
+    except Exception as error:
+        room_error = error
+
+    (
+        challenge_tab,
+        achievement_tab,
+        badge_tab,
+        shop_tab,
+        inventory_tab,
+        room_tab,
+    ) = st.tabs(
+        [
+            "도전과제",
+            "업적",
+            "배지 보관함",
+            "상점",
+            "내 아이템",
+            "학습방",
+        ]
     )
 
     with challenge_tab:
@@ -207,6 +246,26 @@ def render_gamification_page(supabase, user) -> None:
 
     with badge_tab:
         _render_badges(supabase, achievements, showcase)
+
+    with shop_tab:
+        if shop_error is not None:
+            render_shop_load_error(shop_error)
+        else:
+            render_shop_market(supabase, shop_data)
+
+    with inventory_tab:
+        if shop_error is not None:
+            render_shop_load_error(shop_error)
+        else:
+            render_shop_inventory(shop_data)
+
+    with room_tab:
+        if shop_error is not None:
+            render_shop_load_error(shop_error)
+        elif room_error is not None:
+            render_study_room_load_error(room_error)
+        else:
+            render_study_room(supabase, shop_data, room_data)
 
 
 def render_gamification_dashboard_summary(

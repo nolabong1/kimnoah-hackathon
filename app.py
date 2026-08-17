@@ -25,6 +25,7 @@ from views.gamification_view import (
     render_gamification_page,
 )
 from views.mastery_dashboard_view import render_mastery_dashboard
+from views.shop_state import clear_shop_state
 from views.source_review_material_view import (
     SOURCE_REVIEW_SESSION_KEYS,
     render_source_review_material,
@@ -357,6 +358,7 @@ with st.sidebar:
         clear_tutor_state(st.session_state)
         clear_weekly_review_state(st.session_state)
         clear_gamification_state(st.session_state)
+        clear_shop_state(st.session_state)
         clear_test_tools_state(st.session_state)
 
         clear_auth_session_state()

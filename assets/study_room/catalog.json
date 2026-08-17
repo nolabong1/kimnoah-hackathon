@@ -1,0 +1,230 @@
+[
+  {
+    "item_key": "wall_morning_sky",
+    "name_ko": "아침 하늘 벽지",
+    "category": "background",
+    "allowed_slots": [
+      "background"
+    ],
+    "rarity": "common",
+    "price": 40,
+    "layer": 0,
+    "overlay_path": "assets/study_room/items/backgrounds/wall_morning_sky.png",
+    "thumbnail_path": "assets/study_room/thumbnails/wall_morning_sky.webp",
+    "sort_order": 10,
+    "is_active": true
+  },
+  {
+    "item_key": "wall_warm_cream",
+    "name_ko": "따뜻한 크림 벽지",
+    "category": "background",
+    "allowed_slots": [
+      "background"
+    ],
+    "rarity": "common",
+    "price": 40,
+    "layer": 0,
+    "overlay_path": "assets/study_room/items/backgrounds/wall_warm_cream.png",
+    "thumbnail_path": "assets/study_room/thumbnails/wall_warm_cream.webp",
+    "sort_order": 20,
+    "is_active": true
+  },
+  {
+    "item_key": "wall_night_focus",
+    "name_ko": "밤의 집중 벽지",
+    "category": "background",
+    "allowed_slots": [
+      "background"
+    ],
+    "rarity": "rare",
+    "price": 160,
+    "layer": 0,
+    "overlay_path": "assets/study_room/items/backgrounds/wall_night_focus.png",
+    "thumbnail_path": "assets/study_room/thumbnails/wall_night_focus.webp",
+    "sort_order": 30,
+    "is_active": true
+  },
+  {
+    "item_key": "floor_light_wood",
+    "name_ko": "밝은 원목 바닥",
+    "category": "floor",
+    "allowed_slots": [
+      "floor"
+    ],
+    "rarity": "common",
+    "price": 35,
+    "layer": 10,
+    "overlay_path": "assets/study_room/items/floors/floor_light_wood.png",
+    "thumbnail_path": "assets/study_room/thumbnails/floor_light_wood.webp",
+    "sort_order": 40,
+    "is_active": true
+  },
+  {
+    "item_key": "floor_soft_gray",
+    "name_ko": "부드러운 회색 바닥",
+    "category": "floor",
+    "allowed_slots": [
+      "floor"
+    ],
+    "rarity": "common",
+    "price": 35,
+    "layer": 10,
+    "overlay_path": "assets/study_room/items/floors/floor_soft_gray.png",
+    "thumbnail_path": "assets/study_room/thumbnails/floor_soft_gray.webp",
+    "sort_order": 50,
+    "is_active": true
+  },
+  {
+    "item_key": "floor_starry_rug",
+    "name_ko": "별빛 러그 바닥",
+    "category": "floor",
+    "allowed_slots": [
+      "floor"
+    ],
+    "rarity": "uncommon",
+    "price": 80,
+    "layer": 10,
+    "overlay_path": "assets/study_room/items/floors/floor_starry_rug.png",
+    "thumbnail_path": "assets/study_room/thumbnails/floor_starry_rug.webp",
+    "sort_order": 60,
+    "is_active": true
+  },
+  {
+    "item_key": "desk_oak_basic",
+    "name_ko": "원목 학습 책상",
+    "category": "desk",
+    "allowed_slots": [
+      "desk"
+    ],
+    "rarity": "common",
+    "price": 60,
+    "layer": 30,
+    "overlay_path": "assets/study_room/items/desks/desk_oak_basic.png",
+    "thumbnail_path": "assets/study_room/thumbnails/desk_oak_basic.webp",
+    "sort_order": 70,
+    "is_active": true
+  },
+  {
+    "item_key": "desk_white_clean",
+    "name_ko": "화이트 학습 책상",
+    "category": "desk",
+    "allowed_slots": [
+      "desk"
+    ],
+    "rarity": "uncommon",
+    "price": 85,
+    "layer": 30,
+    "overlay_path": "assets/study_room/items/desks/desk_white_clean.png",
+    "thumbnail_path": "assets/study_room/thumbnails/desk_white_clean.webp",
+    "sort_order": 80,
+    "is_active": true
+  },
+  {
+    "item_key": "desk_neon_coder",
+    "name_ko": "네온 코딩 책상",
+    "category": "desk",
+    "allowed_slots": [
+      "desk"
+    ],
+    "rarity": "rare",
+    "price": 170,
+    "layer": 30,
+    "overlay_path": "assets/study_room/items/desks/desk_neon_coder.png",
+    "thumbnail_path": "assets/study_room/thumbnails/desk_neon_coder.webp",
+    "sort_order": 90,
+    "is_active": true
+  },
+  {
+    "item_key": "chair_blue_basic",
+    "name_ko": "블루 학습 의자",
+    "category": "chair",
+    "allowed_slots": [
+      "chair"
+    ],
+    "rarity": "common",
+    "price": 50,
+    "layer": 40,
+    "overlay_path": "assets/study_room/items/chairs/chair_blue_basic.png",
+    "thumbnail_path": "assets/study_room/thumbnails/chair_blue_basic.webp",
+    "sort_order": 100,
+    "is_active": true
+  },
+  {
+    "item_key": "chair_ergonomic",
+    "name_ko": "집중 인체공학 의자",
+    "category": "chair",
+    "allowed_slots": [
+      "chair"
+    ],
+    "rarity": "uncommon",
+    "price": 100,
+    "layer": 40,
+    "overlay_path": "assets/study_room/items/chairs/chair_ergonomic.png",
+    "thumbnail_path": "assets/study_room/thumbnails/chair_ergonomic.webp",
+    "sort_order": 110,
+    "is_active": true
+  },
+  {
+    "item_key": "decor_green_plant",
+    "name_ko": "작은 초록 식물",
+    "category": "decoration",
+    "allowed_slots": [
+      "decor_left",
+      "decor_right"
+    ],
+    "rarity": "common",
+    "price": 30,
+    "layer": 50,
+    "overlay_path": "assets/study_room/items/decorations/decor_green_plant.png",
+    "thumbnail_path": "assets/study_room/thumbnails/decor_green_plant.webp",
+    "sort_order": 120,
+    "is_active": true
+  },
+  {
+    "item_key": "decor_focus_lamp",
+    "name_ko": "집중 스탠드",
+    "category": "decoration",
+    "allowed_slots": [
+      "decor_left",
+      "decor_right"
+    ],
+    "rarity": "common",
+    "price": 45,
+    "layer": 50,
+    "overlay_path": "assets/study_room/items/decorations/decor_focus_lamp.png",
+    "thumbnail_path": "assets/study_room/thumbnails/decor_focus_lamp.webp",
+    "sort_order": 130,
+    "is_active": true
+  },
+  {
+    "item_key": "decor_bookshelf",
+    "name_ko": "미니 학습 책장",
+    "category": "decoration",
+    "allowed_slots": [
+      "decor_left",
+      "decor_right"
+    ],
+    "rarity": "uncommon",
+    "price": 90,
+    "layer": 50,
+    "overlay_path": "assets/study_room/items/decorations/decor_bookshelf.png",
+    "thumbnail_path": "assets/study_room/thumbnails/decor_bookshelf.webp",
+    "sort_order": 140,
+    "is_active": true
+  },
+  {
+    "item_key": "accent_study_cat",
+    "name_ko": "공부하는 고양이",
+    "category": "accent",
+    "allowed_slots": [
+      "accent"
+    ],
+    "rarity": "rare",
+    "price": 150,
+    "layer": 60,
+    "overlay_path": "assets/study_room/items/accents/accent_study_cat.png",
+    "thumbnail_path": "assets/study_room/thumbnails/accent_study_cat.webp",
+    "sort_order": 150,
+    "is_active": true
+  }
+]
