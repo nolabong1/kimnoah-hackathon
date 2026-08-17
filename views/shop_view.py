@@ -273,7 +273,7 @@ def _render_shop_item_card(
     """상점 아이템 한 건을 승인된 정보 순서의 카드로 표시합니다."""
 
     with st.container(border=True):
-        _render_item_visual(item)
+        render_shop_item_visual(item)
         st.caption(
             f"{RARITY_LABELS[item['rarity']]} · "
             f"{CATEGORY_LABELS[item['category']]}"
@@ -320,7 +320,7 @@ def _render_inventory_item_card(
     """보유 아이템 한 건의 가격 스냅샷과 획득일을 표시합니다."""
 
     with st.container(border=True):
-        _render_item_visual(item)
+        render_shop_item_visual(item)
         st.caption(
             f"{RARITY_LABELS[item['rarity']]} · "
             f"{CATEGORY_LABELS[item['category']]}"
@@ -333,7 +333,7 @@ def _render_inventory_item_card(
         )
 
 
-def _render_item_visual(item: dict) -> None:
+def render_shop_item_visual(item: dict) -> None:
     """승인된 로컬 썸네일만 표시하고 없으면 카테고리 아이콘을 사용합니다."""
 
     thumbnail_path = _get_approved_thumbnail_path(item)

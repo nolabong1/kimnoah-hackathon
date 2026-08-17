@@ -36,6 +36,7 @@ from views.gamification_state import (
     pop_gamification_notifications,
     queue_gamification_notifications,
 )
+from views.collection_view import render_shop_collection
 from views.shop_view import (
     load_shop_page_data,
     render_shop_inventory,
@@ -227,6 +228,7 @@ def render_gamification_page(supabase, user) -> None:
         shop_tab,
         inventory_tab,
         room_tab,
+        collection_tab,
     ) = st.tabs(
         [
             "도전과제",
@@ -235,6 +237,7 @@ def render_gamification_page(supabase, user) -> None:
             "상점",
             "내 아이템",
             "학습방",
+            "컬렉션",
         ]
     )
 
@@ -266,6 +269,14 @@ def render_gamification_page(supabase, user) -> None:
             render_study_room_load_error(room_error)
         else:
             render_study_room(supabase, shop_data, room_data)
+
+    with collection_tab:
+        if shop_error is not None:
+            render_shop_load_error(shop_error)
+        elif room_error is not None:
+            render_study_room_load_error(room_error)
+        else:
+            render_shop_collection(shop_data, room_data)
 
 
 def render_gamification_dashboard_summary(
