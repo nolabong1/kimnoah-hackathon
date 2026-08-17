@@ -17,6 +17,7 @@ NEXT_PLAN_SAVED_ID_KEY = "weekly_review_next_plan_saved_id"
 SAVE_RUNNING_KEY = "weekly_review_save_running"
 SUCCESS_MESSAGE_KEY = "weekly_review_success_message"
 PENDING_NAVIGATION_KEY = "weekly_review_pending_navigation"
+TEST_COMPLETED_PLAN_PENDING_KEY = "weekly_review_test_completed_plan_pending"
 
 
 def clear_weekly_review_state(state: MutableMapping[str, Any]) -> None:

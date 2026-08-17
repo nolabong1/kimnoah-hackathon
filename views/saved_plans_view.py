@@ -8,7 +8,6 @@ from services.study_plan_repository import (
     delete_study_plan,
     get_study_plan_tasks,
     get_user_study_plans,
-    reset_today_test_progress,
 )
 from views.completion_feedback import (
     render_completion_feedback,
@@ -200,13 +199,6 @@ def render_saved_plans(supabase, user):
             )
         )
 
-    if "test_reset_message" in st.session_state:
-        st.success(
-            st.session_state.pop(
-                "test_reset_message"
-            )
-        )
-
     try:
         saved_plans = get_user_study_plans(
             supabase=supabase,
@@ -277,120 +269,6 @@ def render_saved_plans(supabase, user):
                 user_id=user.id,
                 plan=selected_plan,
             )
-
-    with st.expander("🧪 테스트 도구"):
-        st.caption(
-            "개발 중 보상과 완료 기능을 반복해서 "
-            "확인하기 위한 기능입니다."
-        )
-
-        if st.session_state.get(
-            "test_reset_confirmation",
-            False,
-        ):
-            st.warning(
-                "오늘 실제로 완료 처리한 모든 과제와 "
-                "해당 EXP뿐 아니라 오늘의 퀴즈 응시, "
-                "숙련도 변화, 자동 복습 과제도 "
-                "초기화됩니다. 진행할까요?"
-            )
-
-            confirm_column, cancel_column = (
-                st.columns(2)
-            )
-
-            if confirm_column.button(
-                "초기화 실행",
-                type="primary",
-                width="stretch",
-            ):
-                try:
-                    with st.spinner(
-                        "오늘의 테스트 기록을 "
-                        "초기화하고 있습니다..."
-                    ):
-                        reset_result = (
-                            reset_today_test_progress(
-                                supabase=supabase,
-                            )
-                        )
-
-                    st.session_state.pop(
-                        "test_reset_confirmation",
-                        None,
-                    )
-                    st.session_state.pop(
-                        "pending_future_task_id",
-                        None,
-                    )
-
-                    for state_key in list(st.session_state):
-                        if "_quiz_attempt_" in str(state_key):
-                            st.session_state.pop(
-                                state_key,
-                                None,
-                            )
-
-                    removed_attempt_count = reset_result.get(
-                        "removed_quiz_attempt_count",
-                        0,
-                    )
-                    removed_mastery_event_count = (
-                        reset_result.get(
-                            "removed_mastery_event_count",
-                            0,
-                        )
-                    )
-                    removed_auto_review_count = (
-                        reset_result.get(
-                            "removed_auto_review_task_count",
-                            0,
-                        )
-                    )
-
-                    st.session_state.test_reset_message = (
-                        f"오늘 완료한 과제 "
-                        f"{reset_result['reset_task_count']}개와 "
-                        "퀴즈 응시 "
-                        f"{removed_attempt_count}회, "
-                        "숙련도 변경 "
-                        f"{removed_mastery_event_count}건, "
-                        "자동 복습 과제 "
-                        f"{removed_auto_review_count}개, "
-                        f"{reset_result['removed_total_exp']} EXP를 "
-                        "초기화했습니다."
-                    )
-
-                    st.session_state.saved_plan_pending_open_date = (
-                        str(reset_result["reset_date"])
-                    )
-
-                    st.rerun()
-
-                except Exception as error:
-                    st.error(
-                        f"테스트 초기화에 실패했습니다: "
-                        f"{error}"
-                    )
-
-            if cancel_column.button(
-                "취소",
-                width="stretch",
-            ):
-                st.session_state.pop(
-                    "test_reset_confirmation",
-                    None,
-                )
-                st.rerun()
-
-        elif st.button(
-            "오늘 테스트 기록 초기화",
-            width="stretch",
-        ):
-            st.session_state.test_reset_confirmation = (
-                True
-            )
-            st.rerun()
 
     try:
         saved_tasks = get_study_plan_tasks(

@@ -10,7 +10,6 @@ from models.weekly_review import (
     WeeklyStatisticsSnapshot,
 )
 from services.study_plan_repository import (
-    complete_study_plan_for_weekly_review_test,
     get_study_plan_tasks,
     get_user_study_plans,
     save_weekly_study_plan,
@@ -46,6 +45,7 @@ from views.weekly_review_state import (
     REQUEST_RUNNING_KEY,
     SAVE_RUNNING_KEY,
     SUCCESS_MESSAGE_KEY,
+    TEST_COMPLETED_PLAN_PENDING_KEY,
     apply_selected_plan_state,
     clear_next_plan_draft,
     create_next_plan_draft_state,
@@ -57,11 +57,6 @@ NEXT_GOAL_KEY = "weekly_review_next_goal"
 NEXT_START_DATE_KEY = "weekly_review_next_start_date"
 NEXT_LEVEL_KEY = "weekly_review_next_current_level"
 NEXT_SCORE_KEY = "weekly_review_next_recent_score"
-TEST_PLAN_SELECT_KEY = "weekly_review_test_plan_id"
-TEST_CONFIRM_PLAN_KEY = "weekly_review_test_confirm_plan_id"
-TEST_RUNNING_KEY = "weekly_review_test_completion_running"
-TEST_MESSAGE_KEY = "weekly_review_test_completion_message"
-TEST_COMPLETED_PLAN_PENDING_KEY = "weekly_review_test_completed_plan_pending"
 
 
 def _seoul_today() -> date:
@@ -77,16 +72,6 @@ def _is_missing_review_table_error(error: Exception) -> bool:
     return "weekly_learning_reviews" in error_text and any(
         marker in error_text
         for marker in ("pgrst", "schema cache", "does not exist", "could not find")
-    )
-
-
-def _is_missing_test_completion_rpc_error(error: Exception) -> bool:
-    """테스트 완료 RPC 마이그레이션 미적용 오류인지 판정합니다."""
-
-    error_text = str(error).casefold()
-    return "complete_study_plan_for_weekly_review_test" in error_text and any(
-        marker in error_text
-        for marker in ("pgrst", "schema cache", "could not find", "does not exist")
     )
 
 
@@ -168,140 +153,6 @@ def _render_statistics(statistics: WeeklyStatisticsSnapshot) -> None:
         st.dataframe(daily_rows, hide_index=True, width="stretch")
     else:
         st.info("이 계획에는 저장된 과제가 없습니다. 통계는 0건으로 계산됩니다.")
-
-
-def _render_test_completion_tool(
-    *,
-    supabase,
-    plan_entries: list[tuple[dict, list[dict]]],
-) -> None:
-    """주간 회고 검증을 위해 본인 계획 전체 완료 버튼을 표시합니다."""
-
-    plan_by_id = {
-        str(plan["id"]): (plan, tasks)
-        for plan, tasks in plan_entries
-    }
-    plan_ids = list(plan_by_id)
-    if not plan_ids:
-        return
-
-    if st.session_state.get(TEST_PLAN_SELECT_KEY) not in plan_ids:
-        st.session_state.pop(TEST_PLAN_SELECT_KEY, None)
-
-    with st.expander("🧪 주간 회고 테스트 도구"):
-        st.caption(
-            "선택한 계획의 미완료 과제를 오늘 일괄 완료합니다. "
-            "퀴즈 만점 조건은 이 테스트 처리에서만 우회합니다."
-        )
-        selected_test_plan_id = st.selectbox(
-            "테스트 완료할 계획",
-            options=plan_ids,
-            format_func=lambda plan_id: (
-                f"{plan_by_id[plan_id][0]['title']} · "
-                f"{plan_by_id[plan_id][0]['start_date']}"
-            ),
-            key=TEST_PLAN_SELECT_KEY,
-        )
-        _, selected_tasks = plan_by_id[selected_test_plan_id]
-        incomplete_tasks = [
-            task
-            for task in selected_tasks
-            if task.get("status") != "completed"
-        ]
-        incomplete_quiz_count = sum(
-            task.get("task_type") == "quiz"
-            for task in incomplete_tasks
-        )
-
-        if not selected_tasks:
-            st.warning("이 계획에는 완료 처리할 과제가 없습니다.")
-            return
-        if not incomplete_tasks:
-            st.success("이 계획의 모든 과제가 이미 완료되었습니다.")
-            return
-
-        st.write(
-            f"미완료 과제 **{len(incomplete_tasks)}개** · "
-            f"퀴즈 과제 **{incomplete_quiz_count}개** · "
-            f"예상 과제 EXP **{len(incomplete_tasks) * 10} EXP**"
-        )
-
-        if st.session_state.get(TEST_CONFIRM_PLAN_KEY) != selected_test_plan_id:
-            if st.button(
-                "이번 주 계획 완료 처리 (테스트)",
-                key=f"weekly_review_test_complete_{selected_test_plan_id}",
-                icon=":material/check_circle:",
-            ):
-                st.session_state[TEST_CONFIRM_PLAN_KEY] = selected_test_plan_id
-                st.rerun()
-            return
-
-        st.warning(
-            "미래 과제와 아직 만점을 받지 않은 퀴즈 과제도 완료됩니다. "
-            "과제당 10 EXP와 조건 충족 시 오늘의 20 EXP가 실제로 기록됩니다. "
-            "테스트 후에는 저장된 계획 화면의 '오늘 테스트 기록 초기화'로 "
-            "되돌릴 수 있습니다. 실행할까요?"
-        )
-        with st.container(horizontal=True):
-            if st.button(
-                "테스트 완료 실행",
-                key=f"weekly_review_test_confirm_{selected_test_plan_id}",
-                type="primary",
-                disabled=st.session_state.get(TEST_RUNNING_KEY, False),
-            ):
-                if st.session_state.get(TEST_RUNNING_KEY, False):
-                    st.warning("이미 테스트 완료를 처리하고 있습니다.")
-                else:
-                    st.session_state[TEST_RUNNING_KEY] = True
-                    try:
-                        with st.spinner(
-                            "계획의 과제와 보상을 일관되게 완료 처리하고 있습니다..."
-                        ):
-                            result = complete_study_plan_for_weekly_review_test(
-                                supabase=supabase,
-                                plan_id=selected_test_plan_id,
-                            )
-
-                        if result["already_completed"]:
-                            message = "선택한 계획은 이미 모두 완료되어 있습니다."
-                        else:
-                            message = (
-                                f"과제 {result['completed_task_count']}개를 완료하고 "
-                                f"{result['task_exp']} EXP를 지급했습니다."
-                            )
-                            if result["daily_bonus_exp"] > 0:
-                                message += (
-                                    " 오늘의 계획 완료 보너스 "
-                                    f"{result['daily_bonus_exp']} EXP도 지급했습니다."
-                                )
-
-                        st.session_state[TEST_MESSAGE_KEY] = message
-                        st.session_state[
-                            TEST_COMPLETED_PLAN_PENDING_KEY
-                        ] = selected_test_plan_id
-                        st.session_state.pop(TEST_CONFIRM_PLAN_KEY, None)
-                        st.rerun()
-                    except Exception as error:
-                        if _is_missing_test_completion_rpc_error(error):
-                            st.error(
-                                "테스트 완료 RPC가 아직 없습니다. Supabase SQL "
-                                "Editor에서 supabase_weekly_review_test_completion.sql을 "
-                                "먼저 실행해주세요."
-                            )
-                        else:
-                            st.error(
-                                "학습계획 테스트 완료 처리에 실패했습니다. "
-                                "연결 상태를 확인한 뒤 다시 시도해주세요."
-                            )
-                    finally:
-                        st.session_state[TEST_RUNNING_KEY] = False
-
-            if st.button(
-                "취소",
-                key=f"weekly_review_test_cancel_{selected_test_plan_id}",
-            ):
-                st.session_state.pop(TEST_CONFIRM_PLAN_KEY, None)
-                st.rerun()
 
 
 def _render_reflection_form(
@@ -680,16 +531,12 @@ def render_weekly_review(supabase, user) -> None:
     st.session_state.setdefault(REQUEST_RUNNING_KEY, False)
     st.session_state.setdefault(NEXT_PLAN_RUNNING_KEY, False)
     st.session_state.setdefault(SAVE_RUNNING_KEY, False)
-    st.session_state.setdefault(TEST_RUNNING_KEY, False)
 
     if SUCCESS_MESSAGE_KEY in st.session_state:
         st.success(st.session_state.pop(SUCCESS_MESSAGE_KEY))
-    if TEST_MESSAGE_KEY in st.session_state:
-        st.success(st.session_state.pop(TEST_MESSAGE_KEY))
 
     try:
         plans = get_user_study_plans(supabase=supabase, user_id=user_id)
-        plan_entries: list[tuple[dict, list[dict]]] = []
         eligible_entries: list[tuple[dict, list[dict]]] = []
         for plan in plans:
             tasks = get_study_plan_tasks(
@@ -697,22 +544,17 @@ def render_weekly_review(supabase, user) -> None:
                 user_id=user_id,
                 plan_id=str(plan["id"]),
             )
-            plan_entries.append((plan, tasks))
             if is_weekly_review_eligible(plan, tasks, today):
                 eligible_entries.append((plan, tasks))
     except Exception:
         st.error("주간 회고 대상 계획을 불러오지 못했습니다.")
         return
 
-    if not plan_entries:
+    if not plans:
         st.info("먼저 학습계획을 생성하고 저장해주세요.")
         return
 
     if not eligible_entries:
-        _render_test_completion_tool(
-            supabase=supabase,
-            plan_entries=plan_entries,
-        )
         st.info(
             "아직 회고할 수 있는 계획이 없습니다. 계획 종료일이 되었거나 "
             "모든 과제를 완료한 계획이 표시됩니다."
@@ -746,11 +588,6 @@ def render_weekly_review(supabase, user) -> None:
     )
     apply_selected_plan_state(st.session_state, selected_plan_id)
     selected_plan, selected_tasks = entry_by_id[selected_plan_id]
-
-    _render_test_completion_tool(
-        supabase=supabase,
-        plan_entries=plan_entries,
-    )
 
     try:
         existing_review = get_weekly_review_by_plan(

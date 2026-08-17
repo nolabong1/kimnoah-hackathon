@@ -8,7 +8,6 @@ from zoneinfo import ZoneInfo
 
 from streamlit.testing.v1 import AppTest
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 USER_ID = "11111111-1111-4111-8111-111111111111"
 PLAN_ID = "22222222-2222-4222-8222-222222222222"
@@ -44,6 +43,40 @@ def render_dashboard_test_page(supabase, user):
     render_dashboard(supabase, user)
 
 
+def render_ui_components_test_page():
+    from views.ui_components import (
+        MetricItem,
+        content_frame,
+        render_empty_state,
+        render_metric_row,
+        render_page_header,
+    )
+
+    with content_frame(960):
+        render_page_header(
+            "테스트 대시보드",
+            "공통 UI 컴포넌트를 확인합니다.",
+        )
+        render_metric_row(
+            [
+                MetricItem(
+                    "남은 과제",
+                    "2개",
+                    icon=":material/pending_actions:",
+                ),
+                MetricItem(
+                    "예상 학습시간",
+                    "40분",
+                    icon=":material/schedule:",
+                ),
+            ]
+        )
+        render_empty_state(
+            "표시할 항목이 없습니다",
+            "다른 조건을 선택해주세요.",
+        )
+
+
 class AppLayoutTests(unittest.TestCase):
     def test_desktop_layout_uses_wide_expanded_sidebar(self):
         page_config = _get_streamlit_call_keywords("set_page_config")
@@ -56,6 +89,38 @@ class AppLayoutTests(unittest.TestCase):
 
         self.assertEqual(navigation["position"], "sidebar")
         self.assertTrue(navigation["expanded"])
+
+    def test_approved_theme_tokens_are_configured(self):
+        import tomllib
+
+        with (PROJECT_ROOT / ".streamlit" / "config.toml").open(
+            "rb"
+        ) as config_file:
+            theme = tomllib.load(config_file)["theme"]
+
+        self.assertEqual(theme["base"], "light")
+        self.assertEqual(theme["primaryColor"], "#5B4FE5")
+        self.assertEqual(theme["backgroundColor"], "#F7F8FC")
+        self.assertEqual(theme["textColor"], "#171923")
+        self.assertEqual(theme["baseRadius"], "12px")
+
+    def test_shared_ui_components_render_without_custom_css(self):
+        app = AppTest.from_function(
+            render_ui_components_test_page
+        ).run()
+
+        self.assertEqual(list(app.exception), [])
+        self.assertIn(
+            "테스트 대시보드",
+            [item.value for item in app.title],
+        )
+        self.assertEqual(
+            [metric.label for metric in app.metric],
+            ["남은 과제", "예상 학습시간"],
+        )
+        self.assertNotIn("unsafe_allow_html", (
+            PROJECT_ROOT / "views" / "ui_components.py"
+        ).read_text(encoding="utf-8"))
 
     def test_dashboard_renders_desktop_summary_and_tasks(self):
         today = datetime.now(ZoneInfo("Asia/Seoul")).date().isoformat()
@@ -112,7 +177,7 @@ class AppLayoutTests(unittest.TestCase):
             ).run()
 
         self.assertEqual(list(app.exception), [])
-        self.assertIn("오늘 학습", [item.value for item in app.header])
+        self.assertIn("오늘 학습", [item.value for item in app.title])
         self.assertIn("오늘 할 일", [item.value for item in app.subheader])
         self.assertEqual(
             [metric.label for metric in app.metric],

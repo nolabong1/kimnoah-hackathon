@@ -31,6 +31,14 @@ from views.source_review_material_view import (
 )
 from views.tutor_state import clear_tutor_state
 from views.tutor_view import render_tutor
+from views.test_tools_view import (
+    clear_test_tools_state,
+    render_sidebar_test_tools,
+)
+from views.ui_components import (
+    DASHBOARD_CONTENT_WIDTH,
+    content_frame,
+)
 from views.weekly_review_state import (
     PENDING_NAVIGATION_KEY as WEEKLY_REVIEW_PENDING_NAVIGATION_KEY,
     clear_weekly_review_state,
@@ -134,10 +142,11 @@ except Exception as error:
 def show_dashboard() -> None:
     """오늘 학습 화면을 표시합니다."""
 
-    render_dashboard(
-        supabase=supabase,
-        user=user,
-    )
+    with content_frame(DASHBOARD_CONTENT_WIDTH):
+        render_dashboard(
+            supabase=supabase,
+            user=user,
+        )
 
 
 def show_create_plan() -> None:
@@ -326,8 +335,14 @@ with st.sidebar:
         clear_tutor_state(st.session_state)
         clear_weekly_review_state(st.session_state)
         clear_gamification_state(st.session_state)
+        clear_test_tools_state(st.session_state)
 
         clear_auth_session_state()
         st.rerun()
+
+render_sidebar_test_tools(
+    supabase=supabase,
+    user=user,
+)
 
 selected_page.run()

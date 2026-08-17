@@ -1,0 +1,51 @@
+[theme]
+base = "light"
+primaryColor = "#5B4FE5"
+backgroundColor = "#F7F8FC"
+secondaryBackgroundColor = "#F1F3F8"
+textColor = "#171923"
+linkColor = "#4338CA"
+codeTextColor = "#171923"
+codeBackgroundColor = "#EEF0F6"
+borderColor = "#E2E6EF"
+dataframeBorderColor = "#E2E6EF"
+dataframeHeaderBackgroundColor = "#EEF0F6"
+
+redColor = "#C2413B"
+orangeColor = "#B45309"
+yellowColor = "#A16207"
+greenColor = "#15803D"
+blueColor = "#0F8AA6"
+violetColor = "#5B4FE5"
+grayColor = "#667085"
+
+chartCategoricalColors = [
+    "#5B4FE5",
+    "#0F8AA6",
+    "#15803D",
+    "#B45309",
+    "#C2413B",
+    "#7C3AED",
+    "#667085",
+]
+
+font = "'Noto Sans KR':https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap"
+headingFont = "'Noto Sans KR':https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap"
+codeFont = "monospace"
+baseFontSize = 16
+baseFontWeight = 400
+headingFontSizes = ["32px", "24px", "20px", "16px", "14px", "12px"]
+headingFontWeights = [700, 700, 600, 600, 600, 600]
+linkUnderline = false
+
+baseRadius = "12px"
+buttonRadius = "8px"
+showWidgetBorder = true
+showSidebarBorder = true
+
+[theme.sidebar]
+primaryColor = "#5B4FE5"
+backgroundColor = "#F1F3F8"
+secondaryBackgroundColor = "#E8EBF3"
+textColor = "#171923"
+borderColor = "#E2E6EF"

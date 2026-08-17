@@ -24,6 +24,12 @@ from views.review_material_ui import (
 from views.spaced_review_ui import (
     get_spaced_review_label,
 )
+from views.ui_components import (
+    MetricItem,
+    render_empty_state,
+    render_metric_row,
+    render_page_header,
+)
 
 
 DASHBOARD_PLAN_SELECT_KEY = "dashboard_selected_plan_id"
@@ -94,7 +100,7 @@ def _render_learning_diagnostics(
 ) -> None:
     """선택한 계획의 취약 개념과 다음 자동 복습을 간결하게 표시합니다."""
 
-    st.markdown("### 학습 진단")
+    st.subheader("학습 진단")
 
     try:
         course_key = normalize_course_key(
@@ -231,9 +237,9 @@ def _render_today_task_cards(
     """오늘 과제를 카드로 표시하고 기존 완료 흐름을 유지합니다."""
 
     task_type_names = {
-        "learn": "📘 학습",
-        "review": "🔁 복습",
-        "quiz": "📝 퀴즈",
+        "learn": ":material/menu_book: 학습",
+        "review": ":material/replay: 복습",
+        "quiz": ":material/quiz: 퀴즈",
     }
 
     for task in today_tasks:
@@ -280,7 +286,10 @@ def _render_today_task_cards(
                 )
 
             if task["status"] == "completed":
-                st.success("완료된 과제입니다. ✅")
+                st.success(
+                    "완료된 과제입니다.",
+                    icon=":material/check_circle:",
+                )
                 continue
 
             quiz_completion_locked = (
@@ -339,9 +348,9 @@ def _render_today_task_cards(
 
 
 def render_dashboard(supabase, user):
-    st.header("오늘 학습")
-    st.caption(
-        "오늘 할 일과 학습 상태를 한 화면에서 확인하세요."
+    render_page_header(
+        "오늘 학습",
+        "오늘 할 일과 학습 상태를 한 화면에서 확인하세요.",
     )
 
     render_completion_feedback()
@@ -363,9 +372,10 @@ def render_dashboard(supabase, user):
         return
 
     if not saved_plans:
-        st.info(
-            "저장된 학습계획이 없습니다. "
-            "먼저 새로운 계획을 만들어 저장해보세요."
+        render_empty_state(
+            "저장된 학습계획이 없습니다",
+            "먼저 새로운 계획을 만들어 저장해보세요.",
+            icon=":material/event_note:",
         )
         return
 
@@ -426,9 +436,10 @@ def render_dashboard(supabase, user):
 
         with task_column:
             st.subheader("오늘 할 일")
-            st.info(
-                "선택한 계획에는 오늘 예정된 과제가 없습니다. "
-                "다른 계획을 선택하거나 저장된 계획을 확인해보세요."
+            render_empty_state(
+                "오늘 예정된 과제가 없습니다",
+                "다른 계획을 선택하거나 저장된 계획을 확인해보세요.",
+                icon=":material/event_available:",
             )
 
         with insight_column:
@@ -456,24 +467,24 @@ def render_dashboard(supabase, user):
         for task in today_tasks
     )
 
-    metric_column1, metric_column2, metric_column3 = (
-        st.columns(3, gap="medium")
-    )
-
-    metric_column1.metric(
-        "이 계획의 오늘 과제",
-        f"{total_count}개",
-        border=True,
-    )
-    metric_column2.metric(
-        "남은 과제",
-        f"{remaining_count}개",
-        border=True,
-    )
-    metric_column3.metric(
-        "예상 학습시간",
-        f"{total_minutes}분",
-        border=True,
+    render_metric_row(
+        [
+            MetricItem(
+                "이 계획의 오늘 과제",
+                f"{total_count}개",
+                icon=":material/checklist:",
+            ),
+            MetricItem(
+                "남은 과제",
+                f"{remaining_count}개",
+                icon=":material/pending_actions:",
+            ),
+            MetricItem(
+                "예상 학습시간",
+                f"{total_minutes}분",
+                icon=":material/schedule:",
+            ),
+        ]
     )
 
     progress = completed_count / total_count
@@ -488,7 +499,8 @@ def render_dashboard(supabase, user):
 
     if completed_count == total_count:
         st.success(
-            "선택한 계획의 오늘 학습을 모두 완료했습니다! 🎉"
+            "선택한 계획의 오늘 학습을 모두 완료했습니다!",
+            icon=":material/celebration:",
         )
     else:
         st.write(
@@ -518,20 +530,21 @@ def render_dashboard(supabase, user):
         st.session_state[DASHBOARD_TASK_SELECT_KEY] = first_pending_task["id"]
 
     with task_list_column:
-        st.subheader("오늘 할 일")
-        selected_task_id = st.radio(
-            "상세 내용을 확인할 과제",
-            options=task_ids,
-            key=DASHBOARD_TASK_SELECT_KEY,
-            format_func=lambda task_id: get_dashboard_task_label(
-                task_by_id[task_id]
-            ),
-            label_visibility="collapsed",
-            persist_state="session",
-        )
-        st.caption(
-            "과제를 선택하면 가운데 영역에 상세 내용이 표시됩니다."
-        )
+        with st.container(border=True):
+            st.subheader("오늘 할 일")
+            selected_task_id = st.radio(
+                "상세 내용을 확인할 과제",
+                options=task_ids,
+                key=DASHBOARD_TASK_SELECT_KEY,
+                format_func=lambda task_id: get_dashboard_task_label(
+                    task_by_id[task_id]
+                ),
+                label_visibility="collapsed",
+                persist_state="session",
+            )
+            st.caption(
+                "과제를 선택하면 가운데 영역에 상세 내용이 표시됩니다."
+            )
 
     with task_detail_column:
         st.subheader("선택한 과제")
