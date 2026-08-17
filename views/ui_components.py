@@ -6,6 +6,7 @@ import streamlit as st
 
 
 DASHBOARD_CONTENT_WIDTH = 1280
+STANDARD_CONTENT_WIDTH = 1120
 
 
 @dataclass(frozen=True)

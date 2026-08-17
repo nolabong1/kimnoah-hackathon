@@ -37,6 +37,7 @@ from views.test_tools_view import (
 )
 from views.ui_components import (
     DASHBOARD_CONTENT_WIDTH,
+    STANDARD_CONTENT_WIDTH,
     content_frame,
 )
 from views.weekly_review_state import (
@@ -152,19 +153,21 @@ def show_dashboard() -> None:
 def show_create_plan() -> None:
     """학습계획 생성 화면을 표시합니다."""
 
-    render_create_plan(
-        supabase=supabase,
-        user=user,
-    )
+    with content_frame(STANDARD_CONTENT_WIDTH):
+        render_create_plan(
+            supabase=supabase,
+            user=user,
+        )
 
 
 def show_saved_plans() -> None:
     """저장된 학습계획 화면을 표시합니다."""
 
-    render_saved_plans(
-        supabase=supabase,
-        user=user,
-    )
+    with content_frame(STANDARD_CONTENT_WIDTH):
+        render_saved_plans(
+            supabase=supabase,
+            user=user,
+        )
 
 
 def show_source_review_material() -> None:

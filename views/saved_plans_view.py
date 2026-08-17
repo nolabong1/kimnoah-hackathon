@@ -20,23 +20,24 @@ from views.review_material_ui import (
 from views.spaced_review_ui import (
     get_spaced_review_label,
 )
+from views.ui_components import (
+    MetricItem,
+    render_empty_state,
+    render_metric_row,
+    render_page_header,
+)
 
 
 SAVED_PLAN_SELECT_KEY = "saved_plan_selected_id"
 DELETED_PLAN_CLEANUP_KEY = "saved_plan_deleted_plan_id"
 DELETE_PLAN_MESSAGE_KEY = "saved_plan_delete_message"
+SAVED_DATE_SELECT_PREFIX = "saved_plan_selected_date_"
 
 
-def get_date_expander_key(
-    plan_id,
-    scheduled_date,
-):
-    """날짜별 expander의 고유 상태 키를 반환합니다."""
+def get_date_select_key(plan_id: str) -> str:
+    """계획별 선택 날짜 위젯의 고유 상태 키를 반환합니다."""
 
-    return (
-        f"saved_plan_date_expander_"
-        f"{plan_id}_{scheduled_date}"
-    )
+    return f"{SAVED_DATE_SELECT_PREFIX}{plan_id}"
 
 
 def apply_deleted_plan_state() -> None:
@@ -61,12 +62,10 @@ def apply_deleted_plan_state() -> None:
         st.session_state.pop("saved_plan_id", None)
         st.session_state["generated_plan_saved"] = False
 
-    expander_prefix = (
-        f"saved_plan_date_expander_{deleted_plan_id}_"
-    )
-
     for state_key in list(st.session_state.keys()):
-        if state_key.startswith(expander_prefix):
+        if state_key.startswith(
+            f"saved_plan_date_expander_{deleted_plan_id}_"
+        ) or state_key == get_date_select_key(deleted_plan_id):
             st.session_state.pop(state_key, None)
 
 
@@ -185,10 +184,166 @@ def complete_task_and_rerun(
         )
 
 
+def get_saved_plan_date_label(
+    scheduled_date: str,
+    tasks: list[dict],
+) -> str:
+    """날짜 선택 목록에 완료 현황과 예상 시간을 함께 표시합니다."""
+
+    completed_count = sum(
+        task.get("status") == "completed"
+        for task in tasks
+    )
+    total_minutes = sum(
+        int(task.get("estimated_minutes", 0))
+        for task in tasks
+    )
+    return (
+        f"{scheduled_date} · "
+        f"{completed_count}/{len(tasks)} 완료 · "
+        f"{total_minutes}분"
+    )
+
+
+def _render_saved_task_card(
+    *,
+    supabase,
+    user_id: str,
+    selected_plan: dict,
+    task: dict,
+    today: str,
+) -> None:
+    """선택 날짜의 과제 하나와 기존 완료·자료·퀴즈 동작을 표시합니다."""
+
+    task_type_names = {
+        "learn": ":material/menu_book: 학습",
+        "review": ":material/replay: 복습",
+        "quiz": ":material/quiz: 퀴즈",
+    }
+    task_status_names = {
+        "pending": "대기",
+        "completed": "완료",
+        "skipped": "건너뜀",
+    }
+    quiz_completion_unlocked = True
+
+    with st.container(border=True):
+        task_type = task_type_names[task["task_type"]]
+        task_status = task_status_names[task["status"]]
+        st.markdown(f"#### {task_type} · {task['title']}")
+        st.caption(
+            f"예상 {task['estimated_minutes']}분 · {task_status}"
+        )
+        st.write(task["description"])
+
+        review_label = get_spaced_review_label(task)
+        if review_label:
+            st.caption(review_label)
+
+        if task["task_type"] in {"learn", "review"}:
+            render_review_material_section(
+                supabase=supabase,
+                user_id=user_id,
+                plan_id=selected_plan["id"],
+                course_name=selected_plan["course_name"],
+                goal=selected_plan["goal"],
+                current_level=selected_plan["current_level"],
+                task=task,
+                widget_scope="saved_plan",
+            )
+        elif task["task_type"] == "quiz":
+            quiz_completion_unlocked = render_quiz_section(
+                supabase=supabase,
+                user_id=user_id,
+                plan_id=selected_plan["id"],
+                course_name=selected_plan["course_name"],
+                goal=selected_plan["goal"],
+                current_level=selected_plan["current_level"],
+                task=task,
+                widget_scope="saved_plan",
+            )
+
+        if task["status"] == "completed":
+            st.success(
+                "완료된 과제입니다.",
+                icon=":material/check_circle:",
+            )
+            return
+
+        is_future_task = task["scheduled_date"] > today
+        pending_future_task_id = st.session_state.get(
+            "pending_future_task_id"
+        )
+        quiz_completion_locked = (
+            task["task_type"] == "quiz"
+            and not quiz_completion_unlocked
+        )
+
+        if quiz_completion_locked:
+            if pending_future_task_id == task["id"]:
+                st.session_state.pop("pending_future_task_id", None)
+            st.button(
+                "완료하기",
+                key=f"complete_task_{task['id']}",
+                disabled=True,
+                help="현재 퀴즈의 모든 문항을 맞히면 완료할 수 있습니다.",
+            )
+            return
+
+        if is_future_task and pending_future_task_id == task["id"]:
+            st.warning(
+                "아직 예정일 전인 과제입니다. "
+                f"예정일은 {task['scheduled_date']}입니다. "
+                "그래도 미리 완료할까요?"
+            )
+            with st.container(horizontal=True):
+                if st.button(
+                    "그래도 완료하기",
+                    key=f"confirm_future_{task['id']}",
+                    type="primary",
+                    width="stretch",
+                ):
+                    st.session_state.pop("pending_future_task_id", None)
+                    complete_task_and_rerun(
+                        supabase=supabase,
+                        task_id=task["id"],
+                        scheduled_date=task["scheduled_date"],
+                    )
+
+                if st.button(
+                    "취소",
+                    key=f"cancel_future_{task['id']}",
+                    width="stretch",
+                ):
+                    st.session_state.pop("pending_future_task_id", None)
+                    st.rerun()
+            return
+
+        if st.button(
+            "완료하기",
+            key=f"complete_task_{task['id']}",
+        ):
+            if is_future_task:
+                st.session_state["saved_plan_pending_open_date"] = (
+                    task["scheduled_date"]
+                )
+                st.session_state["pending_future_task_id"] = task["id"]
+                st.rerun()
+            else:
+                complete_task_and_rerun(
+                    supabase=supabase,
+                    task_id=task["id"],
+                    scheduled_date=task["scheduled_date"],
+                )
+
+
 def render_saved_plans(supabase, user):
     apply_deleted_plan_state()
 
-    st.header("저장된 계획")
+    render_page_header(
+        "저장된 계획",
+        "계획별 일정과 과제를 날짜 단위로 확인하고 관리하세요.",
+    )
 
     render_completion_feedback()
 
@@ -213,7 +368,11 @@ def render_saved_plans(supabase, user):
         saved_plans = []
 
     if not saved_plans:
-        st.info("아직 저장된 학습계획이 없습니다.")
+        render_empty_state(
+            "저장된 학습계획이 없습니다",
+            "계획 만들기에서 새로운 7일 계획을 생성해보세요.",
+            icon=":material/folder_open:",
+        )
         return
 
     plan_by_id = {
@@ -233,31 +392,34 @@ def render_saved_plans(supabase, user):
 
     selected_plan = plan_by_id[selected_plan_id]
 
-    plan_column1, plan_column2, plan_column3 = (
-        st.columns(3)
-    )
-
-    plan_column1.metric(
-        "과목",
-        selected_plan["course_name"],
-    )
-    plan_column2.metric(
-        "시작일",
-        selected_plan["start_date"],
-    )
-    plan_column3.metric(
-        "종료일",
-        selected_plan["target_date"],
-    )
-
-    st.write(
-        f"**학습 목표:** {selected_plan['goal']}"
-    )
+    with st.container(border=True):
+        st.subheader(selected_plan["title"])
+        render_metric_row(
+            [
+                MetricItem(
+                    "과목",
+                    selected_plan["course_name"],
+                    icon=":material/menu_book:",
+                ),
+                MetricItem(
+                    "시작일",
+                    selected_plan["start_date"],
+                    icon=":material/event:",
+                ),
+                MetricItem(
+                    "종료일",
+                    selected_plan["target_date"],
+                    icon=":material/event_available:",
+                ),
+            ]
+        )
+        st.write(f"**학습 목표:** {selected_plan['goal']}")
 
     with st.container(
         horizontal=True,
         horizontal_alignment="right",
     ):
+        st.caption("계획 삭제는 별도의 확인 절차를 거칩니다.")
         if st.button(
             "계획 삭제",
             key=f"delete_plan_{selected_plan_id}",
@@ -285,7 +447,11 @@ def render_saved_plans(supabase, user):
         saved_tasks = []
 
     if not saved_tasks:
-        st.info("저장된 상세 과제가 없습니다.")
+        render_empty_state(
+            "저장된 상세 과제가 없습니다",
+            "이 계획에는 표시할 일정이 없습니다.",
+            icon=":material/event_busy:",
+        )
         return
 
     tasks_by_date = {}
@@ -298,238 +464,66 @@ def render_saved_plans(supabase, user):
 
         tasks_by_date[scheduled_date].append(task)
 
-    task_type_names = {
-        "learn": "📘 학습",
-        "review": "🔁 복습",
-        "quiz": "📝 퀴즈",
-    }
-
-    task_status_names = {
-        "pending": "대기",
-        "completed": "완료",
-        "skipped": "건너뜀",
-    }
-
     today = datetime.now(
         ZoneInfo("Asia/Seoul")
     ).date().isoformat()
-
-    first_date = min(tasks_by_date.keys())
-
-    if today in tasks_by_date:
-        default_open_date = today
-    else:
-        default_open_date = first_date
-
+    scheduled_dates = sorted(tasks_by_date)
+    default_selected_date = (
+        today
+        if today in tasks_by_date
+        else scheduled_dates[0]
+    )
     pending_open_date = st.session_state.pop(
         "saved_plan_pending_open_date",
         None,
     )
+    date_select_key = get_date_select_key(selected_plan_id)
+    if pending_open_date in scheduled_dates:
+        st.session_state[date_select_key] = pending_open_date
+    elif st.session_state.get(date_select_key) not in scheduled_dates:
+        st.session_state[date_select_key] = default_selected_date
 
-    for task_date in tasks_by_date:
-        expander_key = get_date_expander_key(
-            plan_id=selected_plan_id,
-            scheduled_date=task_date,
-        )
-
-        if pending_open_date is not None:
-            st.session_state[expander_key] = (
-                task_date == pending_open_date
+    date_list_column, date_detail_column = st.columns(
+        [0.9, 2.1],
+        gap="large",
+    )
+    with date_list_column:
+        with st.container(border=True):
+            st.subheader("학습 일정")
+            selected_date = st.radio(
+                "상세 내용을 확인할 날짜",
+                options=scheduled_dates,
+                key=date_select_key,
+                format_func=lambda scheduled_date: get_saved_plan_date_label(
+                    scheduled_date,
+                    tasks_by_date[scheduled_date],
+                ),
+                label_visibility="collapsed",
+                persist_state="session",
             )
+            st.caption("날짜를 선택하면 오른쪽에 과제가 표시됩니다.")
 
-        elif expander_key not in st.session_state:
-            st.session_state[expander_key] = (
-                task_date == default_open_date
+    selected_tasks = tasks_by_date[selected_date]
+    selected_total_minutes = sum(
+        task["estimated_minutes"]
+        for task in selected_tasks
+    )
+    selected_completed_count = sum(
+        task["status"] == "completed"
+        for task in selected_tasks
+    )
+    with date_detail_column:
+        st.subheader(selected_date)
+        st.caption(
+            f"과제 {len(selected_tasks)}개 · "
+            f"완료 {selected_completed_count}개 · "
+            f"예상 학습시간 {selected_total_minutes}분"
+        )
+        for task in selected_tasks:
+            _render_saved_task_card(
+                supabase=supabase,
+                user_id=str(user.id),
+                selected_plan=selected_plan,
+                task=task,
+                today=today,
             )
-
-    for scheduled_date, daily_tasks in (
-        tasks_by_date.items()
-    ):
-        total_minutes = sum(
-            task["estimated_minutes"]
-            for task in daily_tasks
-        )
-
-        expander_key = get_date_expander_key(
-            plan_id=selected_plan_id,
-            scheduled_date=scheduled_date,
-        )
-
-        with st.expander(
-            f"{scheduled_date} · "
-            f"과제 {len(daily_tasks)}개 · "
-            f"총 {total_minutes}분",
-            key=expander_key,
-            on_change="rerun",
-        ):
-            # 기존의 for task in daily_tasks 이하 코드는
-            # 이 위치에 그대로 유지
-            for task in daily_tasks:
-                quiz_completion_unlocked = True
-
-                task_type = task_type_names[
-                    task["task_type"]
-                ]
-                task_status = task_status_names[
-                    task["status"]
-                ]
-
-                st.markdown(
-                    f"**{task_type} · {task['title']}** "
-                    f"— {task['estimated_minutes']}분 · "
-                    f"{task_status}"
-                )
-                st.write(task["description"])
-
-                review_label = get_spaced_review_label(task)
-
-                if review_label:
-                    st.caption(review_label)
-
-                if task["task_type"] in {
-                    "learn",
-                    "review",
-                }:
-                    render_review_material_section(
-                        supabase=supabase,
-                        user_id=user.id,
-                        plan_id=selected_plan["id"],
-                        course_name=selected_plan[
-                            "course_name"
-                        ],
-                        goal=selected_plan["goal"],
-                        current_level=selected_plan[
-                            "current_level"
-                        ],
-                        task=task,
-                        widget_scope="saved_plan",
-                    )
-
-                elif task["task_type"] == "quiz":
-                    quiz_completion_unlocked = render_quiz_section(
-                        supabase=supabase,
-                        user_id=user.id,
-                        plan_id=selected_plan["id"],
-                        course_name=selected_plan[
-                            "course_name"
-                        ],
-                        goal=selected_plan["goal"],
-                        current_level=selected_plan[
-                            "current_level"
-                        ],
-                        task=task,
-                        widget_scope="saved_plan",
-                    )
-
-                if task["status"] == "completed":
-                    st.caption(
-                        "✅ 완료된 과제입니다."
-                    )
-                    continue
-
-                is_future_task = (
-                    task["scheduled_date"] > today
-                )
-                pending_future_task_id = (
-                    st.session_state.get(
-                        "pending_future_task_id"
-                    )
-                )
-                quiz_completion_locked = (
-                    task["task_type"] == "quiz"
-                    and not quiz_completion_unlocked
-                )
-
-                if quiz_completion_locked:
-                    if pending_future_task_id == task["id"]:
-                        st.session_state.pop(
-                            "pending_future_task_id",
-                            None,
-                        )
-
-                    st.button(
-                        "완료하기",
-                        key=(
-                            f"complete_task_{task['id']}"
-                        ),
-                        disabled=True,
-                        help=(
-                            "현재 퀴즈의 모든 문항을 "
-                            "맞히면 완료할 수 있습니다."
-                        ),
-                    )
-                    continue
-
-                if (
-                    is_future_task
-                    and pending_future_task_id
-                    == task["id"]
-                ):
-                    st.warning(
-                        "아직 예정일 전인 과제입니다. "
-                        f"예정일은 "
-                        f"{task['scheduled_date']}입니다. "
-                        "그래도 미리 완료할까요?"
-                    )
-
-                    confirm_column, cancel_column = (
-                        st.columns(2)
-                    )
-
-                    if confirm_column.button(
-                        "그래도 완료하기",
-                        key=(
-                            f"confirm_future_"
-                            f"{task['id']}"
-                        ),
-                        type="primary",
-                        width="stretch",
-                    ):
-                        st.session_state.pop(
-                            "pending_future_task_id",
-                            None,
-                        )
-
-                        complete_task_and_rerun(
-                            supabase=supabase,
-                            task_id=task["id"],
-                            scheduled_date=task["scheduled_date"],
-                        )
-
-                    if cancel_column.button(
-                        "취소",
-                        key=(
-                            f"cancel_future_"
-                            f"{task['id']}"
-                        ),
-                        width="stretch",
-                    ):
-                        st.session_state.pop(
-                            "pending_future_task_id",
-                            None,
-                        )
-                        st.rerun()
-
-                    continue
-
-                if st.button(
-                    "완료하기",
-                    key=(
-                        f"complete_task_{task['id']}"
-                    ),
-                ):
-                    if is_future_task:
-                        st.session_state.saved_plan_pending_open_date = (
-                            task["scheduled_date"]
-                        )
-                        st.session_state[
-                            "pending_future_task_id"
-                        ] = task["id"]
-                        st.rerun()
-
-                    else:
-                        complete_task_and_rerun(
-                            supabase=supabase,
-                            task_id=task["id"],
-                            scheduled_date=task["scheduled_date"],
-                        )

@@ -134,14 +134,17 @@ AI 호출과 DB 저장 책임도 분리한다.
 ### `views/`
 
 - `auth_session_storage.py`: 브라우저 `sessionStorage`를 이용한 로그인 유지
-- `create_plan_view.py`: 계획 입력, AI 생성, 저장 UI
+- `create_plan_view.py`: 계획 조건과 2열의 7일 가능 시간 입력,
+  AI 생성 미리보기, 명시적 저장을 분리한 계획 생성 UI
 - `dashboard_view.py`: 선택한 활성 계획의 오늘 과제,
   숙련도·취약 개념·다음 자동 복습 표시. 데스크톱에서는 과제 선택 목록,
   선택 과제 상세, 학습 진단·게임화 요약을 3영역으로 배치하고 취약 개념은
   우선순위 3개만 요약
 - `mastery_dashboard_view.py`: 전체 과목의 평균 숙련도 비교와
   선택 과목의 개념별 현재 숙련도·취약 상태 표시
-- `saved_plans_view.py`: 저장된 계획/과제 조회, 완료와 삭제 확인
+- `saved_plans_view.py`: 저장된 계획/과제 조회, 완료와 삭제 확인.
+  데스크톱에서는 왼쪽 날짜 선택과 오른쪽 선택 날짜 과제 상세의 2영역으로
+  표시하며 오늘 또는 완료 처리 후 pending 날짜 선택을 유지
 - `review_material_ui.py`: `learn`과 `review` 과제의 자료 생성·저장·조회
 - `source_review_material_view.py`: 붙여넣은 텍스트 또는 PDF에서 추출한
   텍스트 기반 AI 복습자료 생성·저장·미리보기

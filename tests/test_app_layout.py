@@ -1,6 +1,6 @@
 import ast
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -41,6 +41,18 @@ def render_dashboard_test_page(supabase, user):
     from views.dashboard_view import render_dashboard
 
     render_dashboard(supabase, user)
+
+
+def render_create_plan_test_page(supabase, user):
+    from views.create_plan_view import render_create_plan
+
+    render_create_plan(supabase, user)
+
+
+def render_saved_plans_test_page(supabase, user):
+    from views.saved_plans_view import render_saved_plans
+
+    render_saved_plans(supabase, user)
 
 
 def render_ui_components_test_page():
@@ -187,6 +199,180 @@ class AppLayoutTests(unittest.TestCase):
         self.assertEqual(len(app.radio[0].options), 2)
         material_section.assert_called_once()
         gamification_summary.assert_called_once()
+
+    def test_create_plan_separates_inputs_preview_and_save(self):
+        today = datetime.now(ZoneInfo("Asia/Seoul")).date()
+        task = SimpleNamespace(
+            task_type="learn",
+            title="반복문 개념 익히기",
+            description="for문의 실행 순서를 정리합니다.",
+            estimated_minutes=30,
+        )
+        day = SimpleNamespace(
+            day_offset=0,
+            daily_focus="반복문 기초",
+            tasks=[task],
+        )
+        plan = SimpleNamespace(
+            title="파이썬 7일 계획",
+            level_assessment="기본 문법을 복습하면 좋습니다.",
+            weekly_goal="반복문을 활용한 프로그램 완성",
+            strategy="개념 학습 후 짧은 문제를 풉니다.",
+            days=[day],
+            motivation_message="작은 과제를 꾸준히 완료해보세요.",
+        )
+        app = AppTest.from_function(
+            render_create_plan_test_page,
+            args=(object(), SimpleNamespace(id=USER_ID)),
+        )
+        app.session_state["generated_plan"] = plan
+        app.session_state["generated_plan_start_date"] = today
+        app.session_state["generated_plan_metadata"] = {
+            "course_name": "파이썬",
+            "goal": "반복문 익히기",
+            "current_level": 3,
+            "start_date": today,
+            "available_schedule": {
+                f"{day_offset}일차": 60
+                for day_offset in range(7)
+            },
+        }
+        app.session_state["generated_plan_saved"] = False
+
+        with (
+            patch(
+                "views.create_plan_view.generate_weekly_study_plan"
+            ) as generate_plan,
+            patch(
+                "views.create_plan_view.save_weekly_study_plan"
+            ) as save_plan,
+        ):
+            app.run()
+
+        self.assertEqual(list(app.exception), [])
+        self.assertIn("계획 만들기", [item.value for item in app.title])
+        self.assertEqual(len(app.number_input), 7)
+        self.assertIn(
+            "1. 계획 조건",
+            [item.value for item in app.subheader],
+        )
+        self.assertIn(
+            "3. AI 학습계획 미리보기",
+            [item.value for item in app.subheader],
+        )
+        self.assertIn(
+            "4. 계획 저장",
+            [item.value for item in app.subheader],
+        )
+        self.assertIn(
+            "AI 학습계획 만들기",
+            [button.label for button in app.button],
+        )
+        self.assertIn(
+            "이 계획 저장하기",
+            [button.label for button in app.button],
+        )
+        generate_plan.assert_not_called()
+        save_plan.assert_not_called()
+
+    def test_saved_plans_renders_only_selected_date_details(self):
+        today = datetime.now(ZoneInfo("Asia/Seoul")).date()
+        today_text = today.isoformat()
+        tomorrow_text = (today + timedelta(days=1)).isoformat()
+        plan = {
+            "id": PLAN_ID,
+            "title": "파이썬 7일 계획",
+            "course_name": "파이썬",
+            "goal": "반복문 익히기",
+            "current_level": 3,
+            "start_date": today_text,
+            "target_date": tomorrow_text,
+        }
+        learn_task = {
+            "id": "task-today",
+            "scheduled_date": today_text,
+            "task_type": "learn",
+            "title": "반복문 핵심 익히기",
+            "description": "for문의 동작을 정리합니다.",
+            "estimated_minutes": 30,
+            "status": "pending",
+            "source_type": "weekly_plan",
+            "review_stage": None,
+            "review_interval_days": None,
+        }
+        quiz_task = {
+            **learn_task,
+            "id": "task-tomorrow",
+            "scheduled_date": tomorrow_text,
+            "task_type": "quiz",
+            "title": "반복문 퀴즈",
+        }
+
+        with (
+            patch(
+                "views.saved_plans_view.get_user_study_plans",
+                return_value=[plan],
+            ),
+            patch(
+                "views.saved_plans_view.get_study_plan_tasks",
+                return_value=[learn_task, quiz_task],
+            ),
+            patch(
+                "views.saved_plans_view.render_review_material_section"
+            ) as material_section,
+            patch(
+                "views.saved_plans_view.render_quiz_section",
+                return_value=False,
+            ) as quiz_section,
+        ):
+            app = AppTest.from_function(
+                render_saved_plans_test_page,
+                args=(object(), SimpleNamespace(id=USER_ID)),
+            ).run()
+
+        self.assertEqual(list(app.exception), [])
+        self.assertIn("저장된 계획", [item.value for item in app.title])
+        self.assertEqual(
+            [metric.label for metric in app.metric],
+            ["과목", "시작일", "종료일"],
+        )
+        self.assertEqual(len(app.radio), 1)
+        self.assertEqual(
+            list(app.radio[0].options),
+            [
+                f"{today_text} · 0/1 완료 · 30분",
+                f"{tomorrow_text} · 0/1 완료 · 30분",
+            ],
+        )
+        self.assertEqual(app.radio[0].value, today_text)
+        self.assertEqual(len(app.expander), 0)
+        material_section.assert_called_once()
+        quiz_section.assert_not_called()
+
+        app.session_state["saved_plan_pending_open_date"] = tomorrow_text
+        with (
+            patch(
+                "views.saved_plans_view.get_user_study_plans",
+                return_value=[plan],
+            ),
+            patch(
+                "views.saved_plans_view.get_study_plan_tasks",
+                return_value=[learn_task, quiz_task],
+            ),
+            patch(
+                "views.saved_plans_view.render_review_material_section"
+            ) as future_material_section,
+            patch(
+                "views.saved_plans_view.render_quiz_section",
+                return_value=False,
+            ) as future_quiz_section,
+        ):
+            app.run()
+
+        self.assertEqual(list(app.exception), [])
+        self.assertEqual(app.radio[0].value, tomorrow_text)
+        future_material_section.assert_not_called()
+        future_quiz_section.assert_called_once()
 
 
 if __name__ == "__main__":
