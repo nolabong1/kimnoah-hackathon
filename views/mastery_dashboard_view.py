@@ -9,6 +9,12 @@ from services.concept_mastery_repository import (
 from services.concept_mastery_service import (
     summarize_course_masteries,
 )
+from views.ui_components import (
+    MetricItem,
+    render_empty_state,
+    render_metric_row,
+    render_page_header,
+)
 
 
 MASTERY_COURSE_SELECT_KEY = "mastery_dashboard_course_key"
@@ -65,10 +71,8 @@ def _render_concept_mastery(mastery: dict) -> None:
     mastery_score = mastery["mastery_score"]
 
     with st.container(border=True):
-        st.metric(
-            mastery["concept_name"],
-            f"{mastery_score}점",
-        )
+        st.caption("취약 개념" if mastery["is_weak"] else "학습 중인 개념")
+        st.markdown(f"### {mastery['concept_name']}")
         st.progress(
             mastery_score,
             text=f"숙련도 {mastery_score}/100",
@@ -98,10 +102,9 @@ def render_mastery_dashboard(
 ) -> None:
     """로그인 사용자의 과목별 개념 숙련도 화면을 표시합니다."""
 
-    st.header("과목별 숙련도")
-    st.write(
-        "퀴즈 문항별 결과로 갱신된 숙련도를 과목별로 비교하고, "
-        "현재 보완이 필요한 개념을 확인합니다."
+    render_page_header(
+        "과목별 숙련도",
+        "퀴즈 결과로 갱신된 숙련도를 비교하고 보완할 개념을 확인합니다.",
     )
 
     try:
@@ -117,9 +120,10 @@ def render_mastery_dashboard(
         return
 
     if not concept_masteries:
-        st.info(
-            "아직 평가된 개념이 없습니다. 개념 태그가 포함된 퀴즈를 "
-            "응시하면 과목별 숙련도가 표시됩니다."
+        render_empty_state(
+            "아직 평가된 개념이 없습니다",
+            "개념 태그가 포함된 퀴즈를 응시하면 과목별 숙련도가 표시됩니다.",
+            icon=":material/monitoring:",
         )
         return
 
@@ -135,29 +139,14 @@ def render_mastery_dashboard(
         1,
     )
 
-    with st.container(horizontal=True):
-        st.metric(
-            "평가된 과목",
-            f"{len(course_summaries)}개",
-            border=True,
-        )
-        st.metric(
-            "평가된 개념",
-            f"{len(concept_masteries)}개",
-            border=True,
-        )
-        st.metric(
-            "전체 개념 평균",
-            f"{overall_average}점",
-            border=True,
-        )
-        st.metric(
-            "현재 취약 개념",
-            f"{weak_concept_count}개",
-            border=True,
-        )
-
-    _render_course_comparison(course_summaries)
+    render_metric_row(
+        [
+            MetricItem("평가된 과목", f"{len(course_summaries)}개"),
+            MetricItem("평가된 개념", f"{len(concept_masteries)}개"),
+            MetricItem("전체 개념 평균", f"{overall_average}점"),
+            MetricItem("현재 취약 개념", f"{weak_concept_count}개"),
+        ]
+    )
 
     summaries_by_key = {
         summary["course_key"]: summary
@@ -174,73 +163,78 @@ def render_mastery_dashboard(
     ):
         st.session_state.pop(MASTERY_COURSE_SELECT_KEY, None)
 
-    selected_course_key = st.selectbox(
-        "자세히 볼 과목",
-        options=course_options,
-        format_func=lambda course_key: summaries_by_key[
-            course_key
-        ]["course_name"],
-        key=MASTERY_COURSE_SELECT_KEY,
-    )
-    selected_summary = summaries_by_key[selected_course_key]
-    selected_masteries = [
-        mastery
-        for mastery in concept_masteries
-        if mastery["course_key"] == selected_course_key
-    ]
+    comparison_tab, detail_tab = st.tabs(["과목 비교", "개념 상세"])
+    with comparison_tab:
+        _render_course_comparison(course_summaries)
 
-    st.subheader(selected_summary["course_name"])
-
-    with st.container(horizontal=True):
-        st.metric(
-            "평균 숙련도",
-            f"{selected_summary['average_mastery_score']}점",
-            border=True,
+    with detail_tab:
+        selected_course_key = st.selectbox(
+            "자세히 볼 과목",
+            options=course_options,
+            format_func=lambda course_key: summaries_by_key[
+                course_key
+            ]["course_name"],
+            key=MASTERY_COURSE_SELECT_KEY,
         )
-        st.metric(
-            "평가된 개념",
-            f"{selected_summary['evaluated_concept_count']}개",
-            border=True,
-        )
-        st.metric(
-            "취약 개념",
-            f"{selected_summary['weak_concept_count']}개",
-            border=True,
-        )
-        st.metric(
-            "누적 정답 / 오답",
-            (
-                f"{selected_summary['correct_count']} / "
-                f"{selected_summary['incorrect_count']}"
-            ),
-            border=True,
-        )
-
-    st.caption(
-        "과목 최근 평가 · "
-        + _format_last_assessed_at(
-            selected_summary.get("last_assessed_at")
-        )
-    )
-    selected_filter = st.segmented_control(
-        "개념 보기",
-        options=["전체", "취약 개념"],
-        default="전체",
-        key=MASTERY_FILTER_KEY,
-    )
-    visible_masteries = (
-        [
+        selected_summary = summaries_by_key[selected_course_key]
+        selected_masteries = [
             mastery
-            for mastery in selected_masteries
-            if mastery["is_weak"]
+            for mastery in concept_masteries
+            if mastery["course_key"] == selected_course_key
         ]
-        if selected_filter == "취약 개념"
-        else selected_masteries
-    )
 
-    if not visible_masteries:
-        st.success("이 과목에는 현재 취약 개념이 없습니다.")
-        return
+        st.subheader(selected_summary["course_name"])
+        render_metric_row(
+            [
+                MetricItem(
+                    "평균 숙련도",
+                    f"{selected_summary['average_mastery_score']}점",
+                ),
+                MetricItem(
+                    "평가된 개념",
+                    f"{selected_summary['evaluated_concept_count']}개",
+                ),
+                MetricItem(
+                    "취약 개념",
+                    f"{selected_summary['weak_concept_count']}개",
+                ),
+                MetricItem(
+                    "누적 정답 / 오답",
+                    (
+                        f"{selected_summary['correct_count']} / "
+                        f"{selected_summary['incorrect_count']}"
+                    ),
+                ),
+            ]
+        )
 
-    for mastery in visible_masteries:
-        _render_concept_mastery(mastery)
+        st.caption(
+            "과목 최근 평가 · "
+            + _format_last_assessed_at(
+                selected_summary.get("last_assessed_at")
+            )
+        )
+        selected_filter = st.segmented_control(
+            "개념 보기",
+            options=["전체", "취약 개념"],
+            default="전체",
+            key=MASTERY_FILTER_KEY,
+        )
+        visible_masteries = (
+            [
+                mastery
+                for mastery in selected_masteries
+                if mastery["is_weak"]
+            ]
+            if selected_filter == "취약 개념"
+            else selected_masteries
+        )
+
+        if not visible_masteries:
+            st.success("이 과목에는 현재 취약 개념이 없습니다.")
+            return
+
+        concept_columns = st.columns(2, gap="medium")
+        for index, mastery in enumerate(visible_masteries):
+            with concept_columns[index % 2]:
+                _render_concept_mastery(mastery)

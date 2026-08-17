@@ -36,6 +36,7 @@ from views.test_tools_view import (
     render_sidebar_test_tools,
 )
 from views.ui_components import (
+    AUTH_CONTENT_WIDTH,
     DASHBOARD_CONTENT_WIDTH,
     STANDARD_CONTENT_WIDTH,
     content_frame,
@@ -60,72 +61,85 @@ initialize_auth_session(supabase)
 
 # 로그인하지 않은 사용자에게 인증 화면 표시
 if st.session_state.auth_user is None:
-    st.title("🎓 AI 학습 코치")
-    st.write("나의 목표와 수준에 맞는 학습계획을 만들어보세요.")
+    with content_frame(AUTH_CONTENT_WIDTH):
+        with st.container(border=True):
+            st.title("🎓 AI 학습 코치")
+            st.caption("나의 목표와 수준에 맞는 학습계획을 만들어보세요.")
 
-    login_tab, signup_tab = st.tabs(["로그인", "회원가입"])
+            login_tab, signup_tab = st.tabs(["로그인", "회원가입"])
 
-    with login_tab:
-        with st.form("login_form"):
-            login_email = st.text_input("이메일")
-            login_password = st.text_input("비밀번호", type="password")
-            login_submitted = st.form_submit_button("로그인")
-
-        if login_submitted:
-            try:
-                response = sign_in(
-                    supabase,
-                    login_email,
-                    login_password,
-                )
-                activate_auth_response(response)
-                st.rerun()
-            except Exception as error:
-                st.error(f"로그인에 실패했습니다: {error}")
-
-    with signup_tab:
-        with st.form("signup_form"):
-            nickname = st.text_input("닉네임", max_chars=30)
-            signup_email = st.text_input("이메일")
-            signup_password = st.text_input(
-                "비밀번호",
-                type="password",
-                help="8자 이상 입력해주세요.",
-            )
-            password_confirm = st.text_input(
-                "비밀번호 확인",
-                type="password",
-            )
-            signup_submitted = st.form_submit_button("회원가입")
-
-        if signup_submitted:
-            if not nickname.strip():
-                st.warning("닉네임을 입력해주세요.")
-            elif "@" not in signup_email:
-                st.warning("올바른 이메일을 입력해주세요.")
-            elif len(signup_password) < 8:
-                st.warning("비밀번호는 8자 이상이어야 합니다.")
-            elif signup_password != password_confirm:
-                st.warning("비밀번호가 일치하지 않습니다.")
-            else:
-                try:
-                    response = sign_up(
-                        supabase,
-                        nickname,
-                        signup_email,
-                        signup_password,
+            with login_tab:
+                with st.form("login_form"):
+                    login_email = st.text_input("이메일")
+                    login_password = st.text_input(
+                        "비밀번호",
+                        type="password",
+                    )
+                    login_submitted = st.form_submit_button(
+                        "로그인",
+                        type="primary",
+                        width="stretch",
                     )
 
-                    if response.session is None:
-                        st.success(
-                            "회원가입이 완료되었습니다. "
-                            "이메일 확인 후 로그인해주세요."
+                if login_submitted:
+                    try:
+                        response = sign_in(
+                            supabase,
+                            login_email,
+                            login_password,
                         )
-                    else:
                         activate_auth_response(response)
                         st.rerun()
-                except Exception as error:
-                    st.error(f"회원가입에 실패했습니다: {error}")
+                    except Exception as error:
+                        st.error(f"로그인에 실패했습니다: {error}")
+
+            with signup_tab:
+                with st.form("signup_form"):
+                    nickname = st.text_input("닉네임", max_chars=30)
+                    signup_email = st.text_input("이메일")
+                    signup_password = st.text_input(
+                        "비밀번호",
+                        type="password",
+                        help="8자 이상 입력해주세요.",
+                    )
+                    password_confirm = st.text_input(
+                        "비밀번호 확인",
+                        type="password",
+                    )
+                    signup_submitted = st.form_submit_button(
+                        "회원가입",
+                        type="primary",
+                        width="stretch",
+                    )
+
+                if signup_submitted:
+                    if not nickname.strip():
+                        st.warning("닉네임을 입력해주세요.")
+                    elif "@" not in signup_email:
+                        st.warning("올바른 이메일을 입력해주세요.")
+                    elif len(signup_password) < 8:
+                        st.warning("비밀번호는 8자 이상이어야 합니다.")
+                    elif signup_password != password_confirm:
+                        st.warning("비밀번호가 일치하지 않습니다.")
+                    else:
+                        try:
+                            response = sign_up(
+                                supabase,
+                                nickname,
+                                signup_email,
+                                signup_password,
+                            )
+
+                            if response.session is None:
+                                st.success(
+                                    "회원가입이 완료되었습니다. "
+                                    "이메일 확인 후 로그인해주세요."
+                                )
+                            else:
+                                activate_auth_response(response)
+                                st.rerun()
+                        except Exception as error:
+                            st.error(f"회원가입에 실패했습니다: {error}")
 
     st.stop()
 
@@ -173,46 +187,51 @@ def show_saved_plans() -> None:
 def show_source_review_material() -> None:
     """원본 기반 AI 복습 자료 화면을 표시합니다."""
 
-    render_source_review_material(
-        supabase=supabase,
-        user=user,
-    )
+    with content_frame(STANDARD_CONTENT_WIDTH):
+        render_source_review_material(
+            supabase=supabase,
+            user=user,
+        )
 
 
 def show_tutor() -> None:
     """단계별 힌트 AI 튜터 화면을 표시합니다."""
 
-    render_tutor(
-        supabase=supabase,
-        user=user,
-    )
+    with content_frame(STANDARD_CONTENT_WIDTH):
+        render_tutor(
+            supabase=supabase,
+            user=user,
+        )
 
 
 def show_weekly_review() -> None:
     """주간 학습 회고 화면을 표시합니다."""
 
-    render_weekly_review(
-        supabase=supabase,
-        user=user,
-    )
+    with content_frame(DASHBOARD_CONTENT_WIDTH):
+        render_weekly_review(
+            supabase=supabase,
+            user=user,
+        )
 
 
 def show_mastery_dashboard() -> None:
     """과목별 숙련도 화면을 표시합니다."""
 
-    render_mastery_dashboard(
-        supabase=supabase,
-        user=user,
-    )
+    with content_frame(STANDARD_CONTENT_WIDTH):
+        render_mastery_dashboard(
+            supabase=supabase,
+            user=user,
+        )
 
 
 def show_gamification() -> None:
     """업적·도전과제 화면을 표시합니다."""
 
-    render_gamification_page(
-        supabase=supabase,
-        user=user,
-    )
+    with content_frame(DASHBOARD_CONTENT_WIDTH):
+        render_gamification_page(
+            supabase=supabase,
+            user=user,
+        )
 
 
 dashboard_page = st.Page(

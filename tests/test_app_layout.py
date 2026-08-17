@@ -55,6 +55,32 @@ def render_saved_plans_test_page(supabase, user):
     render_saved_plans(supabase, user)
 
 
+def render_source_review_test_page(supabase, user):
+    from views.source_review_material_view import (
+        render_source_review_material,
+    )
+
+    render_source_review_material(supabase, user)
+
+
+def render_tutor_test_page(supabase, user):
+    from views.tutor_view import render_tutor
+
+    render_tutor(supabase, user)
+
+
+def render_mastery_test_page(supabase, user):
+    from views.mastery_dashboard_view import render_mastery_dashboard
+
+    render_mastery_dashboard(supabase, user)
+
+
+def render_weekly_review_test_page(supabase, user):
+    from views.weekly_review_view import render_weekly_review
+
+    render_weekly_review(supabase, user)
+
+
 def render_ui_components_test_page():
     from views.ui_components import (
         MetricItem,
@@ -133,6 +159,250 @@ class AppLayoutTests(unittest.TestCase):
         self.assertNotIn("unsafe_allow_html", (
             PROJECT_ROOT / "views" / "ui_components.py"
         ).read_text(encoding="utf-8"))
+
+    def test_remaining_pages_use_approved_content_frames(self):
+        app_source = (PROJECT_ROOT / "app.py").read_text(encoding="utf-8")
+
+        self.assertIn("with content_frame(AUTH_CONTENT_WIDTH):", app_source)
+        self.assertGreaterEqual(
+            app_source.count("with content_frame(STANDARD_CONTENT_WIDTH):"),
+            4,
+        )
+        self.assertGreaterEqual(
+            app_source.count("with content_frame(DASHBOARD_CONTENT_WIDTH):"),
+            3,
+        )
+
+    def test_ai_tool_setup_pages_use_compact_two_column_layouts(self):
+        plan = {
+            "id": PLAN_ID,
+            "title": "파이썬 7일 계획",
+            "course_name": "파이썬",
+            "goal": "반복문 익히기",
+            "current_level": 3,
+        }
+        user = SimpleNamespace(id=USER_ID)
+
+        with patch(
+            "views.source_review_material_view.get_user_study_plans",
+            return_value=[plan],
+        ):
+            source_app = AppTest.from_function(
+                render_source_review_test_page,
+                args=(object(), user),
+            ).run()
+
+        self.assertEqual(list(source_app.exception), [])
+        self.assertIn(
+            "AI 복습 자료 만들기",
+            [item.value for item in source_app.title],
+        )
+        self.assertIn(
+            "원본 준비",
+            [item.value for item in source_app.subheader],
+        )
+
+        with (
+            patch(
+                "views.tutor_view.get_user_study_plans",
+                return_value=[plan],
+            ),
+            patch(
+                "views.tutor_view.get_study_plan_tasks",
+                return_value=[],
+            ),
+            patch(
+                "views.tutor_view.get_learning_materials_by_plan",
+                return_value=[],
+            ),
+            patch(
+                "views.tutor_view.get_review_materials_by_plan",
+                return_value=[],
+            ),
+        ):
+            tutor_app = AppTest.from_function(
+                render_tutor_test_page,
+                args=(object(), user),
+            ).run()
+
+        self.assertEqual(list(tutor_app.exception), [])
+        self.assertIn(
+            "단계별 힌트 AI 튜터",
+            [item.value for item in tutor_app.title],
+        )
+        self.assertIn(
+            "연결 정보",
+            [item.value for item in tutor_app.subheader],
+        )
+        self.assertIn(
+            "질문과 현재 풀이",
+            [item.value for item in tutor_app.subheader],
+        )
+
+    def test_mastery_page_separates_overview_and_concept_detail(self):
+        mastery = {
+            "course_key": "python",
+            "course_name": "파이썬",
+            "concept_name": "반복문",
+            "mastery_score": 45,
+            "correct_count": 1,
+            "incorrect_count": 2,
+            "consecutive_incorrect_count": 2,
+            "last_assessed_at": "2026-08-17T08:00:00+00:00",
+            "is_weak": True,
+        }
+        with patch(
+            "views.mastery_dashboard_view.get_user_concept_masteries",
+            return_value=[mastery],
+        ):
+            app = AppTest.from_function(
+                render_mastery_test_page,
+                args=(object(), SimpleNamespace(id=USER_ID)),
+            ).run()
+
+        self.assertEqual(list(app.exception), [])
+        self.assertEqual(
+            [tab.label for tab in app.tabs],
+            ["과목 비교", "개념 상세"],
+        )
+        self.assertEqual(
+            [metric.label for metric in app.metric[:4]],
+            ["평가된 과목", "평가된 개념", "전체 개념 평균", "현재 취약 개념"],
+        )
+
+    def test_weekly_review_separates_record_review_and_next_plan(self):
+        from models.weekly_review import WeeklyStatisticsSnapshot
+
+        today = datetime.now(ZoneInfo("Asia/Seoul")).date()
+        plan = {
+            "id": PLAN_ID,
+            "title": "파이썬 7일 계획",
+            "course_name": "파이썬",
+            "goal": "반복문 익히기",
+            "current_level": 3,
+            "start_date": today.isoformat(),
+            "target_date": today.isoformat(),
+        }
+        statistics = WeeklyStatisticsSnapshot(
+            plan_title=plan["title"],
+            course_name=plan["course_name"],
+            plan_start_date=today,
+            plan_target_date=today,
+            total_tasks=1,
+            completed_tasks=1,
+            pending_tasks=0,
+            skipped_tasks=0,
+            completion_rate=100,
+            total_planned_minutes=30,
+            completed_estimated_minutes=30,
+            scheduled_study_days=1,
+            days_with_completed_task=1,
+            completed_by_task_type={"learn": 1, "review": 0, "quiz": 0},
+            completed_estimated_minutes_by_date={today.isoformat(): 30},
+            task_completion_counts_by_date={today.isoformat(): 1},
+        )
+        with (
+            patch(
+                "views.weekly_review_view.get_user_study_plans",
+                return_value=[plan],
+            ),
+            patch(
+                "views.weekly_review_view.get_study_plan_tasks",
+                return_value=[{"status": "completed"}],
+            ),
+            patch(
+                "views.weekly_review_view.is_weekly_review_eligible",
+                return_value=True,
+            ),
+            patch(
+                "views.weekly_review_view.get_weekly_review_by_plan",
+                return_value=None,
+            ),
+            patch(
+                "views.weekly_review_view.calculate_weekly_statistics",
+                return_value=statistics,
+            ),
+        ):
+            app = AppTest.from_function(
+                render_weekly_review_test_page,
+                args=(object(), SimpleNamespace(id=USER_ID)),
+            ).run()
+
+        self.assertEqual(list(app.exception), [])
+        self.assertEqual(
+            [tab.label for tab in app.tabs],
+            ["학습 기록과 나의 회고", "AI 주간 회고", "다음 주 계획"],
+        )
+
+    def test_tutor_final_answer_uses_explicit_confirmation_dialog(self):
+        from models.tutor import TutorGuidance
+        from views.tutor_state import create_tutor_session_state
+
+        guidance = TutorGuidance.model_validate(
+            {
+                "problem_summary": "두 수를 더하는 문제입니다.",
+                "required_concepts": ["덧셈"],
+                "hints": [
+                    {
+                        "level": level,
+                        "title": f"힌트 {level}",
+                        "content": f"단계 {level}을 생각하세요.",
+                        "guiding_question": "다음 단계는 무엇인가요?",
+                    }
+                    for level in (1, 2, 3)
+                ],
+                "final_solution": {
+                    "final_answer": "2",
+                    "reasoning_steps": ["1과 1을 더합니다."],
+                    "why_solution_works": "덧셈 정의를 적용합니다.",
+                    "common_mistakes": ["수를 빠뜨리지 않습니다."],
+                    "self_check_question": "2+1도 계산해보세요.",
+                },
+            }
+        )
+        app = AppTest.from_function(
+            render_tutor_test_page,
+            args=(object(), SimpleNamespace(id=USER_ID)),
+        )
+        for key, value in create_tutor_session_state(
+            session_id="session-1",
+            user_id=USER_ID,
+            plan_id=PLAN_ID,
+            task_id=None,
+            material_key=None,
+            course_name="수학",
+            task_title=None,
+            reference_title=None,
+            reference_context=None,
+            reference_was_limited=False,
+            question="1+1은?",
+            original_attempt="",
+            guidance=guidance,
+        ).items():
+            app.session_state[key] = value
+
+        app.run()
+        self.assertEqual(list(app.exception), [])
+        show_answer = next(
+            button
+            for button in app.button
+            if button.label == "정답 보기"
+        )
+        app = show_answer.click().run()
+
+        self.assertEqual(list(app.exception), [])
+        self.assertIn(
+            "정답 확인하기",
+            [button.label for button in app.button],
+        )
+        self.assertIn(
+            "계속 풀어보기",
+            [button.label for button in app.button],
+        )
+        self.assertNotIn(
+            "최종 정답과 전체 풀이",
+            [item.value for item in app.markdown],
+        )
 
     def test_dashboard_renders_desktop_summary_and_tasks(self):
         today = datetime.now(ZoneInfo("Asia/Seoul")).date().isoformat()

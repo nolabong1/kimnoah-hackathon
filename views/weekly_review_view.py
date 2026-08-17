@@ -33,6 +33,14 @@ from services.weekly_review_service import (
     validate_reflection_answers,
 )
 from views.create_plan_view import CURRENT_LEVEL_OPTIONS
+from views.ui_components import (
+    MetricItem,
+    READING_CONTENT_WIDTH,
+    content_frame,
+    render_empty_state,
+    render_metric_row,
+    render_page_header,
+)
 from views.weekly_review_state import (
     NEXT_PLAN_DRAFT_KEY,
     NEXT_PLAN_METADATA_KEY,
@@ -108,20 +116,18 @@ def _collect_reflection_answers(plan_id: str) -> dict[str, str]:
 def _render_statistics(statistics: WeeklyStatisticsSnapshot) -> None:
     """저장 스냅샷의 핵심 지표와 예정일별 내역을 표시합니다."""
 
-    with st.container(horizontal=True):
-        st.metric("전체 과제", f"{statistics.total_tasks}개", border=True)
-        st.metric("완료 과제", f"{statistics.completed_tasks}개", border=True)
-        st.metric("완료율", f"{statistics.completion_rate:.1f}%", border=True)
-
-    with st.container(horizontal=True):
-        st.metric("대기", f"{statistics.pending_tasks}개", border=True)
-        st.metric("건너뜀", f"{statistics.skipped_tasks}개", border=True)
-        st.metric(
-            "완료 과제 기준 예상 학습량",
-            f"{statistics.completed_estimated_minutes}분",
-            border=True,
-            help="완료된 과제에 설정된 예상 시간의 합계입니다.",
-        )
+    render_metric_row(
+        [
+            MetricItem("전체 과제", f"{statistics.total_tasks}개"),
+            MetricItem("완료 과제", f"{statistics.completed_tasks}개"),
+            MetricItem("완료율", f"{statistics.completion_rate:.1f}%"),
+            MetricItem(
+                "완료 기준 예상 학습량",
+                f"{statistics.completed_estimated_minutes}분",
+                help="완료된 과제에 설정된 예상 시간의 합계입니다.",
+            ),
+        ]
+    )
 
     st.caption(
         f"예정된 학습일 {statistics.scheduled_study_days}일 · "
@@ -129,12 +135,22 @@ def _render_statistics(statistics: WeeklyStatisticsSnapshot) -> None:
         f"전체 계획 분량 {statistics.total_planned_minutes}분"
     )
     type_counts = statistics.completed_by_task_type
-    st.write(
-        "**유형별 완료:** "
-        f"학습 {type_counts.get('learn', 0)}개 · "
-        f"복습 {type_counts.get('review', 0)}개 · "
-        f"퀴즈 {type_counts.get('quiz', 0)}개"
-    )
+    detail_columns = st.columns(2)
+    with detail_columns[0]:
+        with st.container(border=True):
+            st.markdown("#### 상태별 과제")
+            st.write(
+                f"대기 {statistics.pending_tasks}개 · "
+                f"건너뜀 {statistics.skipped_tasks}개"
+            )
+    with detail_columns[1]:
+        with st.container(border=True):
+            st.markdown("#### 유형별 완료")
+            st.write(
+                f"학습 {type_counts.get('learn', 0)}개 · "
+                f"복습 {type_counts.get('review', 0)}개 · "
+                f"퀴즈 {type_counts.get('quiz', 0)}개"
+            )
 
     daily_rows = [
         {
@@ -152,7 +168,11 @@ def _render_statistics(statistics: WeeklyStatisticsSnapshot) -> None:
     if daily_rows:
         st.dataframe(daily_rows, hide_index=True, width="stretch")
     else:
-        st.info("이 계획에는 저장된 과제가 없습니다. 통계는 0건으로 계산됩니다.")
+        render_empty_state(
+            "저장된 과제가 없습니다",
+            "이 계획의 통계는 0건으로 계산됩니다.",
+            icon=":material/event_busy:",
+        )
 
 
 def _render_reflection_form(
@@ -256,11 +276,13 @@ def _generate_and_save_review(
 def _render_existing_review(existing_review: dict) -> None:
     """저장된 Markdown 회고를 추가 API 호출 없이 표시합니다."""
 
-    st.markdown(existing_review["ai_review_markdown"])
-    st.caption(
-        f"저장 시점 통계 · {existing_review['week_start']} ~ "
-        f"{existing_review['week_end']} · 갱신 {existing_review['updated_at']}"
-    )
+    with content_frame(READING_CONTENT_WIDTH):
+        st.markdown(existing_review["ai_review_markdown"])
+        st.caption(
+            f"저장 시점 통계 · {existing_review['week_start']} ~ "
+            f"{existing_review['week_end']} · "
+            f"갱신 {existing_review['updated_at']}"
+        )
 
 
 def _initialize_next_plan_inputs(
@@ -522,10 +544,9 @@ def render_weekly_review(supabase, user) -> None:
 
     user_id = str(user.id)
     today = _seoul_today()
-    st.header("📊 주간 학습 회고")
-    st.write(
-        "완료한 계획의 객관적 기록과 나의 회고를 함께 분석하고, "
-        "다음 7일 계획을 개선합니다."
+    render_page_header(
+        "주간 학습 회고",
+        "완료한 계획의 기록과 나의 회고를 분석해 다음 7일을 설계합니다.",
     )
     st.caption("모든 날짜 판정은 Asia/Seoul 기준입니다.")
     st.session_state.setdefault(REQUEST_RUNNING_KEY, False)
@@ -551,13 +572,18 @@ def render_weekly_review(supabase, user) -> None:
         return
 
     if not plans:
-        st.info("먼저 학습계획을 생성하고 저장해주세요.")
+        render_empty_state(
+            "저장된 계획이 없습니다",
+            "먼저 학습계획을 생성하고 저장해주세요.",
+            icon=":material/calendar_add_on:",
+        )
         return
 
     if not eligible_entries:
-        st.info(
-            "아직 회고할 수 있는 계획이 없습니다. 계획 종료일이 되었거나 "
-            "모든 과제를 완료한 계획이 표시됩니다."
+        render_empty_state(
+            "아직 회고할 계획이 없습니다",
+            "계획 종료일이 되었거나 모든 과제를 완료하면 이곳에 표시됩니다.",
+            icon=":material/pending_actions:",
         )
         return
 
@@ -575,7 +601,7 @@ def render_weekly_review(supabase, user) -> None:
     if st.session_state.get(PLAN_SELECT_KEY) not in eligible_plan_ids:
         st.session_state.pop(PLAN_SELECT_KEY, None)
 
-    st.subheader("1. 돌아볼 계획")
+    st.subheader("돌아볼 계획")
     selected_plan_id = st.selectbox(
         "회고할 계획",
         options=eligible_plan_ids,
@@ -618,88 +644,121 @@ def render_weekly_review(supabase, user) -> None:
         st.error("학습 기록 통계를 계산하거나 저장된 스냅샷을 읽지 못했습니다.")
         return
 
-    with st.container(border=True):
-        st.write(f"**{statistics.plan_title}**")
-        st.caption(
-            f"{statistics.course_name} · {statistics.plan_start_date} ~ "
-            f"{statistics.plan_target_date}"
-        )
-        status_text = (
-            "모든 과제 완료"
-            if statistics.total_tasks > 0
-            and statistics.completed_tasks == statistics.total_tasks
-            else "종료일 도달 · 미완료 과제 포함"
-        )
-        st.write(f"**회고 가능 상태:** {status_text}")
-
-    st.subheader("2. 이번 주 학습 기록")
-    if existing_review:
-        st.caption(
-            "이미 저장된 회고의 통계 스냅샷을 표시합니다. "
-            "현재 과제 상태로 자동 덮어쓰지 않습니다."
-        )
-    _render_statistics(statistics)
-
-    st.subheader("3. 나의 회고")
-    reflection_submitted = _render_reflection_form(
-        selected_plan_id,
-        existing_review,
+    status_text = (
+        "모든 과제 완료"
+        if statistics.total_tasks > 0
+        and statistics.completed_tasks == statistics.total_tasks
+        else "종료일 도달 · 미완료 과제 포함"
     )
-    if reflection_submitted:
+    with st.container(border=True, horizontal=True):
+        with st.container():
+            st.caption("선택한 계획")
+            st.markdown(f"### {statistics.plan_title}")
+            st.caption(
+                f"{statistics.course_name} · {statistics.plan_start_date} ~ "
+                f"{statistics.plan_target_date}"
+            )
+        with st.container():
+            st.caption("회고 가능 상태")
+            st.markdown(f"### {status_text}")
+            st.caption(
+                f"완료 {statistics.completed_tasks}/{statistics.total_tasks}개"
+            )
+
+    record_tab, review_tab, next_plan_tab = st.tabs(
+        ["학습 기록과 나의 회고", "AI 주간 회고", "다음 주 계획"]
+    )
+
+    with record_tab:
+        st.subheader("이번 주 학습 기록")
+        if existing_review:
+            st.caption(
+                "저장된 회고의 통계 스냅샷입니다. 현재 과제 상태로 "
+                "자동 덮어쓰지 않습니다."
+            )
+        _render_statistics(statistics)
+
+        st.subheader("나의 회고")
+        reflection_submitted = _render_reflection_form(
+            selected_plan_id,
+            existing_review,
+        )
+        if reflection_submitted:
+            if existing_review is None:
+                _generate_and_save_review(
+                    supabase=supabase,
+                    user_id=user_id,
+                    plan=selected_plan,
+                    tasks=selected_tasks,
+                    existing_review=None,
+                )
+            else:
+                try:
+                    validate_reflection_answers(
+                        _collect_reflection_answers(selected_plan_id)
+                    )
+                    st.session_state[REGENERATION_CONFIRM_KEY] = True
+                    st.rerun()
+                except WeeklyReviewValidationError as error:
+                    st.warning(str(error))
+
+        if existing_review and st.session_state.get(
+            REGENERATION_CONFIRM_KEY,
+            False,
+        ):
+            with st.container(border=True):
+                st.warning(
+                    "회고를 다시 만들면 현재 과제 상태로 통계를 다시 계산하고 "
+                    "기존 회고를 갱신합니다. 계속할까요?"
+                )
+                with st.container(horizontal=True):
+                    if st.button(
+                        "다시 만들기 확인",
+                        key=(
+                            "weekly_review_confirm_regenerate_"
+                            f"{selected_plan_id}"
+                        ),
+                        type="primary",
+                    ):
+                        _generate_and_save_review(
+                            supabase=supabase,
+                            user_id=user_id,
+                            plan=selected_plan,
+                            tasks=selected_tasks,
+                            existing_review=existing_review,
+                        )
+                    if st.button(
+                        "취소",
+                        key=(
+                            "weekly_review_cancel_regenerate_"
+                            f"{selected_plan_id}"
+                        ),
+                    ):
+                        st.session_state[REGENERATION_CONFIRM_KEY] = False
+                        st.rerun()
+
+    with review_tab:
         if existing_review is None:
-            _generate_and_save_review(
+            render_empty_state(
+                "AI 회고가 아직 없습니다",
+                "학습 기록과 나의 회고 탭에서 답변을 작성해 생성해주세요.",
+                icon=":material/auto_awesome:",
+            )
+        else:
+            _render_existing_review(existing_review)
+
+    with next_plan_tab:
+        if existing_review is None:
+            render_empty_state(
+                "다음 계획을 만들 준비가 필요합니다",
+                "AI 주간 회고를 저장하면 다음 7일 계획을 만들 수 있습니다.",
+                icon=":material/event_upcoming:",
+            )
+        else:
+            _render_next_plan_section(
                 supabase=supabase,
                 user_id=user_id,
                 plan=selected_plan,
-                tasks=selected_tasks,
-                existing_review=None,
+                existing_review=existing_review,
+                today=today,
             )
-        else:
-            try:
-                validate_reflection_answers(
-                    _collect_reflection_answers(selected_plan_id)
-                )
-                st.session_state[REGENERATION_CONFIRM_KEY] = True
-                st.rerun()
-            except WeeklyReviewValidationError as error:
-                st.warning(str(error))
-
-    if existing_review and st.session_state.get(REGENERATION_CONFIRM_KEY, False):
-        with st.container(border=True):
-            st.warning(
-                "회고를 다시 만들면 현재 과제 상태로 통계를 다시 계산하고 "
-                "기존 회고를 갱신합니다. 계속할까요?"
-            )
-            with st.container(horizontal=True):
-                if st.button(
-                    "다시 만들기 확인",
-                    key=f"weekly_review_confirm_regenerate_{selected_plan_id}",
-                    type="primary",
-                ):
-                    _generate_and_save_review(
-                        supabase=supabase,
-                        user_id=user_id,
-                        plan=selected_plan,
-                        tasks=selected_tasks,
-                        existing_review=existing_review,
-                    )
-                if st.button(
-                    "취소",
-                    key=f"weekly_review_cancel_regenerate_{selected_plan_id}",
-                ):
-                    st.session_state[REGENERATION_CONFIRM_KEY] = False
-                    st.rerun()
-
-    if existing_review is None:
-        return
-
-    st.subheader("4. AI 주간 회고")
-    _render_existing_review(existing_review)
-    st.subheader("5. 다음 주 계획 만들기")
-    _render_next_plan_section(
-        supabase=supabase,
-        user_id=user_id,
-        plan=selected_plan,
-        existing_review=existing_review,
-        today=today,
-    )

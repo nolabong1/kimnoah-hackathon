@@ -16,6 +16,7 @@ from services.source_material_service import (
     validate_source_title,
 )
 from services.study_plan_repository import get_user_study_plans
+from views.ui_components import render_empty_state, render_page_header
 
 
 RESULT_STATE_KEY = "source_review_material_result"
@@ -72,10 +73,9 @@ def render_source_review_material(supabase, user) -> None:
     """텍스트 또는 PDF 원본 기반 AI 복습자료 생성 화면을 표시합니다."""
 
     user_id = str(user.id)
-    st.header("AI 복습 자료 만들기")
-    st.write(
-        "직접 붙여넣은 글이나 텍스트가 포함된 PDF를 바탕으로 "
-        "한국어 복습 자료를 만듭니다."
+    render_page_header(
+        "AI 복습 자료 만들기",
+        "붙여넣은 글이나 텍스트형 PDF를 학습하기 좋은 한국어 자료로 정리합니다.",
     )
     st.caption(
         "PDF 원본 파일은 저장하지 않으며 추출한 텍스트만 저장합니다. "
@@ -95,7 +95,11 @@ def render_source_review_material(supabase, user) -> None:
         return
 
     if not study_plans:
-        st.info("먼저 학습계획을 생성하고 저장해주세요.")
+        render_empty_state(
+            "저장된 계획이 없습니다",
+            "복습 자료를 연결할 학습계획을 먼저 만들어주세요.",
+            icon=":material/article_shortcut:",
+        )
         return
 
     plan_by_id = {
@@ -104,60 +108,72 @@ def render_source_review_material(supabase, user) -> None:
     }
     plan_ids = list(plan_by_id)
 
-    source_type = st.segmented_control(
-        "원본 유형",
-        options=["text", "pdf"],
-        default="text",
-        format_func=lambda value: (
-            "텍스트 붙여넣기" if value == "text" else "PDF 업로드"
-        ),
-        key=SOURCE_TYPE_KEY,
-        required=True,
-        persist_state="page",
+    input_column, result_column = st.columns(
+        [0.9, 1.1],
+        gap="large",
+        vertical_alignment="top",
     )
 
-    with st.form("source_review_material_form"):
-        selected_plan_id = st.selectbox(
-            "학습계획",
-            options=plan_ids,
-            format_func=lambda plan_id: (
-                f"{plan_by_id[plan_id]['title']} · "
-                f"{plan_by_id[plan_id]['course_name']}"
-            ),
-            key=PLAN_KEY,
-        )
-        source_title = st.text_input(
-            "원본 제목",
-            max_chars=200,
-            placeholder="예: 데이터베이스 정규화 강의 노트",
-            key=TITLE_KEY,
-        )
-
-        pasted_text = None
-        uploaded_pdf = None
-        if source_type == "text":
-            pasted_text = st.text_area(
-                "원본 텍스트",
-                height=280,
-                placeholder="복습 자료로 만들 내용을 붙여넣으세요.",
-                key=TEXT_KEY,
-            )
-        else:
-            uploaded_pdf = st.file_uploader(
-                "PDF 파일",
-                type=["pdf"],
-                accept_multiple_files=False,
-                max_upload_size=MAX_PDF_UPLOAD_BYTES // (1024 * 1024),
-                help="최대 10MB의 텍스트 기반 PDF만 지원합니다.",
-                key=PDF_KEY,
+    with input_column:
+        with st.container(border=True):
+            st.subheader("원본 준비")
+            source_type = st.segmented_control(
+                "원본 유형",
+                options=["text", "pdf"],
+                default="text",
+                format_func=lambda value: (
+                    "텍스트 붙여넣기" if value == "text" else "PDF 업로드"
+                ),
+                key=SOURCE_TYPE_KEY,
+                required=True,
+                persist_state="page",
             )
 
-        submitted = st.form_submit_button(
-            "AI 복습 자료 생성하기",
-            type="primary",
-            icon=":material/auto_awesome:",
-            disabled=st.session_state[RUNNING_STATE_KEY],
-        )
+            with st.form("source_review_material_form"):
+                selected_plan_id = st.selectbox(
+                    "학습계획",
+                    options=plan_ids,
+                    format_func=lambda plan_id: (
+                        f"{plan_by_id[plan_id]['title']} · "
+                        f"{plan_by_id[plan_id]['course_name']}"
+                    ),
+                    key=PLAN_KEY,
+                )
+                source_title = st.text_input(
+                    "원본 제목",
+                    max_chars=200,
+                    placeholder="예: 데이터베이스 정규화 강의 노트",
+                    key=TITLE_KEY,
+                )
+
+                pasted_text = None
+                uploaded_pdf = None
+                if source_type == "text":
+                    pasted_text = st.text_area(
+                        "원본 텍스트",
+                        height=280,
+                        placeholder="복습 자료로 만들 내용을 붙여넣으세요.",
+                        key=TEXT_KEY,
+                    )
+                else:
+                    uploaded_pdf = st.file_uploader(
+                        "PDF 파일",
+                        type=["pdf"],
+                        accept_multiple_files=False,
+                        max_upload_size=(
+                            MAX_PDF_UPLOAD_BYTES // (1024 * 1024)
+                        ),
+                        help="최대 10MB의 텍스트 기반 PDF만 지원합니다.",
+                        key=PDF_KEY,
+                    )
+
+                submitted = st.form_submit_button(
+                    "AI 복습 자료 생성하기",
+                    type="primary",
+                    icon=":material/auto_awesome:",
+                    disabled=st.session_state[RUNNING_STATE_KEY],
+                    width="stretch",
+                )
 
     if submitted:
         if st.session_state[RUNNING_STATE_KEY]:
@@ -249,19 +265,24 @@ def render_source_review_material(supabase, user) -> None:
                 st.session_state[RUNNING_STATE_KEY] = False
 
     result = st.session_state.get(RESULT_STATE_KEY)
-    if (
-        result is None
-        or result.get("user_id") != user_id
-        or result.get("plan_id") != selected_plan_id
-    ):
-        return
+    with result_column:
+        if (
+            result is None
+            or result.get("user_id") != user_id
+            or result.get("plan_id") != selected_plan_id
+        ):
+            render_empty_state(
+                "생성 결과가 여기에 표시됩니다",
+                "왼쪽에서 원본을 입력하고 AI 복습 자료를 생성해주세요.",
+                icon=":material/auto_stories:",
+            )
+            return
 
-    review_material = result["review_material"]
-    st.divider()
-    st.subheader("생성된 복습 자료")
-    st.caption(
-        f"원본: {result['source_title']} · "
-        f"유형: {'PDF' if result['material_type'] == 'pdf' else '텍스트'}"
-    )
-    st.markdown(f"### {review_material['title']}")
-    st.markdown(review_material["content_markdown"])
+        review_material = result["review_material"]
+        with st.container(border=True):
+            st.caption(
+                f"원본 · {result['source_title']} · "
+                f"{'PDF' if result['material_type'] == 'pdf' else '텍스트'}"
+            )
+            st.markdown(f"## {review_material['title']}")
+            st.markdown(review_material["content_markdown"])

@@ -79,6 +79,8 @@ DB 구조, 보상 규칙, 제품 동작, 아키텍처를 바꾸는 작업은 구
 - 개발용 계획 완료와 오늘 기록 초기화는 사이드바의 지연 실행
   `테스트 도구` expander에만 표시
 - 인증 후 화면은 데스크톱 대시보드에 맞게 `wide` 레이아웃 사용
+- 로그인·회원가입은 520px 중앙 카드, 일반 화면은 1,120px,
+  대시보드형 화면은 1,280px 중앙 콘텐츠 폭을 사용
 - `.streamlit/config.toml`의 승인된 light 테마와
   `docs/design/DESIGN_SYSTEM.md`를 전역 시각 기준으로 사용
 
@@ -140,28 +142,30 @@ AI 호출과 DB 저장 책임도 분리한다.
   숙련도·취약 개념·다음 자동 복습 표시. 데스크톱에서는 과제 선택 목록,
   선택 과제 상세, 학습 진단·게임화 요약을 3영역으로 배치하고 취약 개념은
   우선순위 3개만 요약
-- `mastery_dashboard_view.py`: 전체 과목의 평균 숙련도 비교와
-  선택 과목의 개념별 현재 숙련도·취약 상태 표시
+- `mastery_dashboard_view.py`: 전체 과목 비교와 선택 과목 개념 상세를
+  탭으로 분리하고 개념 숙련도·취약 상태를 2열 카드로 표시
 - `saved_plans_view.py`: 저장된 계획/과제 조회, 완료와 삭제 확인.
   데스크톱에서는 왼쪽 날짜 선택과 오른쪽 선택 날짜 과제 상세의 2영역으로
   표시하며 오늘 또는 완료 처리 후 pending 날짜 선택을 유지
 - `review_material_ui.py`: `learn`과 `review` 과제의 자료 생성·저장·조회
 - `source_review_material_view.py`: 붙여넣은 텍스트 또는 PDF에서 추출한
-  텍스트 기반 AI 복습자료 생성·저장·미리보기
+  텍스트 기반 AI 복습자료 입력과 생성 결과를 좌우 영역으로 표시
 - `quiz_ui.py`: 퀴즈 생성·응시·재응시·결과,
   숙련도 변화와 자동 복습 표시
-- `completion_feedback.py`: 과제 완료/레벨업 피드백과 팝업
+- `completion_feedback.py`: 과제 완료와 일일 보너스 피드백 dialog
 - `tutor_state.py`: `tutor_` 접두사 세션 상태와 힌트 이동·초기화
-- `tutor_view.py`: 단계별 힌트, 풀이 점검, 정답 확인 튜터 UI
+- `tutor_view.py`: 2열 설정, 단계별 힌트 카드, 풀이 점검과
+  명시적 정답 확인 dialog를 제공하는 튜터 UI
 - `weekly_review_state.py`: `weekly_review_` 접두사 미리보기·저장 상태 관리
-- `weekly_review_view.py`: 주간 통계, 회고, 다음 7일 계획 미리보기·저장 UI
+- `weekly_review_view.py`: 학습 기록·AI 회고·다음 계획을 탭으로 분리하고
+  다음 7일 계획 미리보기·명시적 저장을 제공하는 UI
 - `gamification_state.py`: `gamification_` 접두사 알림·처리·이동 상태 관리
-- `gamification_view.py`: 일간·주간 도전과제, 업적 진행도,
-  대표 배지 설정과 오늘 학습 게임화 요약 UI
+- `gamification_view.py`: 일간·주간 도전과제, 업적 진행도와 대표 배지를
+  상태가 명시된 2~3열 카드로 표시하고 오늘 학습 요약도 제공
 - `test_tools_view.py`: 사이드바의 개발용 계획 전체 완료·오늘 기록 초기화와
   확인 절차. 닫혀 있을 때는 계획 데이터를 조회하지 않음
-- `ui_components.py`: 데이터·세션 상태와 분리된 공통 콘텐츠 폭,
-  페이지 헤더, 메트릭 행, 빈 상태 표시 helper
+- `ui_components.py`: 데이터·세션 상태와 분리된 인증·읽기·일반·대시보드
+  콘텐츠 폭, 페이지 헤더, 메트릭 행, 빈 상태 표시 helper
 
 View는 렌더링과 사용자 상호작용에 집중한다. DB와 업무 규칙은
 service/repository 또는 Supabase RPC로 이동한다.

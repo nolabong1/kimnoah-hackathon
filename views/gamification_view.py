@@ -36,6 +36,11 @@ from views.gamification_state import (
     pop_gamification_notifications,
     queue_gamification_notifications,
 )
+from views.ui_components import (
+    MetricItem,
+    render_metric_row,
+    render_page_header,
+)
 
 
 SEOUL_TIMEZONE = ZoneInfo("Asia/Seoul")
@@ -95,10 +100,9 @@ def render_gamification_notifications() -> None:
 def render_gamification_page(supabase, user) -> None:
     """업적·도전과제·배지 보관함 전체 화면을 표시합니다."""
 
-    st.header("🏅 업적·도전과제")
-    st.write(
-        "검증된 학습 기록으로 업적과 도전과제를 달성하고, "
-        "획득한 배지를 대표 배지로 설정할 수 있습니다."
+    render_page_header(
+        "업적·도전과제",
+        "학습 기록으로 도전과제를 달성하고 획득한 배지를 관리합니다.",
     )
     st.caption(
         "도전과제 보상은 완료 후 직접 수령해야 하며, "
@@ -169,6 +173,27 @@ def render_gamification_page(supabase, user) -> None:
             + _friendly_gamification_error(error)
         )
         return
+
+    unlocked_count = sum(
+        achievement.get("unlocked_at") is not None
+        for achievement in achievements
+    )
+    completed_challenge_count = sum(
+        challenge["status"] == ChallengeStatus.COMPLETED.value
+        for challenge in challenges
+    )
+    claimed_challenge_count = sum(
+        challenge["status"] == ChallengeStatus.CLAIMED.value
+        for challenge in challenges
+    )
+    render_metric_row(
+        [
+            MetricItem("해금한 업적", f"{unlocked_count}개"),
+            MetricItem("수령 가능 보상", f"{completed_challenge_count}개"),
+            MetricItem("수령한 도전 보상", f"{claimed_challenge_count}개"),
+            MetricItem("대표 배지", f"{len(showcase)}/3개"),
+        ]
+    )
 
     challenge_tab, achievement_tab, badge_tab = st.tabs(
         ["도전과제", "업적", "배지 보관함"]
@@ -322,7 +347,8 @@ def _render_challenge_group(
         )
         return
 
-    for challenge in challenges:
+    challenge_columns = st.columns(min(3, len(challenges)), gap="medium")
+    for index, challenge in enumerate(challenges):
         template = CHALLENGE_TEMPLATES_BY_KEY.get(challenge["template_key"])
         if template is None:
             st.warning("지원하지 않는 도전과제 기록이 있어 표시하지 못했습니다.")
@@ -333,27 +359,37 @@ def _render_challenge_group(
             challenge["target_value"],
         )
         status = challenge["status"]
-        with st.container(border=True):
-            st.markdown(f"**{template.name_ko}**")
-            st.write(template.description_ko)
-            st.progress(
-                progress_value / challenge["target_value"],
-                text=(
-                    f"진행 {progress_value}/{challenge['target_value']}"
-                ),
-            )
-            st.caption(
-                f"보상 {challenge['reward_exp']} EXP · "
-                + _challenge_period_label(challenge, now)
-            )
+        with challenge_columns[index % len(challenge_columns)]:
+            with st.container(border=True):
+                st.caption(
+                    "보상 수령 완료"
+                    if status == ChallengeStatus.CLAIMED.value
+                    else (
+                        "보상 수령 가능"
+                        if status == ChallengeStatus.COMPLETED.value
+                        else "진행 중"
+                    )
+                )
+                st.markdown(f"### {template.name_ko}")
+                st.write(template.description_ko)
+                st.progress(
+                    progress_value / challenge["target_value"],
+                    text=(
+                        f"진행 {progress_value}/{challenge['target_value']}"
+                    ),
+                )
+                st.caption(
+                    f"보상 {challenge['reward_exp']} EXP · "
+                    + _challenge_period_label(challenge, now)
+                )
 
-            if status == ChallengeStatus.CLAIMED.value:
-                st.success("보상을 수령했습니다.")
-            elif status == ChallengeStatus.COMPLETED.value:
-                st.success("완료했습니다. 보상을 수령할 수 있습니다.")
-                _render_claim_button(supabase, challenge)
-            elif status == ChallengeStatus.EXPIRED.value:
-                st.caption("완료하지 못한 채 기간이 종료되었습니다.")
+                if status == ChallengeStatus.CLAIMED.value:
+                    st.success("보상을 수령했습니다.")
+                elif status == ChallengeStatus.COMPLETED.value:
+                    st.success("완료했습니다. 보상을 수령할 수 있습니다.")
+                    _render_claim_button(supabase, challenge)
+                elif status == ChallengeStatus.EXPIRED.value:
+                    st.caption("완료하지 못한 채 기간이 종료되었습니다.")
 
 
 def _render_claim_button(supabase, challenge: dict) -> None:
@@ -424,7 +460,8 @@ def _render_achievements(achievements: list[dict]) -> None:
         or CATEGORY_LABELS[definition.category] == selected_category
     ]
 
-    for definition in visible_definitions:
+    achievement_columns = st.columns(2, gap="medium")
+    for index, definition in enumerate(visible_definitions):
         state = achievement_by_key.get(definition.key, {})
         unlocked_at = state.get("unlocked_at")
         display = mask_achievement_definition(
@@ -432,36 +469,41 @@ def _render_achievements(achievements: list[dict]) -> None:
             is_unlocked=bool(unlocked_at),
         )
 
-        with st.container(border=True):
-            st.markdown(
-                f"### {display['badge']['icon'] if unlocked_at else '🔒'} "
-                f"{display['name_ko']}"
-            )
-            st.write(display["description_ko"])
-            if display["target_value"] is None:
-                st.caption("비밀 업적 · 달성 조건과 보상은 해금 후 공개됩니다.")
-            else:
-                progress_value = min(
-                    int(state.get("progress_value", 0)),
-                    display["target_value"],
+        with achievement_columns[index % 2]:
+            with st.container(border=True):
+                st.caption("해금 완료" if unlocked_at else "잠긴 업적")
+                st.markdown(
+                    f"### {display['badge']['icon'] if unlocked_at else '🔒'} "
+                    f"{display['name_ko']}"
                 )
-                st.progress(
-                    progress_value / display["target_value"],
-                    text=(
-                        f"진행 {progress_value}/{display['target_value']}"
-                    ),
-                )
-                st.caption(
-                    f"{TIER_LABELS[display['tier']]} · "
-                    f"{RARITY_LABELS[display['badge']['rarity']]} 배지 · "
-                    f"보상 {display['reward_exp']} EXP"
-                )
-            if unlocked_at:
-                st.success(
-                    "해금일 · " + _format_seoul_datetime(unlocked_at)
-                )
-            else:
-                st.caption("아직 잠겨 있습니다.")
+                st.write(display["description_ko"])
+                if display["target_value"] is None:
+                    st.caption(
+                        "비밀 업적 · 달성 조건과 보상은 해금 후 공개됩니다."
+                    )
+                else:
+                    progress_value = min(
+                        int(state.get("progress_value", 0)),
+                        display["target_value"],
+                    )
+                    st.progress(
+                        progress_value / display["target_value"],
+                        text=(
+                            "진행 "
+                            f"{progress_value}/{display['target_value']}"
+                        ),
+                    )
+                    st.caption(
+                        f"{TIER_LABELS[display['tier']]} · "
+                        f"{RARITY_LABELS[display['badge']['rarity']]} 배지 · "
+                        f"보상 {display['reward_exp']} EXP"
+                    )
+                if unlocked_at:
+                    st.success(
+                        "해금일 · " + _format_seoul_datetime(unlocked_at)
+                    )
+                else:
+                    st.caption("아직 잠겨 있습니다.")
 
 
 def _render_badges(
@@ -490,6 +532,7 @@ def _render_badges(
     st.caption("획득한 배지 중 최대 3개를 프로필 대표 배지로 설정합니다.")
 
     options = [None, *unlocked_by_key.keys()]
+    slot_columns = st.columns(3, gap="medium")
     for slot in range(1, 4):
         current_key = showcase_by_slot.get(slot, {}).get("achievement_key")
         widget_key = f"gamification_badge_slot_{slot}"
@@ -498,68 +541,76 @@ def _render_badges(
         elif st.session_state[widget_key] not in options:
             st.session_state[widget_key] = current_key
 
-        with st.container(border=True):
-            selected_key = st.selectbox(
-                f"대표 배지 {slot}",
-                options=options,
-                key=widget_key,
-                format_func=lambda key: (
-                    "비워두기"
-                    if key is None
-                    else (
-                        f"{ACHIEVEMENTS_BY_KEY[key].badge.icon} "
-                        f"{ACHIEVEMENTS_BY_KEY[key].badge.name_ko}"
-                    )
-                ),
-                persist_state="session",
-            )
-            if st.button(
-                "대표 배지 적용",
-                key=f"gamification_badge_apply_{slot}",
-                icon=":material/check:",
-                disabled=(
-                    selected_key == current_key
-                    or st.session_state.get(BADGE_IN_PROGRESS_KEY) is not None
-                ),
-            ):
-                _apply_badge_selection(
-                    supabase,
-                    slot,
-                    selected_key,
+        with slot_columns[slot - 1]:
+            with st.container(border=True):
+                selected_key = st.selectbox(
+                    f"대표 배지 {slot}",
+                    options=options,
+                    key=widget_key,
+                    format_func=lambda key: (
+                        "비워두기"
+                        if key is None
+                        else (
+                            f"{ACHIEVEMENTS_BY_KEY[key].badge.icon} "
+                            f"{ACHIEVEMENTS_BY_KEY[key].badge.name_ko}"
+                        )
+                    ),
+                    persist_state="session",
                 )
+                if st.button(
+                    "대표 배지 적용",
+                    key=f"gamification_badge_apply_{slot}",
+                    icon=":material/check:",
+                    width="stretch",
+                    disabled=(
+                        selected_key == current_key
+                        or st.session_state.get(BADGE_IN_PROGRESS_KEY)
+                        is not None
+                    ),
+                ):
+                    _apply_badge_selection(
+                        supabase,
+                        slot,
+                        selected_key,
+                    )
 
     st.subheader("배지 컬렉션")
-    for definition in ACHIEVEMENT_CATALOG:
+    badge_columns = st.columns(3, gap="medium")
+    for index, definition in enumerate(ACHIEVEMENT_CATALOG):
         achievement = unlocked_by_key.get(definition.key)
         display = mask_achievement_definition(
             definition,
             is_unlocked=achievement is not None,
         )
-        with st.container(border=True):
-            st.markdown(
-                f"### {display['badge']['icon'] if achievement else '🔒'} "
-                f"{display['badge']['name_ko']}"
-            )
-            if display["badge"]["rarity"] is not None:
-                st.caption(
-                    "희귀도 · "
-                    f"{RARITY_LABELS[display['badge']['rarity']]}"
+        with badge_columns[index % 3]:
+            with st.container(border=True):
+                st.caption("획득한 배지" if achievement else "잠긴 배지")
+                st.markdown(
+                    f"### {display['badge']['icon'] if achievement else '🔒'} "
+                    f"{display['badge']['name_ko']}"
                 )
-            st.write(display["description_ko"])
-            if achievement:
-                st.caption(
-                    "획득일 · "
-                    + _format_seoul_datetime(achievement["unlocked_at"])
-                )
-                if definition.key in showcase_slot_by_key:
-                    st.success(
-                        "대표 배지 "
-                        f"{showcase_slot_by_key[definition.key]}번에 설정됨"
+                if display["badge"]["rarity"] is not None:
+                    st.caption(
+                        "희귀도 · "
+                        f"{RARITY_LABELS[display['badge']['rarity']]}"
                     )
-            elif display["hidden"]:
-                st.caption("달성 조건과 배지는 해금 후 공개됩니다.")
-            else:
-                st.caption("표시된 업적 조건을 달성하면 획득할 수 있습니다.")
+                st.write(display["description_ko"])
+                if achievement:
+                    st.caption(
+                        "획득일 · "
+                        + _format_seoul_datetime(
+                            achievement["unlocked_at"]
+                        )
+                    )
+                    if definition.key in showcase_slot_by_key:
+                        st.success(
+                            "대표 배지 "
+                            f"{showcase_slot_by_key[definition.key]}번에 설정됨"
+                        )
+                elif display["hidden"]:
+                    st.caption("달성 조건과 배지는 해금 후 공개됩니다.")
+                else:
+                    st.caption("표시된 업적 조건을 달성하면 획득할 수 있습니다.")
 
 
 def _apply_badge_selection(

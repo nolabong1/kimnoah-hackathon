@@ -51,6 +51,7 @@ from views.tutor_state import (
     is_final_solution_visible,
     previous_hint_level,
 )
+from views.ui_components import render_empty_state, render_page_header
 
 
 SETUP_PLAN_KEY = "tutor_setup_plan_id"
@@ -162,6 +163,31 @@ def _render_final_solution(guidance: TutorGuidance) -> None:
         st.info(solution.self_check_question)
 
 
+@st.dialog("정답과 전체 풀이 확인")
+def _render_final_answer_confirmation() -> None:
+    """최종 답 공개 전 학습 종료 영향을 한 번 더 확인합니다."""
+
+    st.warning(
+        "정답과 전체 풀이를 확인하면 단계별 힌트 학습이 종료됩니다."
+    )
+    st.caption("과제 완료나 EXP 지급에는 영향을 주지 않습니다.")
+    with st.container(horizontal=True, horizontal_alignment="right"):
+        if st.button(
+            "계속 풀어보기",
+            key="tutor_cancel_answer_button",
+        ):
+            st.session_state[FINAL_CONFIRMATION_PENDING_KEY] = False
+            st.rerun()
+        if st.button(
+            "정답 확인하기",
+            key="tutor_confirm_answer_button",
+            type="primary",
+        ):
+            st.session_state[FINAL_ANSWER_CONFIRMED_KEY] = True
+            st.session_state[FINAL_CONFIRMATION_PENDING_KEY] = False
+            st.rerun()
+
+
 def _render_active_tutor_session(user_id: str) -> None:
     """저장된 안내로 힌트·피드백·정답 확인 UI를 렌더링합니다."""
 
@@ -206,32 +232,42 @@ def _render_active_tutor_session(user_id: str) -> None:
             "사용했습니다."
         )
 
-    with st.container(border=True):
-        st.markdown("### 내가 입력한 문제")
-        st.write(st.session_state[QUESTION_KEY])
-        if st.session_state.get(ORIGINAL_ATTEMPT_KEY):
-            st.markdown("**처음 시도한 풀이**")
-            st.write(st.session_state[ORIGINAL_ATTEMPT_KEY])
+    context_columns = st.columns(2, gap="medium")
+    with context_columns[0]:
+        with st.container(border=True):
+            st.caption("사용자 입력")
+            st.markdown("### 내가 입력한 문제")
+            st.write(st.session_state[QUESTION_KEY])
+            if st.session_state.get(ORIGINAL_ATTEMPT_KEY):
+                st.markdown("**처음 시도한 풀이**")
+                st.write(st.session_state[ORIGINAL_ATTEMPT_KEY])
 
-    with st.container(border=True):
-        st.markdown("### 문제 이해")
-        st.write(guidance.problem_summary)
-        st.markdown("**필요한 개념**")
-        st.markdown(
-            "\n".join(
-                f"- {concept}"
-                for concept in guidance.required_concepts
+    with context_columns[1]:
+        with st.container(border=True):
+            st.caption("튜터의 문제 해석")
+            st.markdown("### 문제 이해")
+            st.write(guidance.problem_summary)
+            st.markdown("**필요한 개념**")
+            st.markdown(
+                "\n".join(
+                    f"- {concept}"
+                    for concept in guidance.required_concepts
+                )
             )
-        )
 
     visible_hint_level = int(
         st.session_state.get(VISIBLE_HINT_LEVEL_KEY, 1)
     )
-    for hint in get_visible_hints(guidance, visible_hint_level):
-        with st.container(border=True):
-            st.markdown(f"### Hint {hint.level} · {hint.title}")
-            st.markdown(hint.content)
-            st.info(f"생각해볼 질문: {hint.guiding_question}")
+    visible_hints = get_visible_hints(guidance, visible_hint_level)
+    st.subheader("단계별 힌트")
+    hint_columns = st.columns(len(visible_hints), gap="medium")
+    for hint_column, hint in zip(hint_columns, visible_hints):
+        with hint_column:
+            with st.container(border=True):
+                st.caption(f"현재 공개 단계 · Hint {hint.level}")
+                st.markdown(f"### {hint.title}")
+                st.markdown(hint.content)
+                st.info(f"생각해볼 질문: {hint.guiding_question}")
 
     if is_final_solution_visible(st.session_state):
         _render_final_solution(guidance)
@@ -268,44 +304,36 @@ def _render_active_tutor_session(user_id: str) -> None:
             st.session_state[FINAL_CONFIRMATION_PENDING_KEY] = True
 
     if st.session_state.get(FINAL_CONFIRMATION_PENDING_KEY):
-        with st.container(border=True):
-            st.warning(
-                "정답과 전체 풀이를 확인하면 단계별 힌트 학습이 "
-                "종료됩니다. 확인할까요?"
-            )
-            with st.container(horizontal=True):
-                if st.button(
-                    "정답 확인하기",
-                    key="tutor_confirm_answer_button",
-                    type="primary",
-                ):
-                    st.session_state[FINAL_ANSWER_CONFIRMED_KEY] = True
-                    st.session_state[FINAL_CONFIRMATION_PENDING_KEY] = False
-                    st.rerun()
-                if st.button(
-                    "계속 풀어보기",
-                    key="tutor_cancel_answer_button",
-                ):
-                    st.session_state[FINAL_CONFIRMATION_PENDING_KEY] = False
-                    st.rerun()
+        _render_final_answer_confirmation()
 
-    st.divider()
     st.subheader("수정한 풀이 점검하기")
-    with st.form("tutor_feedback_form"):
-        revised_attempt = st.text_area(
-            "수정한 풀이",
-            height=180,
-            placeholder="힌트를 참고해 다시 시도한 풀이를 입력하세요.",
-            key=REVISED_ATTEMPT_KEY,
-        )
-        feedback_submitted = st.form_submit_button(
-            "내 풀이 점검하기",
-            key="tutor_feedback_submit",
-            icon=":material/rate_review:",
-            disabled=bool(
-                st.session_state.get(FEEDBACK_IN_PROGRESS_KEY, False)
-            ),
-        )
+    feedback_input_column, feedback_result_column = st.columns(
+        2,
+        gap="large",
+        vertical_alignment="top",
+    )
+    with feedback_input_column:
+        with st.container(border=True):
+            with st.form("tutor_feedback_form"):
+                revised_attempt = st.text_area(
+                    "수정한 풀이",
+                    height=180,
+                    placeholder="힌트를 참고해 다시 시도한 풀이를 입력하세요.",
+                    key=REVISED_ATTEMPT_KEY,
+                )
+                feedback_submitted = st.form_submit_button(
+                    "내 풀이 점검하기",
+                    key="tutor_feedback_submit",
+                    icon=":material/rate_review:",
+                    type="primary",
+                    width="stretch",
+                    disabled=bool(
+                        st.session_state.get(
+                            FEEDBACK_IN_PROGRESS_KEY,
+                            False,
+                        )
+                    ),
+                )
 
     if feedback_submitted:
         try:
@@ -357,7 +385,15 @@ def _render_active_tutor_session(user_id: str) -> None:
         finally:
             st.session_state[FEEDBACK_IN_PROGRESS_KEY] = False
 
-    _render_feedback(st.session_state.get(LATEST_FEEDBACK_KEY))
+    with feedback_result_column:
+        if st.session_state.get(LATEST_FEEDBACK_KEY) is None:
+            render_empty_state(
+                "풀이 점검 결과가 여기에 표시됩니다",
+                "힌트를 참고해 수정한 풀이를 제출해보세요.",
+                icon=":material/rate_review:",
+            )
+        else:
+            _render_feedback(st.session_state.get(LATEST_FEEDBACK_KEY))
 
 
 def _render_tutor_setup(supabase, user_id: str) -> None:
@@ -381,15 +417,17 @@ def _render_tutor_setup(supabase, user_id: str) -> None:
         st.warning(
             "이전에 선택한 계획을 찾을 수 없어 다른 저장 계획을 표시합니다."
         )
-    selected_plan_id = st.selectbox(
-        "학습계획",
-        options=plan_ids,
-        format_func=lambda plan_id: (
-            f"{plan_by_id[plan_id]['title']} · "
-            f"{plan_by_id[plan_id]['course_name']}"
-        ),
-        key=SETUP_PLAN_KEY,
-    )
+    with st.container(border=True):
+        st.subheader("튜터 학습 맥락")
+        selected_plan_id = st.selectbox(
+            "학습계획",
+            options=plan_ids,
+            format_func=lambda plan_id: (
+                f"{plan_by_id[plan_id]['title']} · "
+                f"{plan_by_id[plan_id]['course_name']}"
+            ),
+            key=SETUP_PLAN_KEY,
+        )
 
     try:
         tasks = get_study_plan_tasks(
@@ -448,50 +486,59 @@ def _render_tutor_setup(supabase, user_id: str) -> None:
         st.caption("선택할 저장 자료가 없어 참고자료 없이 진행합니다.")
 
     with st.form("tutor_setup_form"):
-        selected_task_id = st.selectbox(
-            "연결할 과제 (선택)",
-            options=task_options,
-            format_func=lambda task_id: (
-                "선택하지 않음 · 직접 질문"
-                if task_id is None
-                else (
-                    f"{task_by_id[task_id]['scheduled_date']} · "
-                    f"{task_by_id[task_id]['title']}"
-                )
-            ),
-            key=SETUP_TASK_KEY,
-        )
-        selected_material_key = st.selectbox(
-            "참고자료 (선택)",
-            options=material_options,
-            format_func=lambda material_key: (
-                "선택하지 않음"
-                if material_key is None
-                else material_by_key[material_key]["label"]
-            ),
-            key=SETUP_MATERIAL_KEY,
-        )
-        question = st.text_area(
-            "질문 또는 문제",
-            height=180,
-            placeholder="풀이 과정을 도움받고 싶은 문제를 입력하세요.",
-            key=SETUP_QUESTION_KEY,
-        )
-        user_attempt = st.text_area(
-            "현재 풀이 또는 생각 (선택)",
-            height=150,
-            placeholder="지금까지 시도한 방법이나 막힌 지점을 적어주세요.",
-            key=SETUP_ATTEMPT_KEY,
-        )
-        st.caption(
-            f"질문과 풀이는 각각 최대 {MAX_TUTOR_QUESTION_CHARS:,}자, "
-            f"{MAX_TUTOR_ATTEMPT_CHARS:,}자까지 사용할 수 있습니다."
-        )
+        setup_columns = st.columns(2, gap="large")
+        with setup_columns[0]:
+            st.subheader("연결 정보")
+            selected_task_id = st.selectbox(
+                "연결할 과제 (선택)",
+                options=task_options,
+                format_func=lambda task_id: (
+                    "선택하지 않음 · 직접 질문"
+                    if task_id is None
+                    else (
+                        f"{task_by_id[task_id]['scheduled_date']} · "
+                        f"{task_by_id[task_id]['title']}"
+                    )
+                ),
+                key=SETUP_TASK_KEY,
+            )
+            selected_material_key = st.selectbox(
+                "참고자료 (선택)",
+                options=material_options,
+                format_func=lambda material_key: (
+                    "선택하지 않음"
+                    if material_key is None
+                    else material_by_key[material_key]["label"]
+                ),
+                key=SETUP_MATERIAL_KEY,
+            )
+            st.caption(
+                "과제와 참고자료를 고르지 않아도 직접 질문할 수 있습니다."
+            )
+        with setup_columns[1]:
+            st.subheader("질문과 현재 풀이")
+            question = st.text_area(
+                "질문 또는 문제",
+                height=180,
+                placeholder="풀이 과정을 도움받고 싶은 문제를 입력하세요.",
+                key=SETUP_QUESTION_KEY,
+            )
+            user_attempt = st.text_area(
+                "현재 풀이 또는 생각 (선택)",
+                height=150,
+                placeholder="지금까지 시도한 방법이나 막힌 지점을 적어주세요.",
+                key=SETUP_ATTEMPT_KEY,
+            )
+            st.caption(
+                f"질문과 풀이는 각각 최대 {MAX_TUTOR_QUESTION_CHARS:,}자, "
+                f"{MAX_TUTOR_ATTEMPT_CHARS:,}자까지 사용할 수 있습니다."
+            )
         start_submitted = st.form_submit_button(
             "AI 튜터 시작하기",
             key="tutor_start_submit",
             type="primary",
             icon=":material/explore:",
+            width="stretch",
             disabled=bool(
                 st.session_state.get(REQUEST_IN_PROGRESS_KEY, False)
             ),
@@ -601,9 +648,9 @@ def render_tutor(supabase, user) -> None:
     """단계별 힌트 AI 튜터 화면을 표시합니다."""
 
     user_id = str(user.id)
-    st.header("🧭 단계별 힌트 AI 튜터")
-    st.write(
-        "정답을 바로 보여주지 않고 세 단계 힌트로 풀이 방향을 잡아드립니다."
+    render_page_header(
+        "단계별 힌트 AI 튜터",
+        "정답을 바로 보여주지 않고 세 단계 힌트로 풀이 방향을 잡아드립니다.",
     )
 
     active_user_id = st.session_state.get(ACTIVE_USER_ID_KEY)
