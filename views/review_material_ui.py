@@ -1,5 +1,6 @@
 import streamlit as st
 
+from services.learner_context_service import load_learner_context
 from services.review_material_repository import (
     get_review_material_by_task,
     save_review_material,
@@ -79,6 +80,18 @@ def render_review_material_section(
                     "과제에 맞는 AI 학습자료를 "
                     "생성하고 저장하고 있습니다..."
                 ):
+                    learner_context = None
+                    try:
+                        learner_context = load_learner_context(
+                            supabase=supabase,
+                            user_id=user_id,
+                            course_name=course_name,
+                        )
+                    except Exception:
+                        st.warning(
+                            "최근 숙련도는 불러오지 못해 현재 계획과 "
+                            "과제 정보만으로 자료를 생성합니다."
+                        )
                     material_draft = (
                         generate_review_material(
                             course_name=course_name,
@@ -92,6 +105,7 @@ def render_review_material_section(
                             estimated_minutes=task[
                                 "estimated_minutes"
                             ],
+                            learner_context=learner_context,
                         )
                     )
 

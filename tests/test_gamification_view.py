@@ -75,10 +75,6 @@ class GamificationViewTests(unittest.TestCase):
                 "도전과제",
                 "업적",
                 "배지 보관함",
-                "상점",
-                "내 아이템",
-                "학습방",
-                "컬렉션",
             ],
         )
         self.assertIn(

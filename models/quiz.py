@@ -6,6 +6,8 @@ from pydantic import (
     field_validator,
 )
 
+from models.learning_blueprint import EvidenceKey
+
 
 ChoiceText = Annotated[
     str,
@@ -51,6 +53,11 @@ class QuizQuestionDraft(BaseModel):
         min_length=1,
         max_length=100,
         description="숙련도를 측정할 대표 개념의 간결한 한국어 이름",
+    )
+    evidence_key: EvidenceKey = Field(
+        description=(
+            "공통 학습 설계도의 성공 기준 중 이 문항이 평가하는 한 가지 기준"
+        ),
     )
 
     @field_validator(
@@ -150,6 +157,22 @@ class QuizDraft(BaseModel):
         if len(normalized_questions) != len(questions):
             raise ValueError(
                 "퀴즈 문항은 서로 달라야 합니다."
+            )
+
+        evidence_counts = {
+            "explain": 0,
+            "apply": 0,
+            "differentiate": 0,
+        }
+        for question in questions:
+            evidence_counts[question.evidence_key] += 1
+        if evidence_counts != {
+            "explain": 2,
+            "apply": 2,
+            "differentiate": 1,
+        }:
+            raise ValueError(
+                "퀴즈는 설명 2문항, 적용 2문항, 오해 구분 1문항이어야 합니다."
             )
 
         return questions

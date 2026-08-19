@@ -128,6 +128,28 @@ class AppLayoutTests(unittest.TestCase):
         self.assertEqual(navigation["position"], "sidebar")
         self.assertTrue(navigation["expanded"])
 
+    def test_customization_features_are_direct_navigation_pages(self):
+        app_source = (PROJECT_ROOT / "app.py").read_text(encoding="utf-8")
+        gamification_source = (
+            PROJECT_ROOT / "views" / "gamification_view.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('"꾸미기": [', app_source)
+        for page_name in (
+            "shop_page",
+            "inventory_page",
+            "study_room_page",
+            "collection_page",
+        ):
+            self.assertIn(page_name, app_source)
+        for old_nested_tab in (
+            '"상점",',
+            '"내 아이템",',
+            '"학습방",',
+            '"컬렉션",',
+        ):
+            self.assertNotIn(old_nested_tab, gamification_source)
+
     def test_approved_theme_tokens_are_configured(self):
         import tomllib
 

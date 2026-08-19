@@ -161,7 +161,7 @@ def render_shop_inventory(shop_data: dict[str, Any]) -> None:
 
     st.caption(
         f"구매한 아이템 {len(inventory)}개를 보유하고 있습니다. "
-        "학습방 탭에서 원하는 슬롯에 장착할 수 있습니다."
+        "학습방 화면에서 원하는 슬롯에 장착할 수 있습니다."
     )
     missing_item_count = sum(
         entry["item_key"] not in items_by_key

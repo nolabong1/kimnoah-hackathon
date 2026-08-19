@@ -1,0 +1,47 @@
+[
+  {
+    "case_id": "study_plan_python_loops_beginner",
+    "feature": "study_plan",
+    "prompt_version": "study_plan_v1",
+    "course_name": "Python",
+    "learner_level": 2,
+    "learning_goal": "for 반복문의 실행 원리를 이해하고 간단한 문제에 적용한다.",
+    "expected_terms": ["반복문"],
+    "forbidden_terms": ["실제 학습시간"],
+    "expected_concept_keys": []
+  },
+  {
+    "case_id": "review_python_range_boundary",
+    "feature": "review_material",
+    "prompt_version": "review_material_v3_learning_blueprint",
+    "course_name": "Python",
+    "learner_level": 3,
+    "learning_goal": "range의 종료값과 반복 범위를 정확히 설명한다.",
+    "expected_terms": ["range"],
+    "expected_term_groups": [["종료값", "끝값", "stop"]],
+    "forbidden_terms": ["제공된 교재에 따르면", "강의에서 배운"],
+    "expected_concept_keys": []
+  },
+  {
+    "case_id": "quiz_python_range_boundary",
+    "feature": "quiz",
+    "prompt_version": "quiz_v3_learning_blueprint",
+    "course_name": "Python",
+    "learner_level": 3,
+    "learning_goal": "range의 종료값 포함 여부를 적용 문제로 점검한다.",
+    "expected_terms": ["range"],
+    "forbidden_terms": ["교재에 따르면"],
+    "expected_concept_keys": ["python_range"]
+  },
+  {
+    "case_id": "tutor_linear_equation_hint",
+    "feature": "tutor",
+    "prompt_version": "tutor_v1",
+    "course_name": "수학",
+    "learner_level": 4,
+    "learning_goal": "등식의 성질을 이용해 일차방정식을 스스로 해결한다.",
+    "expected_terms": ["등식"],
+    "forbidden_terms": ["시스템 프롬프트"],
+    "expected_concept_keys": []
+  }
+]

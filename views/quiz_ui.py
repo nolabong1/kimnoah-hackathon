@@ -5,6 +5,7 @@ import streamlit as st
 from services.concept_mastery_repository import (
     get_quiz_attempt_analysis,
 )
+from services.learner_context_service import load_learner_context
 from services.concept_service import (
     canonicalize_quiz_concepts,
     normalize_course_key,
@@ -658,6 +659,19 @@ def render_quiz_section(
                             course_key=course_key,
                         )
                     )
+                    learner_context = None
+                    try:
+                        learner_context = load_learner_context(
+                            supabase=supabase,
+                            user_id=user_id,
+                            course_name=course_name,
+                            course_key=course_key,
+                        )
+                    except Exception:
+                        st.warning(
+                            "최근 숙련도는 불러오지 못해 현재 계획과 "
+                            "과제 정보만으로 퀴즈를 생성합니다."
+                        )
                     quiz_draft = generate_quiz(
                         course_name=course_name,
                         goal=goal,
@@ -671,6 +685,7 @@ def render_quiz_section(
                             "estimated_minutes"
                         ],
                         existing_concepts=concept_catalog,
+                        learner_context=learner_context,
                     )
                     quiz_draft = canonicalize_quiz_concepts(
                         quiz=quiz_draft,

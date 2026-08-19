@@ -100,6 +100,10 @@ DB 구조, 보상 규칙, 제품 동작, 아키텍처를 바꾸는 작업은 구
 - `models/coin_economy.py`: 코인 지갑과 멱등 거래 원장 응답 모델
 - `models/shop.py`: 상점 아이템, 고정 슬롯, 인벤토리·구매,
   사용자 학습방 장착·2D 변형과 상점 테스트 세션 응답 모델
+- `models/ai_quality.py`: 버전 관리 평가 사례, 오류·경고 검사와 품질 보고서 모델
+- `models/learner_context.py`: AI에 전달할 제한된 우선·안정 개념 숙련도 모델
+- `models/learning_blueprint.py`: 학습자료와 퀴즈가 공유하는 학습목표·범위·
+  이해 깊이·성공 기준 모델
 
 AI Structured Output과 RPC 응답은 가능한 한 Pydantic 모델로 검증한다.
 
@@ -139,6 +143,12 @@ AI Structured Output과 RPC 응답은 가능한 한 Pydantic 모델로 검증한
   1600×900 학습방 미리보기·직접 편집 장면 구성
 - `collection_service.py`: 활성 카탈로그와 본인 인벤토리·학습방을 이용한
   전체·카테고리별 수집률과 장착 수의 읽기 전용 집계
+- `ai_quality_service.py`: 유료 호출 없이 학습계획·학습자료·퀴즈·튜터 결과를
+  고정 사례와 결정론적 오류·경고 기준으로 비교하는 개발용 평가 하네스
+- `learner_context_service.py`: 과목별 숙련도를 UUID 없이 최대 6개 우선 개념과
+  최대 3개 안정 개념으로 축약해 학습자료·퀴즈 생성 문맥으로 제공
+- `learning_blueprint_service.py`: 계획 목표와 과제 범위를 결정론적으로
+  공통 학습·평가 계약으로 변환
 
 View에서 SQL/RPC 응답을 직접 조립하기보다 repository와 service에 둔다.
 AI 호출과 DB 저장 책임도 분리한다.
@@ -170,8 +180,10 @@ AI 호출과 DB 저장 책임도 분리한다.
 - `weekly_review_view.py`: 학습 기록·AI 회고·다음 계획을 탭으로 분리하고
   다음 7일 계획 미리보기·명시적 저장을 제공하는 UI
 - `gamification_state.py`: `gamification_` 접두사 알림·처리·이동 상태 관리
-- `gamification_view.py`: 일간·주간 도전과제, 업적 진행도, 대표 배지와
-  코인 상점·인벤토리·학습방·컬렉션 탭을 표시하고 오늘 학습 요약도 제공
+- `gamification_view.py`: 일간·주간 도전과제, 업적 진행도, 대표 배지 탭을
+  표시하고 오늘 학습 요약도 제공
+- `shop_pages_view.py`: 사이드바 `꾸미기` 그룹의 상점·내 아이템·학습방·
+  컬렉션 독립 페이지를 조합하고 필요한 데이터만 조회
 - `shop_state.py`: `shop_` 접두사 구매·학습방 저장 처리와 필터·알림 상태 관리
 - `shop_view.py`: 코인 지갑, 카테고리별 상점 카드, 구매 확인 dialog와
   영구 보유 인벤토리 UI
@@ -230,9 +242,12 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
 ### AI 학습자료
 
 1. `learn` 또는 `review` 과제에서 자료를 생성한다.
-2. Pydantic과 Python 업무 규칙으로 Markdown 결과를 검증한다.
-3. `review_materials`에 과제당 하나를 upsert한다.
-4. 재생성은 기존 자료를 갱신한다.
+2. 계획 목표와 과제 범위를 공통 `LearningBlueprint`로 정규화한다.
+3. 평가된 개념이 있으면 본인 과목의 우선·안정 개념 문맥을 제한적으로
+   전달하고, 조회 실패나 데이터 없음은 기존 계획·과제 문맥으로 대체한다.
+4. Pydantic과 Python 업무 규칙으로 Markdown 결과를 검증한다.
+5. `review_materials`에 과제당 하나를 upsert한다.
+6. 재생성은 기존 자료를 갱신한다.
 
 자료 생성이나 조회 자체는 과제를 완료하지 않으며 EXP도 지급하지 않는다.
 
@@ -248,16 +263,20 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
 
 ### 퀴즈와 적응형 학습
 
-1. AI가 객관식 5문항을 만들며 문항마다 대표 개념 하나를 생성한다.
-2. `concept_service.py`가 과목·개념 키와 별칭을 정규화한다.
-3. `save_quiz_with_concepts` RPC가 퀴즈와 개념 연결을 저장한다.
-4. 사용자가 제출하면 클라이언트가 UUID `submission_key`를 보낸다.
-5. `submit_quiz_attempt` RPC가 한 트랜잭션에서 채점, 응시 저장,
+1. 계획 목표와 퀴즈 과제 범위를 학습자료와 동일한 `LearningBlueprint`
+   구조로 정규화한다.
+2. AI가 객관식 5문항을 만들며 문항마다 대표 개념 하나를 생성한다. 평가된
+   개념이 있으면 현재 과제와 관련된 취약·최근 오답 신호를 진단 우선순위로
+   사용하고 관련 없는 개념은 강제로 출제하지 않는다.
+3. `concept_service.py`가 과목·개념 키와 별칭을 정규화한다.
+4. `save_quiz_with_concepts` RPC가 퀴즈와 개념 연결을 저장한다.
+5. 사용자가 제출하면 클라이언트가 UUID `submission_key`를 보낸다.
+6. `submit_quiz_attempt` RPC가 한 트랜잭션에서 채점, 응시 저장,
    문항별 숙련도 갱신, 취약 판정, 자동 복습 생성을 처리한다.
    자동 복습은 1일·3일·7일 목표의 최대 3단계로 함께 예약한다.
-6. 결과 UI는 점수, 정오답, 숙련도 변화, 취약 개념,
+7. 결과 UI는 점수, 정오답, 숙련도 변화, 취약 개념,
    생성된 복습 과제와 예정일을 표시한다.
-7. 새로고침 후에도 저장된 응시와 숙련도 원장에서 결과를 재구성한다.
+8. 새로고침 후에도 저장된 응시와 숙련도 원장에서 결과를 재구성한다.
 
 재응시는 허용한다. 각 시도는 증가하는 `attempt_number`와 당시
 `questions_snapshot`, `quiz_updated_at`을 저장한다. 퀴즈가 재생성되면
@@ -479,6 +498,8 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
 
 - 현재 AI 퀴즈는 객관식 5문항, 문항당 선택지 4개이다.
 - 각 문항은 MVP 기준 대표 개념 하나와 연결한다.
+- 새 퀴즈 문항은 공통 학습 설계도의 `explain` 2개, `apply` 2개,
+  `differentiate` 1개 성공 기준 분포를 가져야 한다.
 - 재응시는 가능하고 모든 응시 기록을 보존한다.
 - 현재 퀴즈 버전에서 전 문항을 맞혀야 퀴즈 과제를 완료할 수 있다.
 - 동일 `submission_key` 재처리는 새 응시나 숙련도 변경을 만들지 않는다.

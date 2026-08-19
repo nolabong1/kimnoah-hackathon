@@ -25,6 +25,12 @@ from views.gamification_view import (
     render_gamification_page,
 )
 from views.mastery_dashboard_view import render_mastery_dashboard
+from views.shop_pages_view import (
+    render_collection_page,
+    render_inventory_page,
+    render_shop_page,
+    render_study_room_page,
+)
 from views.shop_state import clear_shop_state
 from views.source_review_material_view import (
     SOURCE_REVIEW_SESSION_KEYS,
@@ -235,6 +241,34 @@ def show_gamification() -> None:
         )
 
 
+def show_shop() -> None:
+    """코인 상점 화면을 표시합니다."""
+
+    with content_frame(DASHBOARD_CONTENT_WIDTH):
+        render_shop_page(supabase=supabase, user=user)
+
+
+def show_inventory() -> None:
+    """내 아이템 화면을 표시합니다."""
+
+    with content_frame(DASHBOARD_CONTENT_WIDTH):
+        render_inventory_page(supabase=supabase, user=user)
+
+
+def show_study_room() -> None:
+    """내 학습방 화면을 표시합니다."""
+
+    with content_frame(DASHBOARD_CONTENT_WIDTH):
+        render_study_room_page(supabase=supabase, user=user)
+
+
+def show_collection() -> None:
+    """꾸미기 컬렉션 화면을 표시합니다."""
+
+    with content_frame(DASHBOARD_CONTENT_WIDTH):
+        render_collection_page(supabase=supabase, user=user)
+
+
 dashboard_page = st.Page(
     show_dashboard,
     title="오늘 학습",
@@ -284,6 +318,30 @@ gamification_page = st.Page(
     icon=":material/military_tech:",
     url_path="gamification",
 )
+shop_page = st.Page(
+    show_shop,
+    title="상점",
+    icon=":material/storefront:",
+    url_path="shop",
+)
+inventory_page = st.Page(
+    show_inventory,
+    title="내 아이템",
+    icon=":material/inventory_2:",
+    url_path="inventory",
+)
+study_room_page = st.Page(
+    show_study_room,
+    title="학습방",
+    icon=":material/chair:",
+    url_path="study-room",
+)
+collection_page = st.Page(
+    show_collection,
+    title="컬렉션",
+    icon=":material/collections_bookmark:",
+    url_path="collection",
+)
 
 pages_by_title = {
     "오늘 학습": dashboard_page,
@@ -294,6 +352,10 @@ pages_by_title = {
     "과목별 숙련도": mastery_dashboard_page,
     "업적·도전과제": gamification_page,
     "주간 학습 회고": weekly_review_page,
+    "상점": shop_page,
+    "내 아이템": inventory_page,
+    "학습방": study_room_page,
+    "컬렉션": collection_page,
 }
 
 selected_page = st.navigation(
@@ -305,6 +367,12 @@ selected_page = st.navigation(
             mastery_dashboard_page,
             gamification_page,
             weekly_review_page,
+        ],
+        "꾸미기": [
+            shop_page,
+            inventory_page,
+            study_room_page,
+            collection_page,
         ],
     },
     position="sidebar",
