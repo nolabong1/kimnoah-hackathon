@@ -1,9 +1,10 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import (
     BaseModel,
     Field,
     field_validator,
+    model_validator,
 )
 
 from models.learning_blueprint import EvidenceKey
@@ -16,6 +17,33 @@ ChoiceText = Annotated[
         max_length=300,
     ),
 ]
+
+QuizDiagnosisType = Literal[
+    "correct_reasoning",
+    "concept_confusion",
+    "condition_omission",
+    "procedure_error",
+    "calculation_error",
+    "boundary_error",
+    "overgeneralization",
+    "representation_error",
+    "other",
+]
+
+
+class QuizChoiceFeedback(BaseModel):
+    """특정 선택지를 고른 학습자에게 보여줄 진단 피드백입니다."""
+
+    diagnosis_type: QuizDiagnosisType
+    feedback: str = Field(min_length=1, max_length=600)
+    next_step: str = Field(min_length=1, max_length=300)
+
+    @field_validator("feedback", "next_step")
+    @classmethod
+    def strip_feedback_text(cls, value: str) -> str:
+        """선택지 피드백의 앞뒤 공백을 정리합니다."""
+
+        return value.strip()
 
 
 class QuizQuestionDraft(BaseModel):
@@ -30,6 +58,11 @@ class QuizQuestionDraft(BaseModel):
         min_length=4,
         max_length=4,
         description="서로 다른 객관식 선택지 4개",
+    )
+    choice_feedback: list[QuizChoiceFeedback] = Field(
+        min_length=4,
+        max_length=4,
+        description="선택지와 같은 순서로 대응하는 진단 피드백 4개",
     )
     correct_answer_index: int = Field(
         ge=0,
@@ -108,6 +141,28 @@ class QuizQuestionDraft(BaseModel):
             )
 
         return cleaned_choices
+
+    @model_validator(mode="after")
+    def validate_choice_feedback_alignment(self) -> "QuizQuestionDraft":
+        """정답과 오답 선택지의 진단 유형이 역할에 맞는지 확인합니다."""
+
+        for index, feedback in enumerate(self.choice_feedback):
+            is_correct_choice = index == self.correct_answer_index
+            if (
+                is_correct_choice
+                and feedback.diagnosis_type != "correct_reasoning"
+            ):
+                raise ValueError(
+                    "정답 선택지는 correct_reasoning 피드백이어야 합니다."
+                )
+            if (
+                not is_correct_choice
+                and feedback.diagnosis_type == "correct_reasoning"
+            ):
+                raise ValueError(
+                    "오답 선택지는 오답 원인을 나타내는 피드백이어야 합니다."
+                )
+        return self
 
 
 class QuizDraft(BaseModel):

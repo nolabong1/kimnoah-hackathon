@@ -31,6 +31,8 @@ SYSTEM_PROMPT = """
 - current_level은 1부터 10까지이며 숫자가 클수록 숙련도가 높습니다.
 - 퀴즈는 정확히 5문항으로 구성합니다.
 - 각 문항에는 서로 다른 선택지 4개를 제공합니다.
+- 각 문항에는 선택지 순서와 정확히 대응하는 choice_feedback 4개를
+  제공합니다.
 - 정답은 반드시 하나만 존재해야 합니다.
 - correct_answer_index는 정답 선택지의 0부터 시작하는 인덱스입니다.
 - 단순 암기뿐 아니라 핵심 개념의 이해와 적용도 확인합니다.
@@ -41,6 +43,13 @@ SYSTEM_PROMPT = """
 - 각 문항에는 숙련도를 측정할 대표 개념을 정확히 하나 연결합니다.
 - 각 문항에는 공통 학습 설계도의 성공 기준을 나타내는 evidence_key를
   explain, apply, differentiate 중 정확히 하나 연결합니다.
+- 정답 선택지의 diagnosis_type은 correct_reasoning이어야 합니다.
+- 오답 선택지는 왜 그 선택이 그럴듯하지만 틀렸는지 가장 가까운
+  diagnosis_type과 구체적인 feedback, 다시 생각할 next_step을 제공합니다.
+- 오답 피드백은 학습자를 비난하거나 단순히 틀렸다고 말하지 않고,
+  선택지에 드러난 오류의 위치와 종류를 설명합니다.
+- next_step은 정답을 그대로 공개하는 문장이 아니라 다시 확인할 조건,
+  계산 또는 개념을 안내합니다.
 - concept_key는 영문 소문자와 숫자의 snake_case로 작성합니다.
 - concept_name은 대표 개념을 나타내는 간결한 한국어 이름으로 작성합니다.
 - existing_concepts에 같은 의미의 개념이 있으면 그 concept_key와
@@ -57,7 +66,7 @@ SYSTEM_PROMPT = """
 """
 
 
-QUIZ_PROMPT_VERSION = "quiz_v3_learning_blueprint"
+QUIZ_PROMPT_VERSION = "quiz_v4_choice_diagnostics"
 LEARNING_BLUEPRINT_PROMPT = """
 
 learning_blueprint는 학습자료와 평가가 공유하는 학습 계약입니다.
@@ -230,6 +239,9 @@ def _is_valid_quiz(quiz: QuizDraft) -> bool:
         if len(question.choices) != 4:
             return False
 
+        if len(question.choice_feedback) != 4:
+            return False
+
         normalized_choices = {
             choice.strip().casefold()
             for choice in question.choices
@@ -243,6 +255,20 @@ def _is_valid_quiz(quiz: QuizDraft) -> bool:
 
         if question.correct_answer_index not in range(4):
             return False
+
+        for choice_index, feedback in enumerate(
+            question.choice_feedback
+        ):
+            if (
+                choice_index == question.correct_answer_index
+                and feedback.diagnosis_type != "correct_reasoning"
+            ):
+                return False
+            if (
+                choice_index != question.correct_answer_index
+                and feedback.diagnosis_type == "correct_reasoning"
+            ):
+                return False
 
         if not question.explanation.strip():
             return False
@@ -316,6 +342,9 @@ def generate_quiz(
             서로 다른 문제를 정확히 5개 작성하고,
             각 문제에는 중복되지 않는 선택지 4개와
             0부터 3 사이의 정답 인덱스, 구체적인 해설을 포함하세요.
+            선택지와 같은 순서의 choice_feedback 4개를 포함하고,
+            정답만 correct_reasoning, 오답은 구체적인 오답 유형으로
+            분류하세요.
             각 문항에 대표 개념 하나의 concept_key와
             concept_name도 규칙에 맞게 포함하세요.
             evidence_key는 explain 2개, apply 2개,

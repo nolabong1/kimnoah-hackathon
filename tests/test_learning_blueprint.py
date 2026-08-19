@@ -60,6 +60,28 @@ def _valid_quiz() -> QuizDraft:
                         "항상 빈 결과",
                         "항상 한 값만 생성",
                     ],
+                    "choice_feedback": [
+                        {
+                            "diagnosis_type": "correct_reasoning",
+                            "feedback": "종료값이 제외되는 규칙을 올바르게 적용했습니다.",
+                            "next_step": "시작값이 있는 range에도 같은 원리를 적용해보세요.",
+                        },
+                        {
+                            "diagnosis_type": "boundary_error",
+                            "feedback": "종료 경계를 결과에 포함하는 것으로 해석했습니다.",
+                            "next_step": "생성되는 마지막 값과 종료값을 비교해보세요.",
+                        },
+                        {
+                            "diagnosis_type": "concept_confusion",
+                            "feedback": "range가 값을 생성하는 기본 동작을 다시 확인해야 합니다.",
+                            "next_step": "range(2)를 직접 나열해보세요.",
+                        },
+                        {
+                            "diagnosis_type": "overgeneralization",
+                            "feedback": "모든 range가 한 값만 만든다고 지나치게 일반화했습니다.",
+                            "next_step": "종료값이 달라질 때 결과 개수를 비교해보세요.",
+                        },
+                    ],
                     "correct_answer_index": 0,
                     "explanation": "range는 종료값 자체를 포함하지 않습니다.",
                     "concept_key": "python_range",

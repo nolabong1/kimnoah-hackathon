@@ -24,6 +24,18 @@ from views.spaced_review_ui import (
 )
 
 
+QUIZ_DIAGNOSIS_LABELS = {
+    "concept_confusion": "개념 혼동",
+    "condition_omission": "조건 누락",
+    "procedure_error": "풀이 절차 오류",
+    "calculation_error": "계산 오류",
+    "boundary_error": "경계값 오류",
+    "overgeneralization": "지나친 일반화",
+    "representation_error": "표현 해석 오류",
+    "other": "추가 점검 필요",
+}
+
+
 def _get_quiz_state_prefix(
     widget_scope: str,
     quiz_id: str,
@@ -123,6 +135,46 @@ def _get_display_questions(quiz: dict) -> list[dict] | None:
             return None
 
     return questions
+
+
+def _get_choice_diagnostic(
+    question: dict,
+    selected_index: int,
+) -> dict | None:
+    """새 문항의 선택지별 진단을 검증하고 과거 문항은 건너뜁니다."""
+
+    choice_feedback = question.get("choice_feedback")
+    if (
+        not isinstance(choice_feedback, list)
+        or len(choice_feedback) != 4
+        or isinstance(selected_index, bool)
+        or not isinstance(selected_index, int)
+        or selected_index not in range(4)
+    ):
+        return None
+
+    diagnostic = choice_feedback[selected_index]
+    if not isinstance(diagnostic, dict):
+        return None
+
+    diagnosis_type = diagnostic.get("diagnosis_type")
+    feedback = diagnostic.get("feedback")
+    next_step = diagnostic.get("next_step")
+    if (
+        not isinstance(diagnosis_type, str)
+        or diagnosis_type not in QUIZ_DIAGNOSIS_LABELS
+        or not isinstance(feedback, str)
+        or not feedback.strip()
+        or not isinstance(next_step, str)
+        or not next_step.strip()
+    ):
+        return None
+
+    return {
+        "label": QUIZ_DIAGNOSIS_LABELS[diagnosis_type],
+        "feedback": feedback.strip(),
+        "next_step": next_step.strip(),
+    }
 
 
 def _render_adaptive_quiz_analysis(
@@ -323,38 +375,12 @@ def _render_adaptive_quiz_analysis(
         )
 
 
-def _render_quiz_result(
+def _render_quiz_answer_results(
     attempt: dict,
-    analysis: dict | None,
-) -> None:
-    """서버에 저장된 응시 점수와 문항별 해설을 표시합니다."""
-
-    questions = attempt.get("questions_snapshot")
-    answers = attempt.get("answers")
-
-    if (
-        not isinstance(questions, list)
-        or not isinstance(answers, list)
-        or len(questions) != len(answers)
-    ):
-        st.error(
-            "저장된 퀴즈 응시 결과 형식이 올바르지 않습니다."
-        )
-        return
-
-    display_questions = _get_display_questions(
-        {
-            "questions": questions,
-        }
-    )
-
-    if display_questions is None:
-        st.error(
-            "저장된 퀴즈 응시 문항 형식이 올바르지 않습니다."
-        )
-        return
-
-    questions = display_questions
+    questions: list[dict],
+    answers: list[int],
+) -> bool:
+    """점수와 문항별 정오답·해설을 왼쪽 결과 영역에 표시합니다."""
 
     st.markdown(
         f"#### {attempt['attempt_number']}번째 응시 결과"
@@ -391,7 +417,7 @@ def _render_quiz_result(
                 "저장된 문항의 정답 형식이 "
                 "올바르지 않습니다."
             )
-            return
+            return False
 
         st.markdown(
             f"**{question_index + 1}. "
@@ -409,14 +435,85 @@ def _render_quiz_result(
             st.write(
                 f"**정답:** {choices[correct_index]}"
             )
+            diagnostic = _get_choice_diagnostic(
+                question=question,
+                selected_index=selected_index,
+            )
+            if diagnostic is not None:
+                st.warning(
+                    f"오답 유형 · {diagnostic['label']}"
+                )
+                st.write(
+                    f"**선택한 답 점검:** {diagnostic['feedback']}"
+                )
+                st.caption(
+                    f"다음 확인 · {diagnostic['next_step']}"
+                )
 
         st.write(
             f"**해설:** "
             f"{question.get('explanation', '')}"
         )
 
-    if analysis is not None:
-        _render_adaptive_quiz_analysis(analysis)
+    return True
+
+
+def _render_quiz_result(
+    attempt: dict,
+    analysis: dict | None,
+) -> None:
+    """퀴즈 결과와 적응형 학습 진단을 좌우 영역으로 표시합니다."""
+
+    questions = attempt.get("questions_snapshot")
+    answers = attempt.get("answers")
+
+    if (
+        not isinstance(questions, list)
+        or not isinstance(answers, list)
+        or len(questions) != len(answers)
+    ):
+        st.error(
+            "저장된 퀴즈 응시 결과 형식이 올바르지 않습니다."
+        )
+        return
+
+    display_questions = _get_display_questions(
+        {
+            "questions": questions,
+        }
+    )
+
+    if display_questions is None:
+        st.error(
+            "저장된 퀴즈 응시 문항 형식이 올바르지 않습니다."
+        )
+        return
+
+    result_column, diagnosis_column = st.columns(
+        [1.65, 1],
+        gap="large",
+        vertical_alignment="top",
+    )
+
+    with result_column:
+        result_is_valid = _render_quiz_answer_results(
+            attempt=attempt,
+            questions=display_questions,
+            answers=answers,
+        )
+
+    if not result_is_valid:
+        return
+
+    with diagnosis_column:
+        with st.container(border=True):
+            st.markdown("### 학습 진단")
+            st.caption("이번 응시를 기준으로 정리한 개념별 학습 상태입니다.")
+
+            if analysis is None:
+                st.info("표시할 개념별 학습 진단이 없습니다.")
+            else:
+                _render_adaptive_quiz_analysis(analysis)
 
 
 def _render_quiz_form(

@@ -25,7 +25,7 @@
   {
     "case_id": "quiz_python_range_boundary",
     "feature": "quiz",
-    "prompt_version": "quiz_v3_learning_blueprint",
+    "prompt_version": "quiz_v4_choice_diagnostics",
     "course_name": "Python",
     "learner_level": 3,
     "learning_goal": "range의 종료값 포함 여부를 적용 문제로 점검한다.",

@@ -483,47 +483,28 @@ def render_saved_plans(supabase, user):
     elif st.session_state.get(date_select_key) not in scheduled_dates:
         st.session_state[date_select_key] = default_selected_date
 
-    date_list_column, date_detail_column = st.columns(
-        [0.9, 2.1],
-        gap="large",
-    )
-    with date_list_column:
-        with st.container(border=True):
-            st.subheader("학습 일정")
-            selected_date = st.radio(
-                "상세 내용을 확인할 날짜",
-                options=scheduled_dates,
-                key=date_select_key,
-                format_func=lambda scheduled_date: get_saved_plan_date_label(
-                    scheduled_date,
-                    tasks_by_date[scheduled_date],
-                ),
-                label_visibility="collapsed",
-                persist_state="session",
-            )
-            st.caption("날짜를 선택하면 오른쪽에 과제가 표시됩니다.")
+    with st.container(border=True):
+        st.subheader("학습 일정")
+        selected_date = st.selectbox(
+            "상세 내용을 확인할 날짜",
+            options=scheduled_dates,
+            key=date_select_key,
+            format_func=lambda scheduled_date: get_saved_plan_date_label(
+                scheduled_date,
+                tasks_by_date[scheduled_date],
+            ),
+            label_visibility="collapsed",
+            persist_state="session",
+        )
+        st.caption("선택한 날짜의 과제가 아래에 표시됩니다.")
 
     selected_tasks = tasks_by_date[selected_date]
-    selected_total_minutes = sum(
-        task["estimated_minutes"]
-        for task in selected_tasks
-    )
-    selected_completed_count = sum(
-        task["status"] == "completed"
-        for task in selected_tasks
-    )
-    with date_detail_column:
-        st.subheader(selected_date)
-        st.caption(
-            f"과제 {len(selected_tasks)}개 · "
-            f"완료 {selected_completed_count}개 · "
-            f"예상 학습시간 {selected_total_minutes}분"
+
+    for task in selected_tasks:
+        _render_saved_task_card(
+            supabase=supabase,
+            user_id=str(user.id),
+            selected_plan=selected_plan,
+            task=task,
+            today=today,
         )
-        for task in selected_tasks:
-            _render_saved_task_card(
-                supabase=supabase,
-                user_id=str(user.id),
-                selected_plan=selected_plan,
-                task=task,
-                today=today,
-            )

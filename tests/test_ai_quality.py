@@ -109,6 +109,28 @@ range(2)의 결과를 예상하고 정답과 해설을 확인하세요.
                             "모두 정답",
                             "항상 한 번만 반복한다",
                         ],
+                        "choice_feedback": [
+                            {
+                                "diagnosis_type": "correct_reasoning",
+                                "feedback": "종료값이 제외되는 규칙을 올바르게 적용했습니다.",
+                                "next_step": "시작값이 있는 경우도 확인해보세요.",
+                            },
+                            {
+                                "diagnosis_type": "boundary_error",
+                                "feedback": "종료 경계를 포함하는 것으로 해석했습니다.",
+                                "next_step": "마지막 생성값을 확인해보세요.",
+                            },
+                            {
+                                "diagnosis_type": "concept_confusion",
+                                "feedback": "선택지별 참·거짓을 구분하지 못했습니다.",
+                                "next_step": "각 선택지를 따로 검토해보세요.",
+                            },
+                            {
+                                "diagnosis_type": "overgeneralization",
+                                "feedback": "반복 횟수를 한 가지 경우로 일반화했습니다.",
+                                "next_step": "서로 다른 종료값을 비교해보세요.",
+                            },
+                        ],
                         "correct_answer_index": 0,
                         "explanation": (
                             "range는 지정한 종료값 자체를 포함하지 않습니다."

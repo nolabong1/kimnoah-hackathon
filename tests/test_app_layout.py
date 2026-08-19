@@ -1,4 +1,5 @@
 import ast
+import inspect
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -628,15 +629,19 @@ class AppLayoutTests(unittest.TestCase):
             [metric.label for metric in app.metric],
             ["과목", "시작일", "종료일"],
         )
-        self.assertEqual(len(app.radio), 1)
+        date_select = next(
+            selectbox
+            for selectbox in app.selectbox
+            if selectbox.label == "상세 내용을 확인할 날짜"
+        )
         self.assertEqual(
-            list(app.radio[0].options),
+            list(date_select.options),
             [
                 f"{today_text} · 0/1 완료 · 30분",
                 f"{tomorrow_text} · 0/1 완료 · 30분",
             ],
         )
-        self.assertEqual(app.radio[0].value, today_text)
+        self.assertEqual(date_select.value, today_text)
         self.assertEqual(len(app.expander), 0)
         material_section.assert_called_once()
         quiz_section.assert_not_called()
@@ -662,9 +667,27 @@ class AppLayoutTests(unittest.TestCase):
             app.run()
 
         self.assertEqual(list(app.exception), [])
-        self.assertEqual(app.radio[0].value, tomorrow_text)
+        date_select = next(
+            selectbox
+            for selectbox in app.selectbox
+            if selectbox.label == "상세 내용을 확인할 날짜"
+        )
+        self.assertEqual(date_select.value, tomorrow_text)
         future_material_section.assert_not_called()
         future_quiz_section.assert_called_once()
+
+    def test_saved_plan_tasks_use_consistent_full_page_width(self):
+        from views import saved_plans_view
+
+        source = inspect.getsource(saved_plans_view.render_saved_plans)
+
+        self.assertNotIn("selected_date_has_quiz", source)
+        self.assertNotIn("date_detail_column", source)
+        schedule_container = source.index(
+            'st.subheader("학습 일정")'
+        )
+        task_list = source.rindex("for task in selected_tasks:")
+        self.assertGreater(task_list, schedule_container)
 
 
 if __name__ == "__main__":

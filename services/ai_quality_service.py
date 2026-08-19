@@ -100,6 +100,16 @@ def evaluate_quiz_quality(
         != _normalize(question.choices[question.correct_answer_index])
         for question in quiz.questions
     )
+    wrong_choice_feedback_is_specific = all(
+        feedback.diagnosis_type != "correct_reasoning"
+        and _normalize(feedback.feedback) != _normalize(choice)
+        and _normalize(feedback.next_step) != _normalize(choice)
+        for question in quiz.questions
+        for choice_index, (choice, feedback) in enumerate(
+            zip(question.choices, question.choice_feedback)
+        )
+        if choice_index != question.correct_answer_index
+    )
     checks = [
         _check(
             "disallowed_choices_absent",
@@ -134,6 +144,15 @@ def evaluate_quiz_quality(
             "warning",
             "해설은 정답 선택지를 그대로 반복하지 않고 근거를 설명해야 합니다.",
         ),
+        _check(
+            "wrong_choice_feedback_is_specific",
+            wrong_choice_feedback_is_specific,
+            "warning",
+            (
+                "오답 피드백은 선택지 문구를 반복하지 말고 오류 위치와 "
+                "다음 확인 행동을 구체적으로 안내해야 합니다."
+            ),
+        ),
     ]
     combined_text = "\n".join(
         [
@@ -146,6 +165,14 @@ def evaluate_quiz_quality(
                     *question.choices,
                     question.explanation,
                     question.concept_name,
+                    *(
+                        feedback_text
+                        for feedback in question.choice_feedback
+                        for feedback_text in (
+                            feedback.feedback,
+                            feedback.next_step,
+                        )
+                    ),
                 )
             ),
         ]
