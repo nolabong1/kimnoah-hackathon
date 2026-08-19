@@ -156,7 +156,45 @@ class StudyRoomEquipment(BaseModel):
         return self
 
 
-class UserStudyRoom(StudyRoomEquipment):
+class StudyRoomItemTransform(BaseModel):
+    """고정 배치점을 기준으로 적용하는 개별 에셋의 2D 변형값입니다."""
+
+    x: int = Field(default=0, ge=-800, le=800)
+    y: int = Field(default=0, ge=-450, le=450)
+    scale: int = Field(default=100, ge=25, le=200)
+    rotation: int = Field(default=0, ge=-180, le=180)
+    flip_horizontal: bool = False
+
+
+class StudyRoomTransforms(BaseModel):
+    """배경과 바닥을 제외한 다섯 학습방 슬롯의 사용자 배치값입니다."""
+
+    desk: StudyRoomItemTransform = Field(
+        default_factory=StudyRoomItemTransform
+    )
+    chair: StudyRoomItemTransform = Field(
+        default_factory=StudyRoomItemTransform
+    )
+    decor_left: StudyRoomItemTransform = Field(
+        default_factory=StudyRoomItemTransform
+    )
+    decor_right: StudyRoomItemTransform = Field(
+        default_factory=StudyRoomItemTransform
+    )
+    accent: StudyRoomItemTransform = Field(
+        default_factory=StudyRoomItemTransform
+    )
+
+
+class StudyRoomLayout(StudyRoomEquipment):
+    """장착 아이템과 직접 편집한 2D 배치를 함께 표현합니다."""
+
+    item_transforms: StudyRoomTransforms = Field(
+        default_factory=StudyRoomTransforms
+    )
+
+
+class UserStudyRoom(StudyRoomLayout):
     """사용자별로 서버에 저장된 현재 학습방 구성입니다."""
 
     user_id: UUID
@@ -186,4 +224,54 @@ class ShopPurchaseResult(BaseModel):
         expected_spent = 0 if self.already_owned else self.price
         if self.coins_spent != expected_spent:
             raise ValueError("상점 구매 차감 금액이 가격과 일치하지 않습니다.")
+        return self
+
+
+class ShopTestSession(BaseModel):
+    """현재 사용자에게 열려 있는 상점 테스트 세션입니다."""
+
+    id: UUID
+    user_id: UUID
+    status: str = Field(pattern=r"^active$")
+    credit_amount: int = Field(gt=0)
+    credit_transaction_id: UUID
+    inventory_snapshot: list[str]
+    room_snapshot: dict | None = None
+    refunded_purchase_count: int = Field(ge=0)
+    refunded_coin_amount: int = Field(ge=0)
+    removed_inventory_count: int = Field(ge=0)
+    balance_after_reset: int | None = Field(default=None, ge=0)
+    started_at: datetime
+    reset_at: datetime | None = None
+
+
+class ShopTestStartResult(BaseModel):
+    """상점 테스트 코인 지급 RPC 결과입니다."""
+
+    session_id: UUID
+    credit_amount: int = Field(gt=0)
+    balance: int = Field(ge=0)
+    already_active: bool
+    started_at: datetime
+
+
+class ShopTestResetResult(BaseModel):
+    """상점 테스트 구매·학습방 복원 RPC 결과입니다."""
+
+    session_id: UUID
+    refunded_purchase_count: int = Field(ge=0)
+    refunded_coin_amount: int = Field(ge=0)
+    removed_inventory_count: int = Field(ge=0)
+    balance: int = Field(ge=0)
+    already_reset: bool
+    reset_at: datetime
+
+    @model_validator(mode="after")
+    def validate_reset_counts(self) -> "ShopTestResetResult":
+        """제거한 테스트 아이템 수와 환급한 구매 수를 맞춥니다."""
+
+        if self.removed_inventory_count != self.refunded_purchase_count:
+            raise ValueError("상점 테스트 구매와 제거 수가 일치하지 않습니다.")
+        if self.refunded_purchase_count == 0 and self.refunded_coin_amount != 0:
+            raise ValueError("구매가 없는데 환급 코인이 기록됐습니다.")
         return self

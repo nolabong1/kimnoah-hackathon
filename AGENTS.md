@@ -98,8 +98,8 @@ DB 구조, 보상 규칙, 제품 동작, 아키텍처를 바꾸는 작업은 구
 - `models/weekly_review.py`: 주간 통계 스냅샷과 구조화 AI 회고 모델
 - `models/gamification.py`: 업적·배지·도전과제 카탈로그와 저장/RPC 응답 모델
 - `models/coin_economy.py`: 코인 지갑과 멱등 거래 원장 응답 모델
-- `models/shop.py`: 상점 아이템, 고정 슬롯, 인벤토리·구매와
-  사용자 학습방 장착 응답 모델
+- `models/shop.py`: 상점 아이템, 고정 슬롯, 인벤토리·구매,
+  사용자 학습방 장착·2D 변형과 상점 테스트 세션 응답 모델
 
 AI Structured Output과 RPC 응답은 가능한 한 Pydantic 모델로 검증한다.
 
@@ -134,9 +134,9 @@ AI Structured Output과 RPC 응답은 가능한 한 Pydantic 모델로 검증한
 - `gamification_repository.py`: 게임화 동기화·조회·보상 수령·대표 배지 RPC 연결
 - `shop_catalog.py`: 승인된 꾸미기 아이템 15종과 가격·슬롯·에셋 경로 정의
 - `shop_repository.py`: 코인 지갑·상점·인벤토리·학습방 조회와
-  구매·학습방 저장 RPC 연결
-- `study_room_service.py`: 보유·슬롯 규칙 검증과 로컬 에셋 기반
-  1600×900 학습방 미리보기 합성
+  구매·학습방 저장·상점 테스트 세션 RPC 연결
+- `study_room_service.py`: 보유·슬롯·2D 변형 규칙 검증과 로컬 에셋 기반
+  1600×900 학습방 미리보기·직접 편집 장면 구성
 - `collection_service.py`: 활성 카탈로그와 본인 인벤토리·학습방을 이용한
   전체·카테고리별 수집률과 장착 수의 읽기 전용 집계
 
@@ -175,16 +175,18 @@ AI 호출과 DB 저장 책임도 분리한다.
 - `shop_state.py`: `shop_` 접두사 구매·학습방 저장 처리와 필터·알림 상태 관리
 - `shop_view.py`: 코인 지갑, 카테고리별 상점 카드, 구매 확인 dialog와
   영구 보유 인벤토리 UI
-- `study_room_view.py`: 왼쪽 합성 미리보기와 오른쪽 일곱 슬롯 선택,
+- `study_room_view.py`: 왼쪽 직접 조작 미리보기와 오른쪽 일곱 슬롯 선택,
   명시적 학습방 저장 UI
+- `study_room_editor_component.py`: Components v2 기반 클릭·드래그 이동,
+  모서리 크기, 회전 핸들, 좌우 반전 학습방 편집기
 - `collection_view.py`: 전체 15종과 카테고리별 수집률, 잠금·보유·장착 상태를
   서버의 기존 상점·인벤토리·학습방 조회 결과로 표시하는 읽기 전용 UI
 - `assets/study_room/`: 기본 학습방, 초기 15종의 1600×900 투명 오버레이와
   256×256 상점 썸네일, 합성 검수본, 카탈로그와 생성 출처 기록
 - `tools/prepare_study_room_asset.py`: 생성 원본을 고정 캔버스·썸네일로
   규격화하고 합성 미리보기와 JSON 카탈로그를 만드는 개발 도구
-- `test_tools_view.py`: 사이드바의 개발용 계획 전체 완료·오늘 기록 초기화와
-  확인 절차. 닫혀 있을 때는 계획 데이터를 조회하지 않음
+- `test_tools_view.py`: 사이드바의 개발용 계획 전체 완료·오늘 기록 초기화·
+  상점 테스트 세션과 확인 절차. 닫혀 있을 때는 관련 데이터를 조회하지 않음
 - `ui_components.py`: 데이터·세션 상태와 분리된 인증·읽기·일반·대시보드
   콘텐츠 폭, 페이지 헤더, 메트릭 행, 빈 상태 표시 helper
 
@@ -201,6 +203,9 @@ service/repository 또는 Supabase RPC로 이동한다.
 `tests/test_shop_room_integration.py`는 시작 지갑에서 구매·중복 요청·장착·
 컬렉션 반영까지 repository와 service 계약을 연결하고, 승인된 보상과 가격으로
 보수적 9주·참여형 5주·최대 3주의 전체 수집 속도를 검증한다.
+
+`tests/test_shop_test_tools.py`는 상점 테스트 세션 응답, 본인 조회,
+시작·초기화 RPC 계약과 SQL의 스냅샷·원장·RLS 구성을 검사한다.
 
 ## 주요 실행 흐름
 
@@ -314,9 +319,24 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
 4. 클라이언트는 `user_study_rooms`를 직접 쓰지 못하고 본인 행만 읽는다.
 5. 기본 방은 무료 벽·바닥이 있는 빈 공간이며 장착하지 않은 가구·소품 슬롯은
    비어 있다. 상점 아이템을 장착해 저장해야 이후 조회에도 유지된다.
-6. 좌우 소품은 같은 1600×900 원본의 유효 픽셀을 각 고정 중심점으로 이동해
-   합성하며, 같은 소품 하나를 양쪽에 동시에 장착할 수 없다.
-7. 학습방 장착·미리보기·저장은 EXP, 코인, 과제 상태를 변경하지 않는다.
+6. 책상·의자·좌우 소품·포인트는 브라우저 편집기에서 직접 이동·크기·회전·
+   좌우 반전할 수 있고, 조작 종료 시에만 세션 초안을 갱신한다.
+7. 저장 RPC는 아이템 키와 검증된 `item_transforms`를 함께 보존하며 상점 테스트
+   초기화도 시작 전 배치값을 함께 복원한다.
+8. 같은 소품 하나를 양쪽에 동시에 장착할 수 없다.
+9. 학습방 장착·미리보기·저장은 EXP, 코인, 과제 상태를 변경하지 않는다.
+
+### 상점 테스트 세션
+
+1. 사이드바 테스트 도구에서 시작하면 기존 인벤토리와 학습방을 스냅샷으로
+   보존하고 테스트 코인 1,200개를 한 번 지급한다.
+2. 활성 테스트 세션의 구매는 기존 구매 RPC를 그대로 통과하되 세션 ID가
+   source key, 관계 ID와 metadata에 기록된다.
+3. 초기화는 테스트 세션에서 구매한 아이템만 제거하고 구매 코인을 환급한 뒤
+   테스트 지급 코인을 회수하며, 시작 전 학습방을 복원한다.
+4. 세션 중 정상 학습으로 받은 코인과 세션 시작 전 보유 아이템은 유지한다.
+5. 시작과 초기화 RPC는 사용자·세션 단위로 멱등하며 클라이언트 직접 쓰기를
+   허용하지 않는다.
 
 ### 꾸미기 컬렉션
 
@@ -399,7 +419,10 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
 - `coin_transactions`: `(user_id, source_key)`로 멱등성을 보장하는 코인 원장
 - `shop_items`: 서버가 신뢰하는 15종 아이템 가격·슬롯·에셋 경로 카탈로그
 - `user_inventory`: 구매 코인 원장과 같은 사용자를 강제하는 영구 보유 아이템
-- `user_study_rooms`: 사용자당 한 행의 일곱 고정 슬롯 현재 장착 상태
+- `user_study_rooms`: 사용자당 한 행의 일곱 고정 슬롯과 직접 조작한
+  위치·크기·회전·좌우 반전 JSON 현재 상태
+- `shop_test_sessions`: 테스트 코인, 시작 전 인벤토리·학습방 스냅샷과
+  초기화 결과를 보존하는 사용자별 테스트 세션
 
 ### 주요 관계
 
@@ -602,6 +625,12 @@ Python 변경 전후로 함수와 제어 흐름의 범위를 다시 확인한다
 마지막으로 `supabase_study_rooms.sql`을 적용하고
 `supabase_study_rooms_validation.sql`로 학습방 RLS, 슬롯 외래 키,
 인벤토리 소유권과 서버 전용 저장 RPC를 검증한다.
+기존 학습방에는 `supabase_study_room_direct_editor.sql`을 적용한 뒤
+`supabase_study_room_direct_editor_validation.sql`로 변형 JSON 범위,
+저장 RPC와 상점 테스트 배치 복원을 검증한다.
+상점 테스트 도구는 그 뒤 `supabase_shop_test_tools.sql`을 적용하고
+`supabase_shop_test_tools_validation.sql`로 세션 소유권, 테스트 코인 원장,
+구매 추적, 환급·복원과 RPC 권한을 검증한다.
 코인·상점·학습방 적용을 모두 마친 뒤에는 읽기 전용
 `supabase_shop_room_integration_validation.sql`로 원장 합계, 구매 연결,
 장착 소유권과 슬롯, 컬렉션 상한을 한 번에 최종 확인한다.

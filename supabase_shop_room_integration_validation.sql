@@ -1,4 +1,4 @@
--- 코인·상점·학습방·컬렉션 전체 흐름의 최종 읽기 전용 검증입니다.
+-- 코인·상점·학습방·컬렉션·상점 테스트 도구의 최종 읽기 전용 검증입니다.
 -- 관련 마이그레이션과 개별 validation SQL 적용 후 한 번 실행합니다.
 begin;
 set transaction read only;
@@ -14,7 +14,8 @@ begin
     'coin_transactions',
     'shop_items',
     'user_inventory',
-    'user_study_rooms'
+    'user_study_rooms',
+    'shop_test_sessions'
   ]
   loop
     if pg_catalog.to_regclass('public.' || required_table) is null then
@@ -36,8 +37,10 @@ begin
   foreach required_function in array array[
     pg_catalog.to_regprocedure('public.purchase_shop_item(text)'),
     pg_catalog.to_regprocedure(
-      'public.save_user_study_room(text,text,text,text,text,text,text)'
-    )
+      'public.save_user_study_room(text,text,text,text,text,text,text,jsonb)'
+    ),
+    pg_catalog.to_regprocedure('public.start_shop_test_session()'),
+    pg_catalog.to_regprocedure('public.reset_shop_test_session(uuid)')
   ]
   loop
     if required_function is null then
@@ -51,6 +54,16 @@ begin
       raise exception '상점 또는 학습방 RPC 권한이 올바르지 않습니다.';
     end if;
   end loop;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_attribute
+    where attrelid = 'public.user_study_rooms'::regclass
+      and attname = 'item_transforms'
+      and not attisdropped
+  ) then
+    raise exception '학습방 직접 배치 열이 없습니다.';
+  end if;
 end;
 $$;
 
@@ -70,13 +83,27 @@ begin
         coalesce(sum(transaction.amount), 0)::integer as balance,
         coalesce(
           sum(transaction.amount) filter (
-            where transaction.transaction_type <> 'purchase'
+            where transaction.transaction_type in (
+              'onboarding',
+              'task_completion',
+              'daily_completion',
+              'daily_challenge',
+              'weekly_challenge',
+              'shop_test_credit',
+              'test_reset_reversal'
+            )
           ),
           0
         )::integer as earned,
         coalesce(
           sum(-transaction.amount) filter (
             where transaction.transaction_type = 'purchase'
+          ),
+          0
+        )::integer
+        - coalesce(
+          sum(transaction.amount) filter (
+            where transaction.transaction_type = 'shop_test_purchase_refund'
           ),
           0
         )::integer as spent
@@ -143,7 +170,18 @@ begin
       on purchase.id = inventory.purchase_transaction_id
      and purchase.user_id = inventory.user_id
     where purchase.transaction_type <> 'purchase'
-       or purchase.source_key <> 'purchase:' || inventory.item_key
+       or (
+         purchase.source_key <> 'purchase:' || inventory.item_key
+         and not exists (
+           select 1
+           from public.shop_test_sessions as session
+           where session.id = purchase.related_entity_id
+             and session.user_id = purchase.user_id
+             and purchase.source_key =
+               'shop_test:' || session.id::text
+               || ':purchase:' || inventory.item_key
+         )
+       )
        or purchase.amount <> -inventory.price_paid
   ) then
     raise exception '인벤토리와 구매 코인 원장이 일치하지 않습니다.';
@@ -158,6 +196,17 @@ begin
         from public.user_inventory as inventory
         where inventory.user_id = purchase.user_id
           and inventory.purchase_transaction_id = purchase.id
+      )
+      and not exists (
+        select 1
+        from public.shop_test_sessions as session
+        join public.coin_transactions as refund
+          on refund.user_id = session.user_id
+         and refund.related_entity_id = session.id
+         and refund.transaction_type = 'shop_test_purchase_refund'
+        where session.id = purchase.related_entity_id
+          and session.user_id = purchase.user_id
+          and session.status = 'reset'
       )
   ) then
     raise exception '인벤토리가 없는 구매 코인 원장이 있습니다.';

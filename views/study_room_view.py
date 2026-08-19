@@ -1,4 +1,4 @@
-from io import BytesIO
+from collections.abc import Mapping
 from typing import Any
 
 import streamlit as st
@@ -10,14 +10,23 @@ from services.shop_repository import (
 )
 from services.study_room_service import (
     EQUIPMENT_FIELD_SLOTS,
-    compose_study_room_preview,
+    TRANSFORMABLE_FIELD_SLOTS,
+    build_study_room_editor_scene,
+    empty_study_room_transforms,
     extract_study_room_equipment,
+    extract_study_room_transforms,
     validate_study_room_equipment,
+    validate_study_room_transforms,
 )
 from views.shop_state import (
+    ROOM_EDITOR_COMPONENT_KEY,
+    ROOM_EQUIPMENT_DRAFT_KEY,
     ROOM_SAVE_IN_PROGRESS_KEY,
+    ROOM_SAVED_SOURCE_KEY,
     ROOM_SUCCESS_MESSAGE_KEY,
+    ROOM_TRANSFORMS_DRAFT_KEY,
 )
+from views.study_room_editor_component import render_study_room_editor
 
 
 SLOT_LABELS = {
@@ -52,6 +61,28 @@ def render_study_room(
     owned_keys = {entry["item_key"] for entry in inventory}
     items_by_key = {item["item_key"]: item for item in items}
     saved_equipment = extract_study_room_equipment(saved_room)
+    saved_transforms = extract_study_room_transforms(saved_room)
+    saved_source = (
+        "empty"
+        if saved_room is None
+        else str(saved_room.get("updated_at", "saved"))
+    )
+    if st.session_state.get(ROOM_SAVED_SOURCE_KEY) != saved_source:
+        st.session_state[ROOM_SAVED_SOURCE_KEY] = saved_source
+        st.session_state[ROOM_TRANSFORMS_DRAFT_KEY] = saved_transforms
+        st.session_state[ROOM_EQUIPMENT_DRAFT_KEY] = saved_equipment
+        for field_name, slot in EQUIPMENT_FIELD_SLOTS.items():
+            st.session_state[f"shop_room_slot_{slot.value}"] = (
+                saved_equipment[field_name]
+            )
+    st.session_state.setdefault(
+        ROOM_TRANSFORMS_DRAFT_KEY,
+        saved_transforms,
+    )
+    st.session_state.setdefault(
+        ROOM_EQUIPMENT_DRAFT_KEY,
+        saved_equipment,
+    )
 
     preview_column, editor_column = st.columns(
         [1.65, 1],
@@ -84,6 +115,22 @@ def render_study_room(
                 persist_state="session",
             )
 
+        selected_transforms = validate_study_room_transforms(
+            st.session_state.get(ROOM_TRANSFORMS_DRAFT_KEY)
+        )
+        previous_equipment = st.session_state.get(
+            ROOM_EQUIPMENT_DRAFT_KEY,
+            saved_equipment,
+        )
+        default_transforms = empty_study_room_transforms()
+        for field_name, slot in TRANSFORMABLE_FIELD_SLOTS.items():
+            if selected_equipment[field_name] != previous_equipment.get(
+                field_name
+            ):
+                selected_transforms[slot.value] = default_transforms[slot.value]
+        st.session_state[ROOM_TRANSFORMS_DRAFT_KEY] = selected_transforms
+        st.session_state[ROOM_EQUIPMENT_DRAFT_KEY] = selected_equipment.copy()
+
         validation_error = _equipment_error(
             selected_equipment,
             owned_keys,
@@ -91,7 +138,10 @@ def render_study_room(
         if validation_error is not None:
             st.warning(validation_error)
 
-        has_changes = selected_equipment != saved_equipment
+        has_changes = (
+            selected_equipment != saved_equipment
+            or selected_transforms != saved_transforms
+        )
         save_running = bool(
             st.session_state.get(ROOM_SAVE_IN_PROGRESS_KEY, False)
         )
@@ -119,6 +169,7 @@ def render_study_room(
                         supabase,
                         selected_equipment,
                         owned_keys,
+                        selected_transforms,
                     )
                 st.session_state[ROOM_SUCCESS_MESSAGE_KEY] = (
                     "학습방 구성을 저장했습니다."
@@ -132,16 +183,23 @@ def render_study_room(
     with preview_column:
         st.subheader("내 학습방")
         st.caption(
-            "선택 내용은 즉시 미리보기에 반영되며 저장 버튼을 눌러야 보존됩니다."
+            "가구를 직접 움직인 결과는 저장 버튼을 눌러야 보존됩니다."
         )
         with st.container(border=True):
             if validation_error is None:
                 try:
-                    preview = compose_study_room_preview(
+                    scene = build_study_room_editor_scene(
                         selected_equipment,
                         owned_keys,
+                        selected_transforms,
                     )
-                    st.image(BytesIO(preview), width="stretch")
+                    render_study_room_editor(
+                        scene,
+                        key=ROOM_EDITOR_COMPONENT_KEY,
+                        on_transforms_change=(
+                            _capture_study_room_editor_transforms
+                        ),
+                    )
                 except Exception:
                     st.error(
                         "학습방 미리보기를 만들지 못했습니다. "
@@ -161,6 +219,7 @@ def execute_study_room_save(
     supabase,
     equipment: dict[str, str | None],
     owned_item_keys: set[str],
+    transforms: object | None = None,
 ) -> dict:
     """Python 검증 후 학습방 저장 RPC를 정확히 한 번 호출합니다."""
 
@@ -168,7 +227,26 @@ def execute_study_room_save(
         equipment,
         owned_item_keys,
     )
-    return save_user_study_room(supabase, normalized)
+    normalized_transforms = validate_study_room_transforms(transforms)
+    return save_user_study_room(
+        supabase,
+        normalized,
+        normalized_transforms,
+    )
+
+
+def _capture_study_room_editor_transforms() -> None:
+    """CCv2가 조작 종료 시 보낸 변형값을 학습방 초안에 반영합니다."""
+
+    component_state = st.session_state.get(ROOM_EDITOR_COMPONENT_KEY)
+    if not isinstance(component_state, Mapping):
+        return
+    raw_transforms = component_state.get("transforms")
+    try:
+        normalized = validate_study_room_transforms(raw_transforms)
+    except ValueError:
+        return
+    st.session_state[ROOM_TRANSFORMS_DRAFT_KEY] = normalized
 
 
 def _slot_options(
@@ -208,7 +286,12 @@ def render_study_room_load_error(error: Exception) -> None:
     raw_message = str(error)
     if any(
         marker in raw_message
-        for marker in ("user_study_rooms", "PGRST202", "PGRST205")
+        for marker in (
+            "user_study_rooms",
+            "item_transforms",
+            "PGRST202",
+            "PGRST205",
+        )
     ):
         st.error(
             "학습방 데이터베이스 설정이 아직 적용되지 않았습니다. "
@@ -233,7 +316,11 @@ def _friendly_room_save_error(error: Exception) -> str:
             return message
     if any(
         marker in raw_message
-        for marker in ("save_user_study_room", "PGRST202")
+        for marker in (
+            "save_user_study_room",
+            "item_transforms",
+            "PGRST202",
+        )
     ):
         return (
             "학습방 저장 기능이 아직 데이터베이스에 적용되지 않았습니다. "

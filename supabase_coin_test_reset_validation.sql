@@ -154,13 +154,27 @@ begin
         coalesce(sum(transaction.amount), 0)::integer as balance,
         coalesce(
           sum(transaction.amount) filter (
-            where transaction.transaction_type <> 'purchase'
+            where transaction.transaction_type in (
+              'onboarding',
+              'task_completion',
+              'daily_completion',
+              'daily_challenge',
+              'weekly_challenge',
+              'shop_test_credit',
+              'test_reset_reversal'
+            )
           ),
           0
         )::integer as earned,
         coalesce(
           sum(-transaction.amount) filter (
             where transaction.transaction_type = 'purchase'
+          ),
+          0
+        )::integer
+        - coalesce(
+          sum(transaction.amount) filter (
+            where transaction.transaction_type = 'shop_test_purchase_refund'
           ),
           0
         )::integer as spent

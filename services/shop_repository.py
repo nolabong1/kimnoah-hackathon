@@ -7,7 +7,11 @@ from models.coin_economy import CoinWallet
 from models.shop import (
     ShopItem,
     ShopPurchaseResult,
+    ShopTestResetResult,
+    ShopTestSession,
+    ShopTestStartResult,
     StudyRoomEquipment,
+    StudyRoomTransforms,
     UserInventoryItem,
     UserStudyRoom,
 )
@@ -94,7 +98,8 @@ def get_user_study_room(
         .select(
             "user_id, background_item_key, floor_item_key, "
             "desk_item_key, chair_item_key, decor_left_item_key, "
-            "decor_right_item_key, accent_item_key, created_at, updated_at"
+            "decor_right_item_key, accent_item_key, item_transforms, "
+            "created_at, updated_at"
         )
         .eq("user_id", normalized_user_id)
         .maybe_single()
@@ -109,9 +114,39 @@ def get_user_study_room(
     )
 
 
+def get_active_shop_test_session(
+    supabase: Client,
+    user_id: str,
+) -> dict | None:
+    """사용자 본인의 활성 상점 테스트 세션을 조회합니다."""
+
+    normalized_user_id = _validate_uuid(user_id, "사용자 ID")
+    response = (
+        supabase.table("shop_test_sessions")
+        .select(
+            "id, user_id, status, credit_amount, credit_transaction_id, "
+            "inventory_snapshot, room_snapshot, refunded_purchase_count, "
+            "refunded_coin_amount, removed_inventory_count, "
+            "balance_after_reset, started_at, reset_at"
+        )
+        .eq("user_id", normalized_user_id)
+        .eq("status", "active")
+        .maybe_single()
+        .execute()
+    )
+    if response is None or response.data is None:
+        return None
+    return _validate_single_response(
+        response.data,
+        ShopTestSession,
+        "상점 테스트 세션 조회 결과가 올바르지 않습니다.",
+    )
+
+
 def save_user_study_room(
     supabase: Client,
     equipment: dict,
+    transforms: dict | None = None,
 ) -> dict:
     """서버 RPC로 보유·슬롯 검증을 거쳐 학습방을 저장합니다."""
 
@@ -119,14 +154,24 @@ def save_user_study_room(
         normalized = StudyRoomEquipment.model_validate(equipment)
     except ValidationError as error:
         raise ValueError("학습방 장착 정보가 올바르지 않습니다.") from error
+    try:
+        normalized_transforms = StudyRoomTransforms.model_validate(
+            transforms or {}
+        )
+    except ValidationError as error:
+        raise ValueError("학습방 가구 배치 정보가 올바르지 않습니다.") from error
 
+    params = {
+        f"p_{field_name}": value
+        for field_name, value in normalized.model_dump().items()
+    }
+    params["p_item_transforms"] = normalized_transforms.model_dump(
+        mode="json"
+    )
     response = (
         supabase.rpc(
             "save_user_study_room",
-            {
-                f"p_{field_name}": value
-                for field_name, value in normalized.model_dump().items()
-            },
+            params,
         )
         .execute()
     )
@@ -155,6 +200,38 @@ def purchase_shop_item(
         response.data,
         ShopPurchaseResult,
         "상점 구매 결과가 올바르지 않습니다.",
+    )
+
+
+def start_shop_test_session(supabase: Client) -> dict:
+    """기존 상태를 보존하고 상점 테스트 코인을 한 번 지급합니다."""
+
+    response = supabase.rpc("start_shop_test_session", {}).execute()
+    return _validate_single_response(
+        response.data,
+        ShopTestStartResult,
+        "상점 테스트 시작 결과가 올바르지 않습니다.",
+    )
+
+
+def reset_shop_test_session(
+    supabase: Client,
+    session_id: str,
+) -> dict:
+    """테스트 구매만 제거하고 시작 전 학습방과 코인을 복원합니다."""
+
+    normalized_session_id = _validate_uuid(session_id, "테스트 세션 ID")
+    response = (
+        supabase.rpc(
+            "reset_shop_test_session",
+            {"p_session_id": normalized_session_id},
+        )
+        .execute()
+    )
+    return _validate_single_response(
+        response.data,
+        ShopTestResetResult,
+        "상점 테스트 초기화 결과가 올바르지 않습니다.",
     )
 
 

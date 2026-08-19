@@ -5,14 +5,17 @@ from pathlib import Path
 from PIL import Image
 from streamlit.testing.v1 import AppTest
 
-from models.shop import StudyRoomEquipment
+from models.shop import StudyRoomEquipment, StudyRoomItemTransform
 from services.shop_repository import (
     get_user_study_room,
     save_user_study_room,
 )
 from services.study_room_service import (
     ROOM_CANVAS_SIZE,
+    build_study_room_editor_scene,
     compose_study_room_preview,
+    empty_study_room_transforms,
+    validate_study_room_transforms,
     validate_study_room_equipment,
 )
 
@@ -146,6 +149,53 @@ class StudyRoomModelAndServiceTests(unittest.TestCase):
             self.assertEqual(image.size, ROOM_CANVAS_SIZE)
             self.assertEqual(image.format, "WEBP")
 
+    def test_item_transform_enforces_editor_bounds(self):
+        with self.assertRaises(ValueError):
+            StudyRoomItemTransform(scale=201)
+        with self.assertRaises(ValueError):
+            StudyRoomItemTransform(x=-801)
+
+    def test_transform_validation_fills_missing_slot_defaults(self):
+        transforms = validate_study_room_transforms(
+            {"desk": {"x": -120, "scale": 85, "flip_horizontal": True}}
+        )
+
+        self.assertEqual(transforms["desk"]["x"], -120)
+        self.assertEqual(transforms["desk"]["scale"], 85)
+        self.assertTrue(transforms["desk"]["flip_horizontal"])
+        self.assertEqual(
+            transforms["chair"],
+            empty_study_room_transforms()["chair"],
+        )
+
+    def test_editor_scene_uses_cropped_data_url_layers(self):
+        equipment = {
+            "desk_item_key": "desk_oak_basic",
+            "chair_item_key": "chair_blue_basic",
+        }
+        scene = build_study_room_editor_scene(
+            equipment,
+            owned_item_keys=set(value for value in equipment.values()),
+            transforms={"desk": {"x": 40, "rotation": 12}},
+        )
+
+        self.assertEqual(scene["canvas_width"], 1600)
+        self.assertEqual(scene["canvas_height"], 900)
+        self.assertTrue(
+            str(scene["base_image"]).startswith("data:image/webp;base64,")
+        )
+        self.assertEqual(
+            [layer["slot"] for layer in scene["layers"]],
+            ["desk", "chair"],
+        )
+        self.assertTrue(
+            all(
+                str(layer["source"]).startswith("data:image/png;base64,")
+                for layer in scene["layers"]
+            )
+        )
+        self.assertEqual(scene["transforms"]["desk"]["x"], 40)
+
 
 class StudyRoomRepositoryTests(unittest.TestCase):
     def test_missing_room_is_a_normal_empty_result(self):
@@ -180,7 +230,7 @@ class StudyRoomRepositoryTests(unittest.TestCase):
         self.assertEqual(table_name, "user_study_rooms")
         self.assertEqual(request.filters, [("user_id", USER_ID)])
 
-    def test_room_save_sends_only_seven_slot_values(self):
+    def test_room_save_sends_slots_and_validated_transforms(self):
         supabase = FakeSupabase()
         equipment = {
             "background_item_key": None,
@@ -192,7 +242,11 @@ class StudyRoomRepositoryTests(unittest.TestCase):
             "accent_item_key": None,
         }
 
-        result = save_user_study_room(supabase, equipment)
+        result = save_user_study_room(
+            supabase,
+            equipment,
+            {"desk": {"x": 25, "scale": 90}},
+        )
 
         self.assertEqual(result["desk_item_key"], "desk_oak_basic")
         self.assertEqual(len(supabase.rpc_calls), 1)
@@ -208,8 +262,11 @@ class StudyRoomRepositoryTests(unittest.TestCase):
                 "p_decor_left_item_key",
                 "p_decor_right_item_key",
                 "p_accent_item_key",
+                "p_item_transforms",
             },
         )
+        self.assertEqual(params["p_item_transforms"]["desk"]["x"], 25)
+        self.assertEqual(params["p_item_transforms"]["desk"]["scale"], 90)
 
 
 class StudyRoomViewTests(unittest.TestCase):
@@ -257,6 +314,12 @@ class StudyRoomMigrationTests(unittest.TestCase):
         cls.validation_sql = (
             PROJECT_ROOT / "supabase_study_rooms_validation.sql"
         ).read_text(encoding="utf-8").lower()
+        cls.editor_sql = (
+            PROJECT_ROOT / "supabase_study_room_direct_editor.sql"
+        ).read_text(encoding="utf-8").lower()
+        cls.editor_validation_sql = (
+            PROJECT_ROOT / "supabase_study_room_direct_editor_validation.sql"
+        ).read_text(encoding="utf-8").lower()
 
     def test_schema_uses_rls_and_server_only_writes(self):
         self.assertIn(
@@ -283,6 +346,29 @@ class StudyRoomMigrationTests(unittest.TestCase):
             self.schema_sql,
         )
         self.assertIn("set transaction read only", self.validation_sql)
+
+    def test_direct_editor_migration_validates_and_saves_transform_json(self):
+        self.assertIn("item_transforms jsonb", self.editor_sql)
+        self.assertIn("is_valid_study_room_transforms", self.editor_sql)
+        self.assertIn("p_item_transforms jsonb", self.editor_sql)
+        self.assertIn("auth.uid()", self.editor_sql)
+        self.assertIn("security definer", self.editor_sql)
+        self.assertIn("set search_path = ''", self.editor_sql)
+        self.assertIn(
+            "grant execute on function public.save_user_study_room",
+            self.editor_sql,
+        )
+        self.assertIn("set transaction read only", self.editor_validation_sql)
+
+    def test_shop_test_session_restores_transform_snapshot(self):
+        self.assertIn(
+            "shop_test_sessions_capture_room_transforms",
+            self.editor_sql,
+        )
+        self.assertIn(
+            "shop_test_sessions_restore_room_transforms",
+            self.editor_sql,
+        )
 
 
 if __name__ == "__main__":

@@ -191,7 +191,11 @@ begin
       on transaction.id = inventory.purchase_transaction_id
      and transaction.user_id = inventory.user_id
     where transaction.transaction_type <> 'purchase'
-       or transaction.source_key <> 'purchase:' || inventory.item_key
+       or (
+         transaction.source_key <> 'purchase:' || inventory.item_key
+         and transaction.source_key not like
+           'shop_test:%:purchase:' || inventory.item_key
+       )
        or transaction.amount <> -inventory.price_paid
   ) then
     raise exception '인벤토리와 구매 코인 원장이 일치하지 않습니다.';

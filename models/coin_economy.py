@@ -15,6 +15,8 @@ class CoinTransactionType(StrEnum):
     WEEKLY_CHALLENGE = "weekly_challenge"
     PURCHASE = "purchase"
     TEST_RESET_REVERSAL = "test_reset_reversal"
+    SHOP_TEST_CREDIT = "shop_test_credit"
+    SHOP_TEST_PURCHASE_REFUND = "shop_test_purchase_refund"
 
 
 POSITIVE_COIN_TRANSACTION_TYPES = {
@@ -23,6 +25,8 @@ POSITIVE_COIN_TRANSACTION_TYPES = {
     CoinTransactionType.DAILY_COMPLETION,
     CoinTransactionType.DAILY_CHALLENGE,
     CoinTransactionType.WEEKLY_CHALLENGE,
+    CoinTransactionType.SHOP_TEST_CREDIT,
+    CoinTransactionType.SHOP_TEST_PURCHASE_REFUND,
 }
 
 

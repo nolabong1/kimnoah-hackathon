@@ -9,6 +9,10 @@ CATEGORY_FILTER_KEY = "shop_category_filter"
 COLLECTION_CATEGORY_FILTER_KEY = "shop_collection_category_filter"
 ROOM_SAVE_IN_PROGRESS_KEY = "shop_room_save_in_progress"
 ROOM_SUCCESS_MESSAGE_KEY = "shop_room_success_message"
+ROOM_EDITOR_COMPONENT_KEY = "shop_room_direct_editor"
+ROOM_TRANSFORMS_DRAFT_KEY = "shop_room_transforms_draft"
+ROOM_EQUIPMENT_DRAFT_KEY = "shop_room_equipment_draft"
+ROOM_SAVED_SOURCE_KEY = "shop_room_saved_source"
 
 
 def clear_shop_state(state: MutableMapping[str, Any]) -> None:

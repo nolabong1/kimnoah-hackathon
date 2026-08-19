@@ -115,8 +115,9 @@ class CoinEconomyMigrationTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("set transaction read only", validation)
-        self.assertIn("transaction.transaction_type <> 'purchase'", validation)
+        self.assertIn("'shop_test_credit'", validation)
         self.assertIn("transaction.transaction_type = 'purchase'", validation)
+        self.assertIn("'shop_test_purchase_refund'", validation)
         self.assertIn("rollback;", validation)
 
     def test_reward_trigger_uses_exp_ledger_and_approved_amounts(self):

@@ -77,8 +77,13 @@ begin
     raise exception '학습방 최근 저장 조회 인덱스가 없습니다.';
   end if;
 
-  room_function := pg_catalog.to_regprocedure(
-    'public.save_user_study_room(text,text,text,text,text,text,text)'
+  room_function := coalesce(
+    pg_catalog.to_regprocedure(
+      'public.save_user_study_room(text,text,text,text,text,text,text,jsonb)'
+    ),
+    pg_catalog.to_regprocedure(
+      'public.save_user_study_room(text,text,text,text,text,text,text)'
+    )
   );
   if room_function is null then
     raise exception '학습방 저장 RPC가 없습니다.';

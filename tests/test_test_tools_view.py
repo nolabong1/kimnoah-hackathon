@@ -55,7 +55,7 @@ class TestToolsLayoutTests(unittest.TestCase):
         self.assertEqual(list(app.exception), [])
         get_plans.assert_not_called()
 
-    def test_open_sidebar_tool_contains_both_test_actions(self):
+    def test_open_sidebar_tool_contains_learning_and_shop_test_actions(self):
         plan = {
             "id": PLAN_ID,
             "title": "파이썬 테스트 계획",
@@ -81,6 +81,10 @@ class TestToolsLayoutTests(unittest.TestCase):
                 "views.test_tools_view.get_study_plan_tasks",
                 return_value=[task],
             ),
+            patch(
+                "views.test_tools_view.get_active_shop_test_session",
+                return_value=None,
+            ),
         ):
             app.run()
 
@@ -88,6 +92,49 @@ class TestToolsLayoutTests(unittest.TestCase):
         button_labels = [button.label for button in app.sidebar.button]
         self.assertIn("오늘 테스트 기록 초기화", button_labels)
         self.assertIn("이번 주 계획 완료 처리", button_labels)
+        self.assertIn("상점 테스트 시작", button_labels)
+
+    def test_active_shop_test_session_shows_reset_action(self):
+        plan = {
+            "id": PLAN_ID,
+            "title": "파이썬 테스트 계획",
+            "start_date": "2026-08-17",
+        }
+        task = {
+            "id": "task-1",
+            "status": "pending",
+            "task_type": "learn",
+        }
+        active_session = {
+            "id": "33333333-3333-4333-8333-333333333333",
+            "credit_amount": 1200,
+            "started_at": "2026-08-19T10:00:00+00:00",
+        }
+        app = AppTest.from_function(
+            render_test_tools_page,
+            args=(object(), SimpleNamespace(id=USER_ID)),
+        )
+        app.session_state[TEST_TOOLS_EXPANDER_KEY] = True
+
+        with (
+            patch(
+                "views.test_tools_view.get_user_study_plans",
+                return_value=[plan],
+            ),
+            patch(
+                "views.test_tools_view.get_study_plan_tasks",
+                return_value=[task],
+            ),
+            patch(
+                "views.test_tools_view.get_active_shop_test_session",
+                return_value=active_session,
+            ),
+        ):
+            app.run()
+
+        self.assertEqual(list(app.exception), [])
+        button_labels = [button.label for button in app.sidebar.button]
+        self.assertIn("상점 테스트 초기화", button_labels)
 
     def test_page_views_no_longer_render_test_buttons(self):
         saved_plan_source = (
