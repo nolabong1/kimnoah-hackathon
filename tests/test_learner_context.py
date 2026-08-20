@@ -11,6 +11,7 @@ from services.learner_context_service import (
     build_learner_context,
     learner_context_to_prompt_payload,
     load_learner_context,
+    summarize_repeated_diagnoses,
 )
 from services.concept_service import normalize_course_key
 from services.quiz_service import generate_quiz
@@ -24,6 +25,7 @@ def _mastery(
     is_weak: bool,
     last_answer_correct: bool | None,
     consecutive_incorrect: int = 0,
+    recent_diagnosis_types: list[str] | None = None,
 ) -> dict:
     return {
         "concept_id": f"private-id-{index}",
@@ -36,6 +38,7 @@ def _mastery(
         "last_answer_correct": last_answer_correct,
         "last_assessed_at": "2026-08-19T00:00:00+00:00",
         "is_weak": is_weak,
+        "recent_diagnosis_types": recent_diagnosis_types or [],
     }
 
 
@@ -130,6 +133,34 @@ class LearnerContextTests(unittest.TestCase):
         self.assertIsNone(build_learner_context("python", []))
         self.assertIsNone(learner_context_to_prompt_payload(None))
 
+    def test_only_repeated_recent_diagnoses_are_summarized(self):
+        result = summarize_repeated_diagnoses(
+            [
+                "boundary_error",
+                "condition_omission",
+                "boundary_error",
+                "condition_omission",
+                "concept_confusion",
+                "concept_confusion",
+            ]
+        )
+
+        self.assertEqual(
+            [signal.diagnosis_type for signal in result],
+            ["condition_omission", "boundary_error"],
+        )
+        self.assertEqual(
+            [signal.occurrence_count for signal in result],
+            [2, 2],
+        )
+
+    def test_single_or_unknown_diagnosis_is_not_personalized(self):
+        result = summarize_repeated_diagnoses(
+            ["boundary_error", "unknown", None]
+        )
+
+        self.assertEqual(result, [])
+
     def test_context_prioritizes_and_limits_concepts_deterministically(self):
         masteries = [
             _mastery(
@@ -211,6 +242,10 @@ class LearnerContextTests(unittest.TestCase):
                     is_weak=True,
                     last_answer_correct=False,
                     consecutive_incorrect=2,
+                    recent_diagnosis_types=[
+                        "boundary_error",
+                        "boundary_error",
+                    ],
                 )
             ],
         )
@@ -236,6 +271,17 @@ class LearnerContextTests(unittest.TestCase):
             payload["learner_context"]["focus_concepts"][0]["concept_key"],
             "concept_1",
         )
+        self.assertEqual(
+            payload["learner_context"]["focus_concepts"][0][
+                "repeated_diagnoses"
+            ],
+            [
+                {
+                    "diagnosis_type": "boundary_error",
+                    "occurrence_count": 2,
+                }
+            ],
+        )
         self.assertIn("learner_context가 제공되면", request["input"][0]["content"])
 
     @patch("services.quiz_service.get_openai_model")
@@ -254,6 +300,10 @@ class LearnerContextTests(unittest.TestCase):
                     is_weak=True,
                     last_answer_correct=False,
                     consecutive_incorrect=2,
+                    recent_diagnosis_types=[
+                        "boundary_error",
+                        "boundary_error",
+                    ],
                 )
             ],
         )
@@ -284,6 +334,12 @@ class LearnerContextTests(unittest.TestCase):
         self.assertEqual(
             payload["learner_context"]["focus_concepts"][0]["recent_result"],
             "incorrect",
+        )
+        self.assertEqual(
+            payload["learner_context"]["focus_concepts"][0][
+                "repeated_diagnoses"
+            ][0]["diagnosis_type"],
+            "boundary_error",
         )
         self.assertIn("learner_context가 제공되면", request["input"][0]["content"])
 

@@ -1,8 +1,11 @@
+from collections import Counter
 from typing import Any
 
 from models.learner_context import (
+    MISCONCEPTION_DIAGNOSIS_TYPES,
     LearnerConceptContext,
     LearnerContext,
+    LearnerDiagnosisSignal,
 )
 from services.concept_mastery_repository import (
     get_course_concept_masteries,
@@ -14,6 +17,9 @@ MAX_FOCUS_CONCEPTS = 6
 MAX_STABLE_CONCEPTS = 3
 WEAK_MASTERY_THRESHOLD = 60
 STABLE_MASTERY_THRESHOLD = 80
+MIN_REPEATED_DIAGNOSIS_COUNT = 2
+MAX_REPEATED_DIAGNOSES_PER_CONCEPT = 2
+MAX_RECENT_DIAGNOSIS_EVENTS_PER_CONCEPT = 5
 
 
 def load_learner_context(
@@ -116,6 +122,44 @@ def learner_context_to_prompt_payload(
     return normalized.model_dump(mode="json")
 
 
+def summarize_repeated_diagnoses(
+    diagnosis_types: list[object],
+) -> list[LearnerDiagnosisSignal]:
+    """최근 오답 중 두 번 이상 반복된 유형만 결정론적으로 요약합니다."""
+
+    recent_valid_diagnoses = [
+        diagnosis_type
+        for diagnosis_type in diagnosis_types[
+            :MAX_RECENT_DIAGNOSIS_EVENTS_PER_CONCEPT
+        ]
+        if diagnosis_type in MISCONCEPTION_DIAGNOSIS_TYPES
+    ]
+    diagnosis_counts = Counter(recent_valid_diagnoses)
+    diagnosis_order = {
+        diagnosis_type: index
+        for index, diagnosis_type in enumerate(
+            MISCONCEPTION_DIAGNOSIS_TYPES
+        )
+    }
+    repeated_diagnoses = [
+        LearnerDiagnosisSignal(
+            diagnosis_type=diagnosis_type,
+            occurrence_count=occurrence_count,
+        )
+        for diagnosis_type, occurrence_count in sorted(
+            diagnosis_counts.items(),
+            key=lambda item: (
+                -item[1],
+                diagnosis_order[item[0]],
+            ),
+        )
+        if occurrence_count >= MIN_REPEATED_DIAGNOSIS_COUNT
+    ]
+    return repeated_diagnoses[
+        :MAX_REPEATED_DIAGNOSES_PER_CONCEPT
+    ]
+
+
 def _parse_mastery_row(row: dict[str, Any]) -> LearnerConceptContext:
     """저장소 행에서 사용자·DB 식별자를 제외한 개념 신호만 검증합니다."""
 
@@ -137,6 +181,10 @@ def _parse_mastery_row(row: dict[str, Any]) -> LearnerConceptContext:
     else:
         recent_result = "unknown"
 
+    diagnosis_types = row.get("recent_diagnosis_types", [])
+    if not isinstance(diagnosis_types, list):
+        raise ValueError("최근 오답 유형 목록 형식이 올바르지 않습니다.")
+
     return LearnerConceptContext.model_validate(
         {
             "concept_key": row.get("concept_key"),
@@ -149,5 +197,8 @@ def _parse_mastery_row(row: dict[str, Any]) -> LearnerConceptContext:
             ),
             "recent_result": recent_result,
             "is_weak": is_weak,
+            "repeated_diagnoses": summarize_repeated_diagnoses(
+                diagnosis_types
+            ),
         }
     )

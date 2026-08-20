@@ -24,6 +24,7 @@ from views.gamification_view import (
     render_gamification_notifications,
     render_gamification_page,
 )
+from views.help_view import render_help_dialog
 from views.mastery_dashboard_view import render_mastery_dashboard
 from views.shop_pages_view import (
     render_collection_page,
@@ -396,6 +397,17 @@ render_gamification_notifications()
 
 
 with st.sidebar:
+    st.caption("처음 방문하셨나요?")
+    if st.button(
+        "빠른 사용 안내",
+        key="open_help_dialog_button",
+        type="primary",
+        icon=":material/help:",
+        width="stretch",
+        help="AI 학습 코치의 기본 사용 순서와 주요 기능을 확인합니다.",
+    ):
+        render_help_dialog()
+
     with st.container(border=True):
         st.caption("로그인 사용자")
         st.markdown(f"### {profile['nickname']}")

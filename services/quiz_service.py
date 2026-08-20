@@ -66,7 +66,7 @@ SYSTEM_PROMPT = """
 """
 
 
-QUIZ_PROMPT_VERSION = "quiz_v4_choice_diagnostics"
+QUIZ_PROMPT_VERSION = "quiz_v5_repeated_diagnoses"
 LEARNING_BLUEPRINT_PROMPT = """
 
 learning_blueprint는 학습자료와 평가가 공유하는 학습 계약입니다.
@@ -84,6 +84,18 @@ learning_blueprint는 학습자료와 평가가 공유하는 학습 계약입니
   알아야만 풀 수 있는 문항을 만들지 않습니다.
 """
 LEARNER_CONTEXT_PROMPT = """
+
+repeated_diagnoses가 제공되면 다음 규칙을 추가로 적용하세요.
+
+- repeated_diagnoses는 최근 오답 중 같은 유형이 두 번 이상 관찰된 경우만
+  서버가 요약한 신호입니다.
+- 현재 과제와 직접 관련된 개념의 반복 오답 유형만 사용합니다.
+- 관련 개념을 출제할 때 반복 오답을 구분할 수 있는 문항 또는 오답 선택지를
+  포함하되 같은 문제를 그대로 반복하지 않습니다.
+- occurrence_count나 diagnosis_type 내부 키를 문제에 노출하지 않습니다.
+- 학습자에게 고정된 오답 성향이 있다고 단정하거나 관련 없는 개념을 강제로
+  출제하지 않습니다.
+- 반복 진단 신호가 없으면 기존 숙련도와 과제 문맥만 사용합니다.
 
 learner_context가 제공되면 다음 규칙도 적용하세요.
 

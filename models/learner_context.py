@@ -4,6 +4,37 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 RecentAssessmentResult = Literal["correct", "incorrect", "unknown"]
+MisconceptionDiagnosisType = Literal[
+    "concept_confusion",
+    "condition_omission",
+    "procedure_error",
+    "calculation_error",
+    "boundary_error",
+    "overgeneralization",
+    "representation_error",
+    "other",
+]
+
+MISCONCEPTION_DIAGNOSIS_TYPES: tuple[
+    MisconceptionDiagnosisType,
+    ...,
+] = (
+    "concept_confusion",
+    "condition_omission",
+    "procedure_error",
+    "calculation_error",
+    "boundary_error",
+    "overgeneralization",
+    "representation_error",
+    "other",
+)
+
+
+class LearnerDiagnosisSignal(BaseModel):
+    """반복해서 관찰된 개념별 오답 유형 신호입니다."""
+
+    diagnosis_type: MisconceptionDiagnosisType
+    occurrence_count: int = Field(ge=2, le=5)
 
 
 class LearnerConceptContext(BaseModel):
@@ -17,6 +48,10 @@ class LearnerConceptContext(BaseModel):
     consecutive_incorrect_count: int = Field(ge=0)
     recent_result: RecentAssessmentResult
     is_weak: bool
+    repeated_diagnoses: list[LearnerDiagnosisSignal] = Field(
+        default_factory=list,
+        max_length=2,
+    )
 
     @field_validator("concept_key", "concept_name")
     @classmethod

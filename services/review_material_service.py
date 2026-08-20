@@ -55,7 +55,9 @@ SYSTEM_PROMPT = """
 """
 
 
-REVIEW_MATERIAL_PROMPT_VERSION = "review_material_v3_learning_blueprint"
+REVIEW_MATERIAL_PROMPT_VERSION = (
+    "review_material_v4_repeated_diagnoses"
+)
 LEARNING_BLUEPRINT_PROMPT = """
 
 learning_blueprint는 학습자료와 평가가 공유하는 학습 계약입니다.
@@ -74,6 +76,17 @@ learning_blueprint는 학습자료와 평가가 공유하는 학습 계약입니
   평가해야 합니다.
 """
 LEARNER_CONTEXT_PROMPT = """
+
+repeated_diagnoses가 제공되면 다음 규칙을 추가로 적용하세요.
+
+- repeated_diagnoses는 최근 오답 중 같은 유형이 두 번 이상 관찰된 경우만
+  서버가 요약한 신호입니다.
+- 현재 과제와 직접 관련된 개념의 반복 오답 유형만 사용합니다.
+- 반복 오답 유형에 맞는 반례, 비교 설명, 주의점과 짧은 확인 문제를
+  학습자료에 자연스럽게 포함합니다.
+- occurrence_count를 본문에 노출하거나 학습자의 고정된 성향으로 단정하지
+  않습니다.
+- 반복 진단 신호가 없으면 기존 숙련도와 과제 문맥만 사용합니다.
 
 learner_context가 제공되면 다음 규칙도 적용하세요.
 

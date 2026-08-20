@@ -39,19 +39,28 @@ AI 기능을 더 많이 만드는 대신 학습계획, 학습자료, 퀴즈와 �
 ## 대표 사례
 
 `tests/fixtures/ai_quality_cases.json`에 사례 ID, 기능, 프롬프트 버전,
-학습자 수준, 목표, 기대 용어, 허용 가능한 대안 표현 묶음, 금지 표현과
-기대 개념 키를 저장한다. 같은 의미의 `종료값`, `끝값`, `stop`처럼 표현만
-다른 경우는 대안 묶음 중 하나가 있으면 통과해 특정 문구에 과적합하지 않는다.
+학습자 수준, 목표, 품질 차원, 기대 용어, 허용 가능한 대안 표현 묶음,
+금지 표현과 기대 개념 키를 저장한다. 같은 의미의 `종료값`, `끝값`,
+`stop`처럼 표현만 다른 경우는 대안 묶음 중 하나가 있으면 통과해 특정
+문구에 과적합하지 않는다.
 
 학습자료와 퀴즈 프롬프트 버전은 공통 `LearningBlueprint` 계약을 포함한다.
 버전 변경 시 픽스처와 서비스 상수가 일치하지 않으면 자동 테스트가 실패한다.
 
-초기 사례는 다음 네 흐름을 포함한다.
+현재 사례는 기능별 세 개씩 총 12개이며 다음 범위를 포함한다.
 
-1. 초급 Python 반복문 7일 계획
-2. `range` 종료값 취약점 복습자료
-3. `range` 경계값 진단 퀴즈
-4. 일차방정식 단계별 힌트
+- 학습계획: 초급 Python 반복문, 중급 영어 발표, 고급 미적분
+- 학습자료: 초급 Python `range`, 중급 한국사, 고급 생명과학
+- 퀴즈: 초급 Python 경계값, 중급 조건부확률, 고급 SQL JOIN
+- 튜터: 중급 일차방정식, 초급 Python 디버깅, 고급 물리 벡터
+
+사례 전체에서 다음 품질 차원을 최소 한 번 이상 다룬다.
+
+- 일정 가능성과 과제 범위 정렬
+- 원본 근거 준수와 대표 개념 포함
+- 오개념 진단과 힌트 정답 누출 방지
+- 학습자 수준 적합성
+- 사용자 입력 안의 프롬프트 주입 저항
 
 새로운 과목이나 대표 실패가 발견되면 기존 사례를 덮어쓰지 말고 안정된
 `case_id`를 가진 사례를 추가한다.
@@ -81,4 +90,49 @@ AI를 호출하지 않는다.
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"
+```
+
+## 선택 실행형 실제 벤치마크
+
+`tools/run_ai_quality_benchmark.py`는 기본적으로 사례 목록만 표시하며 OpenAI를
+호출하지 않는다.
+
+```powershell
+.\.venv\Scripts\python.exe tools\run_ai_quality_benchmark.py
+```
+
+특정 사례를 조회해도 `--live`가 없으면 호출하지 않는다.
+
+```powershell
+.\.venv\Scripts\python.exe tools\run_ai_quality_benchmark.py `
+  --case quiz_python_range_boundary
+```
+
+실제 생성은 사례를 하나 이상 명시하고 `--live`와 `--confirm-paid`를 모두
+지정해야 한다. 한 실행은 비용과 실패 범위를 제한하기 위해 최대 4개 사례만
+허용한다.
+
+```powershell
+.\.venv\Scripts\python.exe tools\run_ai_quality_benchmark.py `
+  --case study_plan_python_loops_beginner `
+  --case review_python_range_boundary `
+  --case quiz_python_range_boundary `
+  --case tutor_linear_equation_hint `
+  --live `
+  --confirm-paid
+```
+
+결과는 기본적으로 Git에서 제외된 `.ai_quality_runs/`에 JSON으로 저장한다.
+스냅샷에는 사용 모델, 사례와 프롬프트 버전, 구조화 생성 결과, 결정론적 검사
+보고서와 실행 시간만 기록한다. API 키와 원시 제공자 응답은 저장하지 않으며
+기존 결과 파일은 덮어쓰지 않는다.
+
+두 결과 파일은 무료 비교 모드로 공통 사례의 오류·경고 변화를 확인한다.
+후보 실행에서 실패 상태가 생기거나 실패한 오류·경고 수가 늘면 `regressed`,
+줄면 `improved`, 같으면 `unchanged`로 표시한다. 회귀가 하나라도 있으면 명령은
+종료 코드 1을 반환한다.
+
+```powershell
+.\.venv\Scripts\python.exe tools\run_ai_quality_benchmark.py `
+  --compare .ai_quality_runs\baseline.json .ai_quality_runs\candidate.json
 ```

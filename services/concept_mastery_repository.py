@@ -8,6 +8,11 @@ from models.concept_mastery import (
     ConceptMasterySummary,
     CourseConceptMasterySummary,
 )
+from models.learner_context import MISCONCEPTION_DIAGNOSIS_TYPES
+
+
+MAX_RECENT_DIAGNOSIS_EVENTS_PER_COURSE = 500
+MAX_RECENT_DIAGNOSIS_EVENTS_PER_CONCEPT = 5
 
 
 def _normalize_uuid(value: str, field_name: str) -> str:
@@ -118,6 +123,44 @@ def get_course_concept_masteries(
     if not masteries:
         return []
 
+    diagnosis_response = (
+        supabase.table("concept_mastery_events")
+        .select("concept_id, diagnosis_type, created_at")
+        .eq("user_id", normalized_user_id)
+        .in_("concept_id", list(concepts_by_id))
+        .eq("is_correct", False)
+        .order("created_at", desc=True)
+        .limit(MAX_RECENT_DIAGNOSIS_EVENTS_PER_COURSE)
+        .execute()
+    )
+    diagnosis_events = diagnosis_response.data or []
+
+    if not isinstance(diagnosis_events, list):
+        raise RuntimeError(
+            "최근 오답 유형 조회 결과가 올바르지 않습니다."
+        )
+
+    recent_diagnoses_by_concept: dict[str, list[str]] = {}
+
+    for event in diagnosis_events:
+        if not isinstance(event, dict):
+            continue
+        concept_id = event.get("concept_id")
+        diagnosis_type = event.get("diagnosis_type")
+        if (
+            concept_id not in concepts_by_id
+            or diagnosis_type not in MISCONCEPTION_DIAGNOSIS_TYPES
+        ):
+            continue
+        concept_diagnoses = recent_diagnoses_by_concept.setdefault(
+            concept_id,
+            [],
+        )
+        if len(concept_diagnoses) < (
+            MAX_RECENT_DIAGNOSIS_EVENTS_PER_CONCEPT
+        ):
+            concept_diagnoses.append(diagnosis_type)
+
     weak_concept_ids = {
         concept["concept_id"]
         for concept in get_current_weak_concepts(
@@ -167,6 +210,9 @@ def get_course_concept_masteries(
             ).model_dump(mode="json")
             summary["is_weak"] = (
                 concept_id in weak_concept_ids
+            )
+            summary["recent_diagnosis_types"] = (
+                recent_diagnoses_by_concept.get(concept_id, [])
             )
             dashboard_masteries.append(summary)
 

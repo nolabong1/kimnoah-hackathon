@@ -12,3 +12,6 @@ __pycache__/
 # 개발 도구의 개인 설정
 .vscode/
 .agents/
+
+# 선택 실행형 AI 품질 벤치마크 결과
+.ai_quality_runs/

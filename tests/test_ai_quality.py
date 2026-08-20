@@ -17,31 +17,79 @@ from services.review_material_service import (
 )
 
 
-def _cases_by_feature():
-    return {case.feature: case for case in load_ai_quality_cases()}
+def _case(case_id: str):
+    return next(
+        case
+        for case in load_ai_quality_cases()
+        if case.case_id == case_id
+    )
 
 
 class AIQualityHarnessTests(unittest.TestCase):
     def test_representative_cases_are_unique_and_cover_core_features(self):
         cases = load_ai_quality_cases()
 
+        self.assertEqual(len(cases), 12)
         self.assertEqual(len({case.case_id for case in cases}), len(cases))
         self.assertEqual(
             {case.feature for case in cases},
             {"study_plan", "review_material", "quiz", "tutor"},
         )
-        cases_by_feature = {case.feature: case for case in cases}
-        self.assertEqual(
-            cases_by_feature["review_material"].prompt_version,
-            REVIEW_MATERIAL_PROMPT_VERSION,
+        for feature in {case.feature for case in cases}:
+            self.assertGreaterEqual(
+                sum(case.feature == feature for case in cases),
+                3,
+            )
+        self.assertTrue(any(case.learner_level <= 3 for case in cases))
+        self.assertTrue(
+            any(4 <= case.learner_level <= 7 for case in cases)
         )
+        self.assertTrue(any(case.learner_level >= 8 for case in cases))
+        self.assertGreaterEqual(
+            len({case.course_name for case in cases}),
+            8,
+        )
+        review_versions = {
+            case.prompt_version
+            for case in cases
+            if case.feature == "review_material"
+        }
+        quiz_versions = {
+            case.prompt_version
+            for case in cases
+            if case.feature == "quiz"
+        }
         self.assertEqual(
-            cases_by_feature["quiz"].prompt_version,
-            QUIZ_PROMPT_VERSION,
+            review_versions,
+            {REVIEW_MATERIAL_PROMPT_VERSION},
+        )
+        self.assertEqual(quiz_versions, {QUIZ_PROMPT_VERSION})
+
+    def test_representative_cases_cover_approved_quality_dimensions(self):
+        cases = load_ai_quality_cases()
+
+        dimensions = {
+            dimension
+            for case in cases
+            for dimension in case.quality_dimensions
+        }
+
+        self.assertEqual(
+            dimensions,
+            {
+                "schedule_feasibility",
+                "scope_alignment",
+                "source_grounding",
+                "concept_coverage",
+                "misconception_diagnosis",
+                "answer_leakage",
+                "difficulty_alignment",
+                "prompt_injection_resistance",
+            },
         )
 
     def test_review_material_detects_unsupported_claim(self):
-        case = _cases_by_feature()["review_material"]
+        case = _case("review_python_range_boundary")
         material = ReviewMaterialDraft(
             title="range 경계값 복습",
             content_markdown="""
@@ -68,7 +116,7 @@ range(2)의 결과를 설명하고 정답과 해설을 확인하세요.
         )
 
     def test_review_material_accepts_approved_alternative_term(self):
-        case = _cases_by_feature()["review_material"]
+        case = _case("review_python_range_boundary")
         material = ReviewMaterialDraft(
             title="range 끝값 복습",
             content_markdown="""
@@ -94,7 +142,7 @@ range(2)의 결과를 예상하고 정답과 해설을 확인하세요.
         )
 
     def test_quiz_checks_expected_concept_and_disallowed_choice(self):
-        case = _cases_by_feature()["quiz"]
+        case = _case("quiz_python_range_boundary")
         quiz = QuizDraft.model_validate(
             {
                 "title": "Python range 점검",
@@ -159,7 +207,7 @@ range(2)의 결과를 예상하고 정답과 해설을 확인하세요.
         )
 
     def test_tutor_detects_final_answer_leak_in_hint(self):
-        case = _cases_by_feature()["tutor"]
+        case = _case("tutor_linear_equation_hint")
         guidance = TutorGuidance.model_validate(
             {
                 "problem_summary": "등식의 성질로 x를 구합니다.",
@@ -210,7 +258,7 @@ range(2)의 결과를 예상하고 정답과 해설을 확인하세요.
         )
 
     def test_study_plan_checks_time_limit_and_learning_cycle(self):
-        case = _cases_by_feature()["study_plan"]
+        case = _case("study_plan_python_loops_beginner")
         plan = WeeklyStudyPlan.model_validate(
             {
                 "title": "Python 반복문 7일 계획",
@@ -255,7 +303,7 @@ range(2)의 결과를 예상하고 정답과 해설을 확인하세요.
         )
 
     def test_quality_warning_does_not_block_an_otherwise_safe_plan(self):
-        case = _cases_by_feature()["study_plan"]
+        case = _case("study_plan_python_loops_beginner")
         plan = WeeklyStudyPlan.model_validate(
             {
                 "title": "Python 반복문 기초 계획",
