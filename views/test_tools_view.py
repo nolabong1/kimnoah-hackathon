@@ -14,6 +14,7 @@ from services.study_plan_repository import (
     get_user_study_plans,
     reset_today_test_progress,
 )
+from services.test_tools_repository import can_use_test_tools
 from views.weekly_review_state import TEST_COMPLETED_PLAN_PENDING_KEY
 
 
@@ -28,6 +29,8 @@ PLAN_MESSAGE_KEY = "test_tools_plan_completion_message"
 SHOP_TEST_CONFIRM_KEY = "test_tools_shop_confirmation"
 SHOP_TEST_RUNNING_KEY = "test_tools_shop_running"
 SHOP_TEST_MESSAGE_KEY = "test_tools_shop_message"
+ACCESS_CHECKED_KEY = "test_tools_access_checked"
+ACCESS_ALLOWED_KEY = "test_tools_access_allowed"
 
 
 def clear_test_tools_state(state: MutableMapping[str, Any]) -> None:
@@ -467,6 +470,17 @@ def render_sidebar_test_tools(
     user,
 ) -> None:
     """인증 사용자의 개발용 테스트 도구를 사이드바에 표시합니다."""
+
+    if not st.session_state.get(ACCESS_CHECKED_KEY, False):
+        try:
+            access_allowed = can_use_test_tools(supabase)
+        except Exception:
+            access_allowed = False
+        st.session_state[ACCESS_ALLOWED_KEY] = access_allowed
+        st.session_state[ACCESS_CHECKED_KEY] = True
+
+    if not st.session_state.get(ACCESS_ALLOWED_KEY, False):
+        return
 
     with st.sidebar:
         tools_expander = st.expander(

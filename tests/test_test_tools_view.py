@@ -6,6 +6,8 @@ from unittest.mock import patch
 from streamlit.testing.v1 import AppTest
 
 from views.test_tools_view import (
+    ACCESS_ALLOWED_KEY,
+    ACCESS_CHECKED_KEY,
     TEST_TOOLS_EXPANDER_KEY,
     clear_test_tools_state,
 )
@@ -41,12 +43,31 @@ class TestToolsStateTests(unittest.TestCase):
         self.assertEqual(state["weekly_review_selected_plan_id"], PLAN_ID)
         self.assertEqual(state["saved_plan_selected_id"], PLAN_ID)
 
+    def test_access_state_is_removed_with_other_test_tool_state(self):
+        state = {
+            ACCESS_CHECKED_KEY: True,
+            ACCESS_ALLOWED_KEY: True,
+            "unrelated_state": "kept",
+        }
+
+        clear_test_tools_state(state)
+
+        self.assertNotIn(ACCESS_CHECKED_KEY, state)
+        self.assertNotIn(ACCESS_ALLOWED_KEY, state)
+        self.assertEqual(state["unrelated_state"], "kept")
+
 
 class TestToolsLayoutTests(unittest.TestCase):
     def test_closed_sidebar_tool_does_not_load_plans(self):
-        with patch(
-            "views.test_tools_view.get_user_study_plans"
-        ) as get_plans:
+        with (
+            patch(
+                "views.test_tools_view.can_use_test_tools",
+                return_value=True,
+            ),
+            patch(
+                "views.test_tools_view.get_user_study_plans"
+            ) as get_plans,
+        ):
             app = AppTest.from_function(
                 render_test_tools_page,
                 args=(object(), SimpleNamespace(id=USER_ID)),
@@ -54,6 +75,39 @@ class TestToolsLayoutTests(unittest.TestCase):
 
         self.assertEqual(list(app.exception), [])
         get_plans.assert_not_called()
+
+    def test_unauthorized_user_does_not_see_test_tools(self):
+        with (
+            patch(
+                "views.test_tools_view.can_use_test_tools",
+                return_value=False,
+            ) as access_check,
+            patch(
+                "views.test_tools_view.get_user_study_plans"
+            ) as get_plans,
+        ):
+            app = AppTest.from_function(
+                render_test_tools_page,
+                args=(object(), SimpleNamespace(id=USER_ID)),
+            ).run()
+
+        self.assertEqual(list(app.exception), [])
+        self.assertEqual(list(app.sidebar.expander), [])
+        access_check.assert_called_once()
+        get_plans.assert_not_called()
+
+    def test_access_check_failure_hides_test_tools(self):
+        with patch(
+            "views.test_tools_view.can_use_test_tools",
+            side_effect=RuntimeError("missing migration"),
+        ):
+            app = AppTest.from_function(
+                render_test_tools_page,
+                args=(object(), SimpleNamespace(id=USER_ID)),
+            ).run()
+
+        self.assertEqual(list(app.exception), [])
+        self.assertEqual(list(app.sidebar.expander), [])
 
     def test_open_sidebar_tool_contains_learning_and_shop_test_actions(self):
         plan = {
@@ -73,6 +127,10 @@ class TestToolsLayoutTests(unittest.TestCase):
         app.session_state[TEST_TOOLS_EXPANDER_KEY] = True
 
         with (
+            patch(
+                "views.test_tools_view.can_use_test_tools",
+                return_value=True,
+            ),
             patch(
                 "views.test_tools_view.get_user_study_plans",
                 return_value=[plan],
@@ -117,6 +175,10 @@ class TestToolsLayoutTests(unittest.TestCase):
         app.session_state[TEST_TOOLS_EXPANDER_KEY] = True
 
         with (
+            patch(
+                "views.test_tools_view.can_use_test_tools",
+                return_value=True,
+            ),
             patch(
                 "views.test_tools_view.get_user_study_plans",
                 return_value=[plan],

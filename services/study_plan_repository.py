@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date
 
 from supabase import Client
 
@@ -20,8 +20,6 @@ def save_weekly_study_plan(
 ) -> dict:
     """학습계획과 상세 과제를 Supabase에 저장합니다."""
 
-    plan_id = None
-
     weekly_overview = [
         {
             "day_offset": day.day_offset,
@@ -33,78 +31,41 @@ def save_weekly_study_plan(
         for day in plan.days
     ]
 
-    plan_data = {
-        "user_id": user_id,
-        "title": plan.title[:100],
-        "course_name": course_name.strip()[:100],
-        "goal": goal.strip()[:1000],
-        "current_level": current_level,
-        "start_date": start_date.isoformat(),
-        "target_date": (
-            start_date + timedelta(days=6)
-        ).isoformat(),
-        "available_schedule": available_schedule,
-        "weekly_overview": weekly_overview,
-        "status": "active",
-    }
+    tasks = [
+        {
+            "day_offset": day.day_offset,
+            "title": task.title[:200],
+            "description": task.description,
+            "task_type": task.task_type,
+            "estimated_minutes": task.estimated_minutes,
+        }
+        for day in plan.days
+        for task in day.tasks
+    ]
 
-    try:
-        plan_response = (
-            supabase.table("study_plans")
-            .insert(plan_data)
-            .execute()
+    response = (
+        supabase.rpc(
+            "save_weekly_study_plan_with_tasks",
+            {
+                "p_title": plan.title[:100],
+                "p_course_name": course_name.strip()[:100],
+                "p_goal": goal.strip()[:1000],
+                "p_current_level": current_level,
+                "p_start_date": start_date.isoformat(),
+                "p_available_schedule": available_schedule,
+                "p_weekly_overview": weekly_overview,
+                "p_tasks": tasks,
+            },
         )
+        .execute()
+    )
 
-        if not plan_response.data:
-            raise RuntimeError("학습계획 저장 결과가 비어 있습니다.")
+    if not isinstance(response.data, dict):
+        raise RuntimeError("학습계획 저장 결과가 비어 있습니다.")
+    if response.data.get("user_id") != user_id:
+        raise RuntimeError("저장된 학습계획의 사용자 정보가 올바르지 않습니다.")
 
-        saved_plan = plan_response.data[0]
-        plan_id = saved_plan["id"]
-
-        task_data = []
-
-        for day in plan.days:
-            scheduled_date = (
-                start_date + timedelta(days=day.day_offset)
-            )
-
-            for task in day.tasks:
-                task_data.append(
-                    {
-                        "user_id": user_id,
-                        "plan_id": plan_id,
-                        "scheduled_date": scheduled_date.isoformat(),
-                        "title": task.title[:200],
-                        "description": task.description,
-                        "task_type": task.task_type,
-                        "estimated_minutes": task.estimated_minutes,
-                        "status": "pending",
-                    }
-                )
-
-        if task_data:
-            (
-                supabase.table("study_tasks")
-                .insert(task_data)
-                .execute()
-            )
-
-        return saved_plan
-
-    except Exception:
-        if plan_id is not None:
-            try:
-                (
-                    supabase.table("study_plans")
-                    .delete()
-                    .eq("id", plan_id)
-                    .eq("user_id", user_id)
-                    .execute()
-                )
-            except Exception:
-                pass
-
-        raise
+    return response.data
 
 def get_user_study_plans(
     supabase: Client,

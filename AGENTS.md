@@ -118,7 +118,7 @@ AI Structured Output과 RPC 응답은 가능한 한 Pydantic 모델로 검증한
 - `auth_service.py`: 회원가입·로그인·로그아웃·토큰 복원
 - `profile_service.py`: 프로필 조회와 `JWT issued at future` 단기 재시도
 - `study_plan_service.py`: AI 7일 학습계획 생성과 업무 규칙 검증
-- `study_plan_repository.py`: 계획·과제 저장/조회/삭제,
+- `study_plan_repository.py`: 계획·과제를 원자적으로 저장하는 서버 RPC와 조회/삭제,
   완료 RPC와 테스트 초기화 RPC 연결
 - `source_material_service.py`: 원본 제목·텍스트 검증과
   메모리 기반 PDF 텍스트 추출
@@ -210,7 +210,8 @@ AI 호출과 DB 저장 책임도 분리한다.
 - `tools/run_ai_quality_benchmark.py`: 기본 조회는 무료이며 `--live`와
   `--confirm-paid`를 함께 지정한 선택 사례만 실제 호출하는 개발 도구
 - `test_tools_view.py`: 사이드바의 개발용 계획 전체 완료·오늘 기록 초기화·
-  상점 테스트 세션과 확인 절차. 닫혀 있을 때는 관련 데이터를 조회하지 않음
+  상점 테스트 세션과 확인 절차. `test_tool_access`에 명시적으로 허용된
+  사용자에게만 표시하며 닫혀 있을 때는 관련 데이터를 조회하지 않음
 - `ui_components.py`: 데이터·세션 상태와 분리된 인증·읽기·일반·대시보드
   콘텐츠 폭, 페이지 헤더, 메트릭 행, 빈 상태 표시 helper
 
@@ -248,7 +249,9 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
 1. 사용자는 과목, 목표, 현재 수준, 날짜별 가능 시간을 입력한다.
 2. `study_plan_service.py`가 OpenAI Structured Output으로 7일 계획을 만든다.
 3. Python에서 날짜 0~6과 일일 분량 제한을 다시 검증한다.
-4. `study_plans`와 `study_tasks`에 사용자 소유 데이터로 저장한다.
+4. `save_weekly_study_plan_with_tasks` RPC가 서버에서 사용자 소유권, 7일 구조,
+   일일 가능 시간과 개요 합계를 재검증하고 `study_plans`와 `study_tasks`를
+   한 트랜잭션으로 저장한다.
 5. 대시보드에서는 사용자가 오늘 표시할 계획을 선택한다.
 
 ### AI 학습자료
@@ -371,6 +374,9 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
 4. 세션 중 정상 학습으로 받은 코인과 세션 시작 전 보유 아이템은 유지한다.
 5. 시작과 초기화 RPC는 사용자·세션 단위로 멱등하며 클라이언트 직접 쓰기를
    허용하지 않는다.
+6. 모든 테스트 도구 RPC는 `test_tool_access` 허용 목록을 서버에서 확인한다.
+   일반 인증 사용자는 내부 구현 함수를 직접 실행할 수 없고, 허용되지 않은
+   사용자에게는 사이드바 테스트 도구도 표시하지 않는다.
 
 ### 꾸미기 컬렉션
 
@@ -482,6 +488,9 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
 - 조회 빈도가 높은 소유권·관계 열에는 인덱스를 둔다.
 - 보상, 채점, 숙련도 변경, 자동 복습, 테스트 초기화는 서버 RPC에서
   원자적으로 처리한다.
+- `study_plans`는 클라이언트 조회·본인 계획 삭제만 허용하고 생성·수정은
+  서버 RPC가 처리한다. `study_tasks`와 `quizzes`는 클라이언트 읽기 전용이며
+  계획 저장·퀴즈 저장·완료 처리는 각각 검증된 서버 RPC만 사용한다.
 - `security definer`는 꼭 필요한 공개 RPC에만 사용한다.
 - `security definer` 함수는 빈 안전 `search_path`, `auth.uid()` 검증,
   `authenticated` 전용 실행 권한을 갖는다.
@@ -673,6 +682,15 @@ Python 변경 전후로 함수와 제어 흐름의 범위를 다시 확인한다
 상점 테스트 도구는 그 뒤 `supabase_shop_test_tools.sql`을 적용하고
 `supabase_shop_test_tools_validation.sql`로 세션 소유권, 테스트 코인 원장,
 구매 추적, 환급·복원과 RPC 권한을 검증한다.
+모든 테스트 도구 SQL을 적용한 마지막 단계에서
+`supabase_test_tool_access.sql`을 적용하고
+`supabase_test_tool_access_validation.sql`로 허용 목록 RLS, 내부 함수 비공개,
+공개 래퍼의 서버 권한 검사를 검증한다. 테스트 사용자는 SQL Editor에서만
+`test_tool_access`에 명시적으로 추가한다.
+핵심 쓰기 경계는 모든 계획·퀴즈·테스트 기능 SQL 뒤에
+`supabase_core_write_boundary.sql`을 마지막으로 적용하고
+`supabase_core_write_boundary_validation.sql`로 계획·과제 원자 저장,
+직접 쓰기 권한 제거와 기존 퀴즈 저장 RPC 권한을 검증한다.
 코인·상점·학습방 적용을 모두 마친 뒤에는 읽기 전용
 `supabase_shop_room_integration_validation.sql`로 원장 합계, 구매 연결,
 장착 소유권과 슬롯, 컬렉션 상한을 한 번에 최종 확인한다.
