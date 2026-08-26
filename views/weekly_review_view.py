@@ -10,7 +10,7 @@ from models.weekly_review import (
     WeeklyStatisticsSnapshot,
 )
 from services.study_plan_repository import (
-    get_study_plan_tasks,
+    get_study_tasks_by_plan_ids,
     get_user_study_plans,
     save_weekly_study_plan,
 )
@@ -33,6 +33,7 @@ from services.weekly_review_service import (
     validate_reflection_answers,
 )
 from views.create_plan_view import CURRENT_LEVEL_OPTIONS
+from views.error_feedback import render_unexpected_error
 from views.ui_components import (
     MetricItem,
     READING_CONTENT_WIDTH,
@@ -260,15 +261,20 @@ def _generate_and_save_review(
         st.rerun()
     except Exception as error:
         if _is_missing_review_table_error(error):
-            st.error(
+            user_message = (
                 "주간 회고 테이블이 아직 없습니다. Supabase SQL Editor에서 "
                 "supabase_weekly_learning_reviews.sql을 먼저 실행해주세요."
             )
         else:
-            st.error(
+            user_message = (
                 "AI 주간 회고 생성 또는 저장에 실패했습니다. "
                 "입력 내용과 연결 상태를 확인한 뒤 다시 시도해주세요."
             )
+        render_unexpected_error(
+            error,
+            operation="weekly_review.generate_and_save",
+            user_message=user_message,
+        )
     finally:
         st.session_state[REQUEST_RUNNING_KEY] = False
 
@@ -460,10 +466,14 @@ def _render_next_plan_section(
                 )
             except ValueError as error:
                 st.warning(str(error))
-            except Exception:
-                st.error(
-                    "다음 주 계획 생성에 실패했습니다. "
-                    "입력 조건과 연결 상태를 확인한 뒤 다시 시도해주세요."
+            except Exception as error:
+                render_unexpected_error(
+                    error,
+                    operation="weekly_review.generate_next_plan",
+                    user_message=(
+                        "다음 주 계획 생성에 실패했습니다. 입력 조건과 "
+                        "연결 상태를 확인한 뒤 다시 시도해주세요."
+                    ),
                 )
             finally:
                 st.session_state[NEXT_PLAN_RUNNING_KEY] = False
@@ -523,10 +533,14 @@ def _render_next_plan_section(
                     st.session_state[NEXT_PLAN_SAVED_KEY] = True
                     st.session_state[NEXT_PLAN_SAVED_ID_KEY] = saved_plan["id"]
                     st.rerun()
-                except Exception:
-                    st.error(
-                        "다음 주 계획 저장에 실패했습니다. "
-                        "중복 저장 여부를 확인한 뒤 다시 시도해주세요."
+                except Exception as error:
+                    render_unexpected_error(
+                        error,
+                        operation="weekly_review.save_next_plan",
+                        user_message=(
+                            "다음 주 계획 저장에 실패했습니다. 중복 저장 "
+                            "여부를 확인한 뒤 다시 시도해주세요."
+                        ),
                     )
                 finally:
                     st.session_state[SAVE_RUNNING_KEY] = False
@@ -558,17 +572,29 @@ def render_weekly_review(supabase, user) -> None:
 
     try:
         plans = get_user_study_plans(supabase=supabase, user_id=user_id)
-        eligible_entries: list[tuple[dict, list[dict]]] = []
-        for plan in plans:
-            tasks = get_study_plan_tasks(
-                supabase=supabase,
-                user_id=user_id,
-                plan_id=str(plan["id"]),
+        tasks_by_plan = get_study_tasks_by_plan_ids(
+            supabase=supabase,
+            user_id=user_id,
+            plan_ids=[str(plan["id"]) for plan in plans],
+        )
+        eligible_entries = [
+            (plan, tasks_by_plan.get(str(plan["id"]), []))
+            for plan in plans
+            if is_weekly_review_eligible(
+                plan,
+                tasks_by_plan.get(str(plan["id"]), []),
+                today,
             )
-            if is_weekly_review_eligible(plan, tasks, today):
-                eligible_entries.append((plan, tasks))
-    except Exception:
-        st.error("주간 회고 대상 계획을 불러오지 못했습니다.")
+        ]
+    except Exception as error:
+        render_unexpected_error(
+            error,
+            operation="weekly_review.load_eligible_plans",
+            user_message=(
+                "주간 회고 대상 계획을 불러오지 못했습니다. 잠시 후 "
+                "다시 시도해주세요."
+            ),
+        )
         return
 
     if not plans:
@@ -623,13 +649,21 @@ def render_weekly_review(supabase, user) -> None:
         )
     except Exception as error:
         if _is_missing_review_table_error(error):
-            st.error(
+            user_message = (
                 "주간 회고 테이블이 아직 없습니다. 프로젝트 루트의 "
                 "supabase_weekly_learning_reviews.sql을 Supabase SQL Editor에서 "
                 "한 번 실행해주세요."
             )
         else:
-            st.error("저장된 주간 회고를 불러오지 못했습니다.")
+            user_message = (
+                "저장된 주간 회고를 불러오지 못했습니다. 잠시 후 다시 "
+                "시도해주세요."
+            )
+        render_unexpected_error(
+            error,
+            operation="weekly_review.load_saved_review",
+            user_message=user_message,
+        )
         return
 
     try:

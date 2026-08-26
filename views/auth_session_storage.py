@@ -6,6 +6,7 @@ from services.auth_service import (
     get_session_tokens,
     restore_session,
 )
+from services.error_reporting import report_exception
 
 
 AUTH_STORAGE_COMMAND_KEY = "auth_storage_command"
@@ -219,161 +220,132 @@ def get_auth_storage_ack(
     return result
 
 
-def initialize_auth_session(supabase) -> None:
-    """브라우저 탭과 현재 Supabase 인증 세션을 동기화합니다."""
+def _expire_current_auth_session() -> None:
+    """만료된 앱 인증 상태를 지우고 브라우저 저장소 삭제를 예약합니다."""
 
-    st.session_state.setdefault("auth_user", None)
-
-    if AUTH_STORAGE_COMMAND_KEY not in st.session_state:
-        queue_auth_storage_command(action="read")
-
-    if st.session_state.auth_user is not None:
-        try:
-            current_session = supabase.auth.get_session()
-
-            if current_session is None:
-                raise RuntimeError(
-                    "현재 인증 세션이 없습니다."
-                )
-
-            current_session_tokens = get_session_tokens(
-                current_session
-            )
-            current_refresh_token = (
-                current_session_tokens["refresh_token"]
-            )
-            storage_command = st.session_state[
-                AUTH_STORAGE_COMMAND_KEY
-            ]
-            pending_session = storage_command.get(
-                "session"
-            ) or {}
-            pending_refresh_token = pending_session.get(
-                "refresh_token"
-            )
-
-            if (
-                st.session_state.get(
-                    AUTH_STORAGE_SYNCED_TOKEN_KEY
-                )
-                != current_refresh_token
-                and not (
-                    storage_command["action"] == "write"
-                    and pending_refresh_token
-                    == current_refresh_token
-                )
-            ):
-                queue_auth_storage_command(
-                    action="write",
-                    session=current_session_tokens,
-                )
-
-        except Exception:
-            st.session_state.auth_user = None
-            st.session_state.pop(
-                AUTH_STORAGE_SYNCED_TOKEN_KEY,
-                None,
-            )
-            st.session_state[AUTH_RESTORE_NOTICE_KEY] = (
-                "로그인 세션이 만료되어 "
-                "다시 로그인이 필요합니다."
-            )
-            queue_auth_storage_command(action="clear")
-
-    auth_storage_command = st.session_state[
-        AUTH_STORAGE_COMMAND_KEY
-    ]
-    auth_storage_component = render_auth_session_storage(
-        auth_storage_command
+    st.session_state.auth_user = None
+    st.session_state.pop(AUTH_STORAGE_SYNCED_TOKEN_KEY, None)
+    st.session_state[AUTH_RESTORE_NOTICE_KEY] = (
+        "로그인 세션이 만료되어 다시 로그인이 필요합니다."
     )
-    auth_storage_ack = get_auth_storage_ack(
-        component_result=auth_storage_component,
-        command=auth_storage_command,
-    )
+    queue_auth_storage_command(action="clear")
 
-    if auth_storage_ack is not None:
-        if (
-            auth_storage_ack.get("ok")
-            and auth_storage_command["action"] == "write"
-        ):
-            written_session = auth_storage_command.get(
-                "session"
-            ) or {}
-            written_refresh_token = written_session.get(
-                "refresh_token"
-            )
 
-            if isinstance(written_refresh_token, str):
-                st.session_state[
-                    AUTH_STORAGE_SYNCED_TOKEN_KEY
-                ] = written_refresh_token
-
-        elif (
-            auth_storage_ack.get("ok")
-            and auth_storage_command["action"] == "clear"
-        ):
-            st.session_state.pop(
-                AUTH_STORAGE_SYNCED_TOKEN_KEY,
-                None,
-            )
+def _sync_authenticated_session(supabase) -> None:
+    """현재 Supabase 세션 토큰을 브라우저 저장 명령과 동기화합니다."""
 
     if st.session_state.auth_user is None:
-        command_action = auth_storage_command["action"]
+        return
+
+    try:
+        current_session = supabase.auth.get_session()
+        if current_session is None:
+            raise RuntimeError("현재 인증 세션이 없습니다.")
+
+        current_tokens = get_session_tokens(current_session)
+        current_refresh_token = current_tokens["refresh_token"]
+        storage_command = st.session_state[AUTH_STORAGE_COMMAND_KEY]
+        pending_session = storage_command.get("session") or {}
+        pending_refresh_token = pending_session.get("refresh_token")
+        already_pending = (
+            storage_command["action"] == "write"
+            and pending_refresh_token == current_refresh_token
+        )
 
         if (
-            command_action in {"read", "clear"}
-            and auth_storage_ack is None
+            st.session_state.get(AUTH_STORAGE_SYNCED_TOKEN_KEY)
+            != current_refresh_token
+            and not already_pending
         ):
-            st.info(
-                "저장된 로그인 상태를 확인하고 있습니다..."
+            queue_auth_storage_command(
+                action="write",
+                session=current_tokens,
             )
-            st.stop()
+    except Exception as error:
+        report_exception("auth.sync_browser_storage", error)
+        _expire_current_auth_session()
 
-        if (
-            command_action == "read"
-            and auth_storage_ack is not None
-            and auth_storage_ack.get("ok")
-        ):
-            stored_session = auth_storage_ack.get(
-                "session"
+
+def _apply_auth_storage_ack(
+    command: dict,
+    acknowledgement: dict | None,
+) -> None:
+    """브라우저 저장 명령 성공 결과를 현재 세션 상태에 반영합니다."""
+
+    if acknowledgement is None or not acknowledgement.get("ok"):
+        return
+
+    if command["action"] == "write":
+        written_session = command.get("session") or {}
+        written_refresh_token = written_session.get("refresh_token")
+        if isinstance(written_refresh_token, str):
+            st.session_state[AUTH_STORAGE_SYNCED_TOKEN_KEY] = (
+                written_refresh_token
             )
+    elif command["action"] == "clear":
+        st.session_state.pop(AUTH_STORAGE_SYNCED_TOKEN_KEY, None)
 
-            if isinstance(stored_session, dict):
-                try:
-                    restored_response = restore_session(
-                        client=supabase,
-                        access_token=stored_session.get(
-                            "access_token"
-                        ),
-                        refresh_token=stored_session.get(
-                            "refresh_token"
-                        ),
-                    )
-                    activate_auth_response(
-                        restored_response
-                    )
-                    st.rerun()
 
-                except Exception:
-                    st.session_state[
-                        AUTH_RESTORE_NOTICE_KEY
-                    ] = (
-                        "저장된 로그인 정보가 만료되어 "
-                        "다시 로그인이 필요합니다."
-                    )
-                    queue_auth_storage_command(
-                        action="clear"
-                    )
-                    st.rerun()
+def _restore_auth_session_from_ack(
+    supabase,
+    acknowledgement: dict,
+) -> None:
+    """브라우저에서 읽은 토큰으로 Supabase 인증 세션을 복원합니다."""
 
-        if command_action == "write":
-            queue_auth_storage_command(action="read")
-            st.rerun()
+    stored_session = acknowledgement.get("session")
+    if not isinstance(stored_session, dict):
+        return
+
+    try:
+        restored_response = restore_session(
+            client=supabase,
+            access_token=stored_session.get("access_token"),
+            refresh_token=stored_session.get("refresh_token"),
+        )
+        activate_auth_response(restored_response)
+        st.rerun()
+    except Exception as error:
+        report_exception("auth.restore_browser_session", error)
+        st.session_state[AUTH_RESTORE_NOTICE_KEY] = (
+            "저장된 로그인 정보가 만료되어 다시 로그인이 필요합니다."
+        )
+        queue_auth_storage_command(action="clear")
+        st.rerun()
+
+
+def _handle_unauthenticated_storage_state(
+    supabase,
+    command: dict,
+    acknowledgement: dict | None,
+) -> None:
+    """로그아웃 상태에서 저장 명령 대기·복원·후속 읽기를 처리합니다."""
+
+    if st.session_state.auth_user is not None:
+        return
+
+    command_action = command["action"]
+    if command_action in {"read", "clear"} and acknowledgement is None:
+        st.info("저장된 로그인 상태를 확인하고 있습니다...")
+        st.stop()
 
     if (
-        auth_storage_ack is not None
-        and not auth_storage_ack.get("ok")
+        command_action == "read"
+        and acknowledgement is not None
+        and acknowledgement.get("ok")
     ):
+        _restore_auth_session_from_ack(supabase, acknowledgement)
+
+    if command_action == "write":
+        queue_auth_storage_command(action="read")
+        st.rerun()
+
+
+def _render_auth_storage_notices(
+    acknowledgement: dict | None,
+) -> None:
+    """브라우저 저장 실패와 인증 복원 안내를 한 곳에서 표시합니다."""
+
+    if acknowledgement is not None and not acknowledgement.get("ok"):
         st.warning(
             "브라우저 탭에 로그인 상태를 저장하지 못했습니다. "
             "현재 화면에서는 계속 사용할 수 있지만, "
@@ -384,11 +356,32 @@ def initialize_auth_session(supabase) -> None:
         st.session_state.auth_user is None
         and AUTH_RESTORE_NOTICE_KEY in st.session_state
     ):
-        st.warning(
-            st.session_state.pop(
-                AUTH_RESTORE_NOTICE_KEY
-            )
-        )
+        st.warning(st.session_state.pop(AUTH_RESTORE_NOTICE_KEY))
+
+
+def initialize_auth_session(supabase) -> None:
+    """브라우저 탭과 현재 Supabase 인증 세션을 동기화합니다."""
+
+    st.session_state.setdefault("auth_user", None)
+    if AUTH_STORAGE_COMMAND_KEY not in st.session_state:
+        queue_auth_storage_command(action="read")
+
+    _sync_authenticated_session(supabase)
+
+    command = st.session_state[AUTH_STORAGE_COMMAND_KEY]
+    component_result = render_auth_session_storage(command)
+    acknowledgement = get_auth_storage_ack(
+        component_result=component_result,
+        command=command,
+    )
+
+    _apply_auth_storage_ack(command, acknowledgement)
+    _handle_unauthenticated_storage_state(
+        supabase,
+        command,
+        acknowledgement,
+    )
+    _render_auth_storage_notices(acknowledgement)
 
 
 def clear_auth_session_state() -> None:

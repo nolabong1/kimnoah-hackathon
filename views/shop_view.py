@@ -12,6 +12,7 @@ from services.shop_repository import (
     get_user_inventory,
     purchase_shop_item,
 )
+from views.error_feedback import render_unexpected_error
 from views.shop_state import (
     CATEGORY_FILTER_KEY,
     PURCHASE_IN_PROGRESS_KEY,
@@ -69,12 +70,20 @@ def render_shop_load_error(error: Exception) -> None:
             "PGRST205",
         )
     ):
-        st.error(
+        user_message = (
             "코인 상점 데이터베이스 설정을 확인할 수 없습니다. "
             "필수 Supabase 상점 마이그레이션이 적용됐는지 확인해주세요."
         )
-        return
-    st.error("코인 상점 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
+    else:
+        user_message = (
+            "코인 상점 정보를 불러오지 못했습니다. 잠시 후 다시 "
+            "시도해주세요."
+        )
+    render_unexpected_error(
+        error,
+        operation="shop.load",
+        user_message=user_message,
+    )
 
 
 def render_shop_market(
@@ -247,7 +256,11 @@ def _show_purchase_dialog(
                 st.session_state[SUCCESS_MESSAGE_KEY] = message
                 st.rerun()
             except Exception as error:
-                st.error(_friendly_purchase_error(error))
+                render_unexpected_error(
+                    error,
+                    operation="shop.purchase",
+                    user_message=_friendly_purchase_error(error),
+                )
             finally:
                 st.session_state.pop(PURCHASE_IN_PROGRESS_KEY, None)
 

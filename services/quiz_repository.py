@@ -11,6 +11,9 @@ from services.gamification_repository import (
 )
 
 
+RECENT_QUIZ_ATTEMPT_LIMIT = 10
+
+
 def get_learning_concept_catalog(
     supabase: Client,
     user_id: str,
@@ -149,8 +152,16 @@ def get_quiz_attempts(
     supabase: Client,
     user_id: str,
     quiz_id: str,
+    limit: int = RECENT_QUIZ_ATTEMPT_LIMIT,
 ) -> list[dict]:
-    """특정 퀴즈의 응시 기록을 최근 순서로 불러옵니다."""
+    """특정 퀴즈의 최근 응시 기록만 불러옵니다."""
+
+    if (
+        isinstance(limit, bool)
+        or not isinstance(limit, int)
+        or not 1 <= limit <= 50
+    ):
+        raise ValueError("퀴즈 응시 조회 개수는 1개 이상 50개 이하여야 합니다.")
 
     response = (
         supabase.table("quiz_attempts")
@@ -163,10 +174,42 @@ def get_quiz_attempts(
         .eq("user_id", user_id)
         .eq("quiz_id", quiz_id)
         .order("attempt_number", desc=True)
+        .limit(limit)
         .execute()
     )
 
     return response.data or []
+
+
+def has_perfect_current_quiz_attempt(
+    supabase: Client,
+    user_id: str,
+    quiz_id: str,
+    quiz_updated_at: str,
+    question_count: int,
+) -> bool:
+    """현재 퀴즈 버전의 만점 응시 존재 여부만 가볍게 조회합니다."""
+
+    if (
+        isinstance(question_count, bool)
+        or not isinstance(question_count, int)
+        or question_count < 1
+    ):
+        return False
+
+    response = (
+        supabase.table("quiz_attempts")
+        .select("id")
+        .eq("user_id", user_id)
+        .eq("quiz_id", quiz_id)
+        .eq("quiz_updated_at", quiz_updated_at)
+        .eq("correct_count", question_count)
+        .eq("total_questions", question_count)
+        .limit(1)
+        .execute()
+    )
+
+    return bool(response.data)
 
 
 def submit_quiz_attempt(

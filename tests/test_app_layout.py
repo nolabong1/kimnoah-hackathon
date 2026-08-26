@@ -4,7 +4,7 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 from zoneinfo import ZoneInfo
 
 from streamlit.testing.v1 import AppTest
@@ -330,9 +330,9 @@ class AppLayoutTests(unittest.TestCase):
                 return_value=[plan],
             ),
             patch(
-                "views.weekly_review_view.get_study_plan_tasks",
-                return_value=[{"status": "completed"}],
-            ),
+                "views.weekly_review_view.get_study_tasks_by_plan_ids",
+                return_value={PLAN_ID: [{"status": "completed"}]},
+            ) as get_tasks_by_plan_ids,
             patch(
                 "views.weekly_review_view.is_weekly_review_eligible",
                 return_value=True,
@@ -352,6 +352,11 @@ class AppLayoutTests(unittest.TestCase):
             ).run()
 
         self.assertEqual(list(app.exception), [])
+        get_tasks_by_plan_ids.assert_called_once_with(
+            supabase=ANY,
+            user_id=USER_ID,
+            plan_ids=[PLAN_ID],
+        )
         self.assertEqual(
             [tab.label for tab in app.tabs],
             ["학습 기록과 나의 회고", "AI 주간 회고", "다음 주 계획"],
@@ -462,18 +467,21 @@ class AppLayoutTests(unittest.TestCase):
                 return_value=[plan],
             ),
             patch(
-                "views.dashboard_view.get_study_plan_tasks",
-                return_value=[task, completed_task],
-            ),
-            patch(
-                "views.dashboard_view.get_course_concept_masteries",
-                return_value=[],
+                "views.dashboard_view.get_dashboard_snapshot",
+                return_value={
+                    "plan_tasks": [task, completed_task],
+                    "concept_masteries": [],
+                    "achievements": [],
+                    "challenges": [],
+                    "badge_showcase": [],
+                },
             ),
             patch(
                 "views.dashboard_view.render_review_material_section"
             ) as material_section,
             patch(
-                "views.dashboard_view.render_gamification_dashboard_summary"
+                "views.dashboard_view."
+                "render_gamification_dashboard_summary_from_data"
             ) as gamification_summary,
         ):
             app = AppTest.from_function(

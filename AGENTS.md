@@ -96,6 +96,8 @@ DB 구조, 보상 규칙, 제품 동작, 아키텍처를 바꾸는 작업은 구
   선택지별 오답 진단 피드백 검증
 - `models/concept_mastery.py`: 숙련도 현재값, 문항별 변화,
   자동 복습 요약, 적응형 분석 응답 모델
+- `models/dashboard.py`: 선택 계획의 과제·숙련도·게임화 데이터를 묶는
+  오늘 학습 읽기 전용 RPC 응답 모델
 - `models/tutor.py`: 세 단계 힌트, 최종 풀이, 수정 풀이 피드백 모델
 - `models/weekly_review.py`: 주간 통계 스냅샷과 구조화 AI 회고 모델
 - `models/gamification.py`: 업적·배지·도전과제 카탈로그와 저장/RPC 응답 모델
@@ -117,9 +119,12 @@ AI Structured Output과 RPC 응답은 가능한 한 Pydantic 모델로 검증한
 - `openai_client.py`: 캐시된 OpenAI 클라이언트와 모델 선택
 - `auth_service.py`: 회원가입·로그인·로그아웃·토큰 복원
 - `profile_service.py`: 프로필 조회와 `JWT issued at future` 단기 재시도
+- `error_reporting.py`: 내부 예외의 비밀값을 제한적으로 가리고 작업 식별자와
+  오류 ID를 서버 로그에 남기는 공통 진단 helper
 - `study_plan_service.py`: AI 7일 학습계획 생성과 업무 규칙 검증
 - `study_plan_repository.py`: 계획·과제를 원자적으로 저장하는 서버 RPC와 조회/삭제,
-  완료 RPC와 테스트 초기화 RPC 연결
+  완료 RPC와 테스트 초기화 RPC 연결. 여러 계획의 과제는 사용자 ID와 계획 ID
+  목록으로 한 번에 조회해 계획별로 묶을 수 있음
 - `source_material_service.py`: 원본 제목·텍스트 검증과
   메모리 기반 PDF 텍스트 추출
 - `review_material_service.py`: 과제·원본 기반 AI 학습자료 생성과 내용 검증
@@ -127,11 +132,14 @@ AI Structured Output과 RPC 응답은 가능한 한 Pydantic 모델로 검증한
   원본·복습자료 순차 저장 및 부분 실패 정리
 - `quiz_service.py`: 5문항 객관식 퀴즈 생성과 업무 규칙 검증
 - `quiz_repository.py`: 퀴즈·응시 조회, 개념 포함 퀴즈 저장 RPC,
-  원자적 제출 RPC 연결
+  원자적 제출 RPC 연결. 닫힌 퀴즈의 완료 가능 여부는 ID만 조회하며 상세 응시는
+  최근 10개로 제한
 - `concept_service.py`: 과목 키와 개념 별칭 정규화,
   퀴즈 개념 payload 구성
 - `concept_mastery_repository.py`: 취약 개념, 과목별 숙련도, 최근 오답 유형,
   저장된 응시의 적응형 분석 조회
+- `dashboard_repository.py`: 선택 계획 소유권이 검증된 과제·숙련도·게임화
+  스냅샷을 단일 읽기 RPC로 조회하고 응답 소유권을 재검증
 - `tutor_service.py`: 튜터 입력·참고자료 길이 검증과 단계별 안내·
   수정 풀이 피드백 OpenAI 호출
 - `weekly_review_service.py`: 회고 자격·통계 계산, 답변 검증, AI 회고,
@@ -163,16 +171,22 @@ AI 호출과 DB 저장 책임도 분리한다.
 
 ### `views/`
 
-- `auth_session_storage.py`: 브라우저 `sessionStorage`를 이용한 로그인 유지
+- `auth_session_storage.py`: 브라우저 `sessionStorage`를 이용한 로그인 유지.
+  저장 명령, 현재 Supabase 세션 동기화, 명령 응답 반영, 토큰 복원과 안내 표시를
+  분리하며 `initialize_auth_session`은 이 순서만 조합
 - `help_view.py`: 사이드바에서 여는 초보자용 핵심 사용 흐름·기능 안내 dialog
+- `error_feedback.py`: 내부 예외 원문 대신 안전한 한국어 안내와 오류 ID를
+  표시하는 공통 오류·경고 UI helper
 - `create_plan_view.py`: 계획 조건과 2열의 7일 가능 시간 입력,
   AI 생성 미리보기, 명시적 저장을 분리한 계획 생성 UI
 - `dashboard_view.py`: 선택한 활성 계획의 오늘 과제,
   숙련도·취약 개념·다음 자동 복습 표시. 데스크톱에서는 과제 선택 목록,
   선택 과제 상세, 학습 진단·게임화 요약을 3영역으로 배치하고 취약 개념은
-  우선순위 3개만 요약
+  우선순위 3개만 요약. 계획 목록 조회 후 선택 계획의 과제·숙련도·게임화
+  데이터는 `get_dashboard_snapshot` 읽기 RPC 한 번으로 조회
 - `mastery_dashboard_view.py`: 전체 과목 비교와 선택 과목 개념 상세를
-  탭으로 분리하고 개념 숙련도·취약 상태를 2열 카드로 표시
+  탭으로 분리하고 개념 숙련도·취약 상태를 2열 카드로 표시. 전체 지표,
+  유효한 과목 선택 상태, 선택 과목 상세 렌더링을 각각 분리
 - `saved_plans_view.py`: 저장된 계획/과제 조회, 완료와 삭제 확인.
   학습 일정 카드의 날짜 선택 드롭다운 아래에 모든 날짜의 과제 카드를 전체
   폭으로 통일. 오늘 또는 완료 처리 후 pending 날짜 선택을 유지하며 퀴즈
@@ -181,14 +195,17 @@ AI 호출과 DB 저장 책임도 분리한다.
 - `source_review_material_view.py`: 붙여넣은 텍스트 또는 PDF에서 추출한
   텍스트 기반 AI 복습자료 입력과 생성 결과를 좌우 영역으로 표시
 - `quiz_ui.py`: 퀴즈 생성·응시·재응시·결과. 결과 화면은 왼쪽 문항 해설과
-  오른쪽 숙련도·취약 개념·자동 복습 진단 영역으로 분리
+  오른쪽 숙련도·취약 개념·자동 복습 진단 영역으로 분리. 공개 진입 함수는
+  완료 조건, 생성, 응시 상태, 제출, 결과·진단 helper를 조합하며 동일 답안의
+  제출 재시도에는 기존 멱등 키를 재사용
 - `completion_feedback.py`: 과제 완료와 일일 보너스 피드백 dialog
 - `tutor_state.py`: `tutor_` 접두사 세션 상태와 힌트 이동·초기화
 - `tutor_view.py`: 2열 설정, 단계별 힌트 카드, 풀이 점검과
   명시적 정답 확인 dialog를 제공하는 튜터 UI
 - `weekly_review_state.py`: `weekly_review_` 접두사 미리보기·저장 상태 관리
 - `weekly_review_view.py`: 학습 기록·AI 회고·다음 계획을 탭으로 분리하고
-  다음 7일 계획 미리보기·명시적 저장을 제공하는 UI
+  다음 7일 계획 미리보기·명시적 저장을 제공하는 UI. 회고 자격 판정용 과제는
+  계획마다 반복 조회하지 않고 한 번에 조회
 - `gamification_state.py`: `gamification_` 접두사 알림·처리·이동 상태 관리
 - `gamification_view.py`: 일간·주간 도전과제, 업적 진행도, 대표 배지 탭을
   표시하고 오늘 학습 요약도 제공
@@ -209,6 +226,9 @@ AI 호출과 DB 저장 책임도 분리한다.
   규격화하고 합성 미리보기와 JSON 카탈로그를 만드는 개발 도구
 - `tools/run_ai_quality_benchmark.py`: 기본 조회는 무료이며 `--live`와
   `--confirm-paid`를 함께 지정한 선택 사례만 실제 호출하는 개발 도구
+- `tools/validate_sql_migrations.py`: `supabase/migrations.toml`의 연속 순서,
+  직전 의존성, 트랜잭션, 파일 존재와 전체 루트 SQL 분류를 검사하고 신규 환경
+  실행 순서를 출력하는 읽기 전용 도구
 - `test_tools_view.py`: 사이드바의 개발용 계획 전체 완료·오늘 기록 초기화·
   상점 테스트 세션과 확인 절차. `test_tool_access`에 명시적으로 허용된
   사용자에게만 표시하며 닫혀 있을 때는 관련 데이터를 조회하지 않음
@@ -231,6 +251,27 @@ service/repository 또는 Supabase RPC로 이동한다.
 
 `tests/test_shop_test_tools.py`는 상점 테스트 세션 응답, 본인 조회,
 시작·초기화 RPC 계약과 SQL의 스냅샷·원장·RLS 구성을 검사한다.
+
+`tests/test_query_performance.py`는 닫힌 퀴즈가 무거운 응시 상세를 조회하지 않는지,
+상세 응시가 최근 10개로 제한되는지, 주간 회고의 여러 계획 과제가 한 번의
+테이블 조회로 묶이는지 검사한다.
+
+`tests/test_dashboard_snapshot.py`는 오늘 학습 통합 조회가 개별 테이블 대신
+단일 RPC를 사용하는지, 응답 소유권과 입력을 검증하는지, SQL 함수가 읽기 전용·
+`security definer`·안전한 `search_path`·인증 사용자 전용 권한을 갖는지 검사한다.
+
+`tests/test_view_function_boundaries.py`는 퀴즈·숙련도·인증 공개 조합 함수가 다시
+비대해지지 않는지, 퀴즈 제출 멱등 키 재사용과 숙련도 변화 그룹화, 인증 저장
+명령의 중복 방지 상태 전이를 검사한다.
+
+`tests/test_sql_migration_manifest.py`는 모든 루트 SQL이 migration, 연결 validation,
+standalone 통합 검증 중 하나로 분류되는지와 순서·의존성·누락 감지를 검사한다.
+
+`tests/test_supabase_security_integration.py`는 명시적으로 승인한 전용 Supabase
+테스트 프로젝트에서만 임시 사용자 두 명을 생성해 실제 RLS, 핵심 테이블
+쓰기 권한, 계획 저장 원자성과 동시 과제 완료 멱등성을 검사한다. 기본 테스트
+실행에서는 원격 검사를 건너뛰며 service role key를 저장소나 Streamlit에
+보관하지 않는다. 실행 절차는 `docs/testing/SUPABASE_INTEGRATION_TESTS.md`를 따른다.
 
 ## 주요 실행 흐름
 
@@ -636,6 +677,20 @@ Python 변경 전후로 함수와 제어 흐름의 범위를 다시 확인한다
 
 ## SQL 마이그레이션 규칙
 
+`supabase/migrations.toml`이 신규 환경의 전체 적용 순서, 연결 validation,
+standalone 통합 검증 위치를 정의하는 단일 기준이다. SQL을 추가하거나 순서를
+확인할 때는 먼저 다음 검사를 실행한다.
+
+```powershell
+.\.venv\Scripts\python.exe tools\validate_sql_migrations.py --list
+```
+
+기존 루트 SQL은 이미 적용된 프로젝트와 테스트 경로를 보존하기 위해 이동하거나
+이름을 바꾸지 않는다. 기존 manifest 항목도 재정렬하지 않고 새 migration을
+마지막에만 추가한다. 세부 운영 절차는 `docs/database/MIGRATIONS.md`를 따른다.
+manifest는 원격 DB 적용 이력을 자동으로 추측하지 않으므로 기존 프로젝트에서
+전체 SQL을 일괄 재실행하지 않는다.
+
 루트의 `supabase_schema.sql`은 기본 스키마이며, `supabase_*_upgrade.sql`과
 기능별 SQL이 이후 구조와 RPC를 확장한다. 같은 함수의 최종 정의는 뒤쪽
 기능 SQL에서 `create or replace` 또는 rename/wrapper 방식으로 갱신될 수 있다.
@@ -702,6 +757,8 @@ Python 변경 전후로 함수와 제어 흐름의 범위를 다시 확인한다
 SQL을 변경할 때는 다음을 지킨다.
 
 - 가능한 경우 `begin`/`commit` 트랜잭션을 사용한다.
+- 새 mutation SQL은 `begin`/`commit`을 필수로 사용하고 manifest에 등록한다.
+- 새 validation SQL은 가능한 한 읽기 전용 트랜잭션과 `rollback`을 사용한다.
 - 제한적 열, `NOT NULL`, 새 외래 키를 추가하기 전에 기존 데이터를 검사한다.
 - 제약·정책·인덱스 이름의 중복과 실제 존재 여부를 확인한다.
 - RLS 상태, 소유권 정책, 복합 외래 키, 실행 권한을 검증한다.

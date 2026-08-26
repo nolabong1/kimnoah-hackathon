@@ -1,0 +1,220 @@
+manifest_version = 1
+sql_root = ".."
+
+[[migrations]]
+order = 1
+id = "001_initial_schema"
+path = "supabase_schema.sql"
+depends_on = []
+
+[[migrations]]
+order = 2
+id = "002_task_completion"
+path = "supabase_task_completion.sql"
+depends_on = ["001_initial_schema"]
+
+[[migrations]]
+order = 3
+id = "003_review_materials"
+path = "supabase_review_materials_upgrade.sql"
+depends_on = ["002_task_completion"]
+
+[[migrations]]
+order = 4
+id = "004_test_reset"
+path = "supabase_test_reset.sql"
+depends_on = ["003_review_materials"]
+
+[[migrations]]
+order = 5
+id = "005_quizzes"
+path = "supabase_quizzes_upgrade.sql"
+depends_on = ["004_test_reset"]
+
+[[migrations]]
+order = 6
+id = "006_quiz_attempts"
+path = "supabase_quiz_attempts_upgrade.sql"
+depends_on = ["005_quizzes"]
+
+[[migrations]]
+order = 7
+id = "007_quiz_completion_requirement"
+path = "supabase_quiz_completion_requirement.sql"
+depends_on = ["006_quiz_attempts"]
+
+[[migrations]]
+order = 8
+id = "008_study_plan_level"
+path = "supabase_study_plan_level_upgrade.sql"
+depends_on = ["007_quiz_completion_requirement"]
+
+[[migrations]]
+order = 9
+id = "009_concept_mastery_schema"
+path = "supabase_concept_mastery_upgrade.sql"
+validation = "supabase_concept_mastery_validation.sql"
+depends_on = ["008_study_plan_level"]
+
+[[migrations]]
+order = 10
+id = "010_quiz_concepts"
+path = "supabase_quiz_concepts_upgrade.sql"
+depends_on = ["009_concept_mastery_schema"]
+
+[[migrations]]
+order = 11
+id = "011_concept_mastery_processing"
+path = "supabase_concept_mastery_processing.sql"
+validation = "supabase_concept_mastery_processing_validation.sql"
+depends_on = ["010_quiz_concepts"]
+
+[[migrations]]
+order = 12
+id = "012_weak_concepts"
+path = "supabase_weak_concepts.sql"
+validation = "supabase_weak_concepts_validation.sql"
+depends_on = ["011_concept_mastery_processing"]
+
+[[migrations]]
+order = 13
+id = "013_auto_review_tasks"
+path = "supabase_auto_review_tasks.sql"
+validation = "supabase_auto_review_tasks_validation.sql"
+depends_on = ["012_weak_concepts"]
+
+[[migrations]]
+order = 14
+id = "014_spaced_repetition"
+path = "supabase_spaced_repetition.sql"
+validation = "supabase_spaced_repetition_validation.sql"
+depends_on = ["013_auto_review_tasks"]
+
+[[migrations]]
+order = 15
+id = "015_adaptive_test_reset"
+path = "supabase_adaptive_test_reset.sql"
+validation = "supabase_adaptive_test_reset_validation.sql"
+depends_on = ["014_spaced_repetition"]
+
+[[migrations]]
+order = 16
+id = "016_source_material_review"
+path = "supabase_source_material_review_upgrade.sql"
+validation = "supabase_source_material_review_validation.sql"
+depends_on = ["015_adaptive_test_reset"]
+
+[[migrations]]
+order = 17
+id = "017_weekly_learning_reviews"
+path = "supabase_weekly_learning_reviews.sql"
+validation = "supabase_weekly_learning_reviews_validation.sql"
+depends_on = ["016_source_material_review"]
+
+[[migrations]]
+order = 18
+id = "018_weekly_review_test_completion"
+path = "supabase_weekly_review_test_completion.sql"
+validation = "supabase_weekly_review_test_completion_validation.sql"
+depends_on = ["017_weekly_learning_reviews"]
+
+[[migrations]]
+order = 19
+id = "019_gamification_schema"
+path = "supabase_gamification_schema.sql"
+validation = "supabase_gamification_schema_validation.sql"
+depends_on = ["018_weekly_review_test_completion"]
+
+[[migrations]]
+order = 20
+id = "020_gamification_actions"
+path = "supabase_gamification_actions.sql"
+validation = "supabase_gamification_actions_validation.sql"
+depends_on = ["019_gamification_schema"]
+
+[[migrations]]
+order = 21
+id = "021_coin_economy"
+path = "supabase_coin_economy_schema.sql"
+validation = "supabase_coin_economy_schema_validation.sql"
+depends_on = ["020_gamification_actions"]
+
+[[migrations]]
+order = 22
+id = "022_coin_rewards"
+path = "supabase_coin_rewards.sql"
+validation = "supabase_coin_rewards_validation.sql"
+depends_on = ["021_coin_economy"]
+
+[[migrations]]
+order = 23
+id = "023_coin_test_reset"
+path = "supabase_coin_test_reset.sql"
+validation = "supabase_coin_test_reset_validation.sql"
+depends_on = ["022_coin_rewards"]
+
+[[migrations]]
+order = 24
+id = "024_shop_inventory"
+path = "supabase_shop_inventory.sql"
+validation = "supabase_shop_inventory_validation.sql"
+depends_on = ["023_coin_test_reset"]
+
+[[migrations]]
+order = 25
+id = "025_study_rooms"
+path = "supabase_study_rooms.sql"
+validation = "supabase_study_rooms_validation.sql"
+depends_on = ["024_shop_inventory"]
+
+[[migrations]]
+order = 26
+id = "026_study_room_direct_editor"
+path = "supabase_study_room_direct_editor.sql"
+validation = "supabase_study_room_direct_editor_validation.sql"
+depends_on = ["025_study_rooms"]
+
+[[migrations]]
+order = 27
+id = "027_shop_test_tools"
+path = "supabase_shop_test_tools.sql"
+validation = "supabase_shop_test_tools_validation.sql"
+depends_on = ["026_study_room_direct_editor"]
+
+[[migrations]]
+order = 28
+id = "028_quiz_diagnosis_personalization"
+path = "supabase_quiz_diagnosis_personalization.sql"
+validation = "supabase_quiz_diagnosis_personalization_validation.sql"
+depends_on = ["027_shop_test_tools"]
+
+[[migrations]]
+order = 29
+id = "029_test_tool_access"
+path = "supabase_test_tool_access.sql"
+validation = "supabase_test_tool_access_validation.sql"
+depends_on = ["028_quiz_diagnosis_personalization"]
+
+[[migrations]]
+order = 30
+id = "030_core_write_boundary"
+path = "supabase_core_write_boundary.sql"
+validation = "supabase_core_write_boundary_validation.sql"
+depends_on = ["029_test_tool_access"]
+
+[[migrations]]
+order = 31
+id = "031_dashboard_snapshot"
+path = "supabase_dashboard_snapshot.sql"
+validation = "supabase_dashboard_snapshot_validation.sql"
+depends_on = ["030_core_write_boundary"]
+
+[[standalone_checks]]
+id = "adaptive_learning_integration"
+path = "supabase_adaptive_learning_integration_validation.sql"
+after = "031_dashboard_snapshot"
+
+[[standalone_checks]]
+id = "shop_room_integration"
+path = "supabase_shop_room_integration_validation.sql"
+after = "031_dashboard_snapshot"

@@ -8,6 +8,14 @@ from services.gamification_repository import (
 )
 
 
+STUDY_TASK_SELECT_FIELDS = (
+    "id, scheduled_date, title, description, "
+    "task_type, estimated_minutes, status, "
+    "source_type, concept_id, review_stage, "
+    "review_interval_days"
+)
+
+
 def save_weekly_study_plan(
     supabase: Client,
     user_id: str,
@@ -126,12 +134,7 @@ def get_study_plan_tasks(
 
     response = (
         supabase.table("study_tasks")
-        .select(
-            "id, scheduled_date, title, description, "
-            "task_type, estimated_minutes, status, "
-            "source_type, concept_id, review_stage, "
-            "review_interval_days"
-        )
+        .select(STUDY_TASK_SELECT_FIELDS)
         .eq("user_id", user_id)
         .eq("plan_id", plan_id)
         .order("scheduled_date")
@@ -140,6 +143,45 @@ def get_study_plan_tasks(
     )
 
     return response.data or []
+
+
+def get_study_tasks_by_plan_ids(
+    supabase: Client,
+    user_id: str,
+    plan_ids: list[str],
+) -> dict[str, list[dict]]:
+    """여러 학습계획의 과제를 한 번에 조회해 계획별로 묶습니다."""
+
+    normalized_plan_ids = list(
+        dict.fromkeys(
+            plan_id.strip()
+            for plan_id in plan_ids
+            if isinstance(plan_id, str) and plan_id.strip()
+        )
+    )
+    tasks_by_plan = {
+        plan_id: [] for plan_id in normalized_plan_ids
+    }
+    if not normalized_plan_ids:
+        return tasks_by_plan
+
+    response = (
+        supabase.table("study_tasks")
+        .select(f"plan_id, {STUDY_TASK_SELECT_FIELDS}")
+        .eq("user_id", user_id)
+        .in_("plan_id", normalized_plan_ids)
+        .order("scheduled_date")
+        .order("created_at")
+        .execute()
+    )
+
+    for task in response.data or []:
+        plan_id = task.get("plan_id")
+        if plan_id in tasks_by_plan:
+            tasks_by_plan[plan_id].append(task)
+
+    return tasks_by_plan
+
 
 def complete_study_task(
     supabase: Client,

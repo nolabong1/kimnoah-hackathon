@@ -16,6 +16,7 @@ from services.source_material_service import (
     validate_source_title,
 )
 from services.study_plan_repository import get_user_study_plans
+from views.error_feedback import render_unexpected_error
 from views.ui_components import render_empty_state, render_page_header
 
 
@@ -91,7 +92,14 @@ def render_source_review_material(supabase, user) -> None:
             user_id=user_id,
         )
     except Exception as error:
-        st.error(f"저장된 학습계획을 불러오지 못했습니다: {error}")
+        render_unexpected_error(
+            error,
+            operation="source_review.load_plans",
+            user_message=(
+                "저장된 학습계획을 불러오지 못했습니다. 잠시 후 다시 "
+                "시도해주세요."
+            ),
+        )
         return
 
     if not study_plans:
@@ -260,7 +268,14 @@ def render_source_review_material(supabase, user) -> None:
             except SourceMaterialValidationError as error:
                 st.warning(str(error))
             except Exception as error:
-                st.error(f"AI 복습 자료 생성 또는 저장에 실패했습니다: {error}")
+                render_unexpected_error(
+                    error,
+                    operation="source_review.generate_and_save",
+                    user_message=(
+                        "AI 복습 자료 생성 또는 저장에 실패했습니다. "
+                        "잠시 후 다시 시도해주세요."
+                    ),
+                )
             finally:
                 st.session_state[RUNNING_STATE_KEY] = False
 

@@ -12,6 +12,7 @@ from services.study_plan_repository import (
 from views.completion_feedback import (
     render_completion_feedback,
 )
+from views.error_feedback import render_unexpected_error
 from views.gamification_state import queue_gamification_notifications
 from views.quiz_ui import render_quiz_section
 from views.review_material_ui import (
@@ -122,8 +123,13 @@ def show_delete_plan_dialog(
                 st.rerun()
 
             except Exception as error:
-                st.error(
-                    f"학습계획 삭제에 실패했습니다: {error}"
+                render_unexpected_error(
+                    error,
+                    operation="saved_plans.delete",
+                    user_message=(
+                        "학습계획 삭제에 실패했습니다. 잠시 후 다시 "
+                        "시도해주세요."
+                    ),
                 )
 
 
@@ -179,8 +185,13 @@ def complete_task_and_rerun(
         st.rerun()
 
     except Exception as error:
-        st.error(
-            f"과제 완료 처리에 실패했습니다: {error}"
+        render_unexpected_error(
+            error,
+            operation="saved_plans.complete_task",
+            user_message=(
+                "과제 완료 처리에 실패했습니다. 잠시 후 다시 "
+                "시도해주세요."
+            ),
         )
 
 
@@ -361,9 +372,13 @@ def render_saved_plans(supabase, user):
         )
 
     except Exception as error:
-        st.error(
-            f"저장된 학습계획을 불러오지 못했습니다: "
-            f"{error}"
+        render_unexpected_error(
+            error,
+            operation="saved_plans.load_plans",
+            user_message=(
+                "저장된 학습계획을 불러오지 못했습니다. 잠시 후 다시 "
+                "시도해주세요."
+            ),
         )
         saved_plans = []
 
@@ -440,9 +455,13 @@ def render_saved_plans(supabase, user):
         )
 
     except Exception as error:
-        st.error(
-            f"상세 과제를 불러오지 못했습니다: "
-            f"{error}"
+        render_unexpected_error(
+            error,
+            operation="saved_plans.load_tasks",
+            user_message=(
+                "상세 과제를 불러오지 못했습니다. 잠시 후 다시 "
+                "시도해주세요."
+            ),
         )
         saved_tasks = []
 

@@ -25,6 +25,10 @@ from services.tutor_service import (
     validate_tutor_attempt,
     validate_tutor_question,
 )
+from views.error_feedback import (
+    render_unexpected_error,
+    render_unexpected_warning,
+)
 from views.tutor_state import (
     ACTIVE_SESSION_ID_KEY,
     ACTIVE_USER_ID_KEY,
@@ -377,10 +381,14 @@ def _render_active_tutor_session(user_id: str) -> None:
                 st.success("수정한 풀이를 점검했습니다.")
         except TutorInputValidationError as error:
             st.warning(str(error))
-        except Exception:
-            st.error(
-                "풀이 점검 중 오류가 발생했습니다. "
-                "잠시 후 다시 시도해주세요."
+        except Exception as error:
+            render_unexpected_error(
+                error,
+                operation="tutor.check_attempt",
+                user_message=(
+                    "풀이 점검 중 오류가 발생했습니다. 잠시 후 다시 "
+                    "시도해주세요."
+                ),
             )
         finally:
             st.session_state[FEEDBACK_IN_PROGRESS_KEY] = False
@@ -404,8 +412,15 @@ def _render_tutor_setup(supabase, user_id: str) -> None:
             supabase=supabase,
             user_id=user_id,
         )
-    except Exception:
-        st.error("저장된 학습계획을 불러오지 못했습니다.")
+    except Exception as error:
+        render_unexpected_error(
+            error,
+            operation="tutor.load_plans",
+            user_message=(
+                "저장된 학습계획을 불러오지 못했습니다. 잠시 후 다시 "
+                "시도해주세요."
+            ),
+        )
         return
     if not study_plans:
         st.info("AI 튜터를 사용하려면 먼저 학습계획을 저장해주세요.")
@@ -435,9 +450,16 @@ def _render_tutor_setup(supabase, user_id: str) -> None:
             user_id=user_id,
             plan_id=selected_plan_id,
         )
-    except Exception:
+    except Exception as error:
         tasks = []
-        st.warning("선택한 계획의 과제를 불러오지 못했습니다.")
+        render_unexpected_warning(
+            error,
+            operation="tutor.load_tasks",
+            user_message=(
+                "선택한 계획의 과제를 불러오지 못해 직접 질문만 "
+                "사용할 수 있습니다."
+            ),
+        )
 
     try:
         learning_materials = get_learning_materials_by_plan(
@@ -450,10 +472,17 @@ def _render_tutor_setup(supabase, user_id: str) -> None:
             user_id=user_id,
             plan_id=selected_plan_id,
         )
-    except Exception:
+    except Exception as error:
         learning_materials = []
         review_materials = []
-        st.warning("선택한 계획의 참고자료를 불러오지 못했습니다.")
+        render_unexpected_warning(
+            error,
+            operation="tutor.load_materials",
+            user_message=(
+                "선택한 계획의 참고자료를 불러오지 못해 참고자료 없이 "
+                "튜터를 시작할 수 있습니다."
+            ),
+        )
 
     task_by_id = {str(task["id"]): task for task in tasks}
     material_by_key = _build_material_options(
@@ -633,9 +662,14 @@ def _render_tutor_setup(supabase, user_id: str) -> None:
         started = True
     except TutorInputValidationError as error:
         st.warning(str(error))
-    except Exception:
-        st.error(
-            "AI 튜터를 시작하지 못했습니다. 잠시 후 다시 시도해주세요."
+    except Exception as error:
+        render_unexpected_error(
+            error,
+            operation="tutor.start",
+            user_message=(
+                "AI 튜터를 시작하지 못했습니다. 잠시 후 다시 "
+                "시도해주세요."
+            ),
         )
     finally:
         st.session_state[REQUEST_IN_PROGRESS_KEY] = False

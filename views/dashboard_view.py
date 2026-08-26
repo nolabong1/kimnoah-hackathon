@@ -3,19 +3,17 @@ from zoneinfo import ZoneInfo
 
 import streamlit as st
 
-from services.concept_mastery_repository import (
-    get_course_concept_masteries,
-)
 from services.concept_service import normalize_course_key
+from services.dashboard_repository import get_dashboard_snapshot
 from services.study_plan_repository import (
     complete_study_task,
-    get_study_plan_tasks,
     get_user_study_plans,
 )
 from views.completion_feedback import render_completion_feedback
+from views.error_feedback import render_unexpected_error
 from views.gamification_state import queue_gamification_notifications
 from views.gamification_view import (
-    render_gamification_dashboard_summary,
+    render_gamification_dashboard_summary_from_data,
 )
 from views.quiz_ui import render_quiz_section
 from views.review_material_ui import (
@@ -92,9 +90,7 @@ def _get_next_auto_review_tasks(
 
 
 def _render_learning_diagnostics(
-    supabase,
-    user_id: str,
-    selected_plan: dict,
+    concept_masteries: list[dict],
     plan_tasks: list[dict],
     today: str,
 ) -> None:
@@ -102,24 +98,8 @@ def _render_learning_diagnostics(
 
     st.subheader("학습 진단")
 
-    try:
-        course_key = normalize_course_key(
-            selected_plan["course_name"]
-        )
-        concept_masteries = get_course_concept_masteries(
-            supabase=supabase,
-            user_id=user_id,
-            course_key=course_key,
-        )
-    except Exception as error:
-        st.warning(
-            "개념 숙련도를 불러오지 못했습니다: "
-            f"{error}"
-        )
-        concept_masteries = None
-
     weak_masteries = _get_priority_weak_masteries(
-        concept_masteries or [],
+        concept_masteries,
     )
     next_review_tasks = _get_next_auto_review_tasks(
         plan_tasks=plan_tasks,
@@ -136,9 +116,7 @@ def _render_learning_diagnostics(
     )
 
     with st.container(border=True):
-        if concept_masteries is None:
-            st.caption("숙련도 정보를 확인하지 못했습니다.")
-        elif not concept_masteries:
+        if not concept_masteries:
             st.caption(
                 "아직 평가된 개념이 없습니다. 퀴즈를 응시하면 표시됩니다."
             )
@@ -341,9 +319,13 @@ def _render_today_task_cards(
                     }
                     st.rerun()
                 except Exception as error:
-                    st.error(
-                        "과제 완료 처리에 실패했습니다: "
-                        f"{error}"
+                    render_unexpected_error(
+                        error,
+                        operation="dashboard.complete_task",
+                        user_message=(
+                            "과제 완료 처리에 실패했습니다. 잠시 후 다시 "
+                            "시도해주세요."
+                        ),
                     )
 
 
@@ -366,8 +348,13 @@ def render_dashboard(supabase, user):
         )
 
     except Exception as error:
-        st.error(
-            f"학습계획을 불러오지 못했습니다: {error}"
+        render_unexpected_error(
+            error,
+            operation="dashboard.load_plans",
+            user_message=(
+                "학습계획을 불러오지 못했습니다. 잠시 후 다시 "
+                "시도해주세요."
+            ),
         )
         return
 
@@ -409,17 +396,36 @@ def render_dashboard(supabase, user):
     )
 
     try:
-        plan_tasks = get_study_plan_tasks(
+        dashboard_snapshot = get_dashboard_snapshot(
             supabase=supabase,
             user_id=user.id,
             plan_id=selected_plan_id,
+            course_key=normalize_course_key(
+                selected_plan["course_name"]
+            ),
         )
 
     except Exception as error:
-        st.error(
-            f"오늘의 과제를 불러오지 못했습니다: {error}"
+        if _is_missing_dashboard_snapshot_rpc(error):
+            user_message = (
+                "오늘 학습 통합 조회 설정이 아직 적용되지 않았습니다. "
+                "Supabase SQL Editor에서 "
+                "supabase_dashboard_snapshot.sql을 실행해주세요."
+            )
+        else:
+            user_message = (
+                "오늘 학습 요약을 불러오지 못했습니다. 잠시 후 다시 "
+                "시도해주세요."
+            )
+        render_unexpected_error(
+            error,
+            operation="dashboard.load_snapshot",
+            user_message=user_message,
         )
         return
+
+    plan_tasks = dashboard_snapshot["plan_tasks"]
+    concept_masteries = dashboard_snapshot["concept_masteries"]
 
     today_tasks = _build_today_tasks(
         plan_tasks=plan_tasks,
@@ -444,15 +450,14 @@ def render_dashboard(supabase, user):
 
         with insight_column:
             _render_learning_diagnostics(
-                supabase=supabase,
-                user_id=user.id,
-                selected_plan=selected_plan,
+                concept_masteries=concept_masteries,
                 plan_tasks=plan_tasks,
                 today=today,
             )
-            render_gamification_dashboard_summary(
-                supabase=supabase,
-                user_id=str(user.id),
+            render_gamification_dashboard_summary_from_data(
+                achievements=dashboard_snapshot["achievements"],
+                challenges=dashboard_snapshot["challenges"],
+                showcase=dashboard_snapshot["badge_showcase"],
             )
         return
 
@@ -556,13 +561,22 @@ def render_dashboard(supabase, user):
 
     with insight_column:
         _render_learning_diagnostics(
-            supabase=supabase,
-            user_id=user.id,
-            selected_plan=selected_plan,
+            concept_masteries=concept_masteries,
             plan_tasks=plan_tasks,
             today=today,
         )
-        render_gamification_dashboard_summary(
-            supabase=supabase,
-            user_id=str(user.id),
+        render_gamification_dashboard_summary_from_data(
+            achievements=dashboard_snapshot["achievements"],
+            challenges=dashboard_snapshot["challenges"],
+            showcase=dashboard_snapshot["badge_showcase"],
         )
+
+
+def _is_missing_dashboard_snapshot_rpc(error: Exception) -> bool:
+    """통합 조회 마이그레이션 누락 오류인지 판별합니다."""
+
+    message = str(error)
+    return "get_dashboard_snapshot" in message and any(
+        marker in message
+        for marker in ("PGRST202", "schema cache", "Could not find")
+    )

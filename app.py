@@ -16,6 +16,7 @@ from views.auth_session_storage import (
 from views.saved_plans_view import render_saved_plans
 from views.create_plan_view import render_create_plan
 from views.dashboard_view import render_dashboard
+from views.error_feedback import render_unexpected_error
 from views.gamification_state import (
     PENDING_NAVIGATION_KEY as GAMIFICATION_PENDING_NAVIGATION_KEY,
     clear_gamification_state,
@@ -99,7 +100,14 @@ if st.session_state.auth_user is None:
                         activate_auth_response(response)
                         st.rerun()
                     except Exception as error:
-                        st.error(f"로그인에 실패했습니다: {error}")
+                        render_unexpected_error(
+                            error,
+                            operation="auth.sign_in",
+                            user_message=(
+                                "로그인에 실패했습니다. 이메일과 비밀번호를 "
+                                "확인한 뒤 다시 시도해주세요."
+                            ),
+                        )
 
             with signup_tab:
                 with st.form("signup_form"):
@@ -147,7 +155,14 @@ if st.session_state.auth_user is None:
                                 activate_auth_response(response)
                                 st.rerun()
                         except Exception as error:
-                            st.error(f"회원가입에 실패했습니다: {error}")
+                            render_unexpected_error(
+                                error,
+                                operation="auth.sign_up",
+                                user_message=(
+                                    "회원가입에 실패했습니다. 입력 내용과 연결 "
+                                    "상태를 확인한 뒤 다시 시도해주세요."
+                                ),
+                            )
 
     st.stop()
 
@@ -158,7 +173,13 @@ user = st.session_state.auth_user
 try:
     profile = get_profile(supabase, user.id)
 except Exception as error:
-    st.error(f"프로필을 불러오지 못했습니다: {error}")
+    render_unexpected_error(
+        error,
+        operation="profile.load",
+        user_message=(
+            "프로필을 불러오지 못했습니다. 잠시 후 새로고침해주세요."
+        ),
+    )
     st.stop()
 
 

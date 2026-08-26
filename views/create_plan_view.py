@@ -5,6 +5,7 @@ import streamlit as st
 
 from services.study_plan_repository import save_weekly_study_plan
 from services.study_plan_service import generate_weekly_study_plan
+from views.error_feedback import render_unexpected_error
 from views.ui_components import render_page_header
 
 
@@ -173,8 +174,13 @@ def render_create_plan(supabase, user):
                 )
 
             except Exception as error:
-                st.error(
-                    f"학습계획 생성에 실패했습니다: {error}"
+                render_unexpected_error(
+                    error,
+                    operation="study_plan.generate",
+                    user_message=(
+                        "학습계획 생성에 실패했습니다. 입력 조건과 연결 "
+                        "상태를 확인한 뒤 다시 시도해주세요."
+                    ),
                 )
 
     if "generated_plan" not in st.session_state:
@@ -293,6 +299,11 @@ def render_create_plan(supabase, user):
                 st.rerun()
 
             except Exception as error:
-                st.error(
-                    f"학습계획 저장에 실패했습니다: {error}"
+                render_unexpected_error(
+                    error,
+                    operation="study_plan.save",
+                    user_message=(
+                        "학습계획 저장에 실패했습니다. 잠시 후 다시 "
+                        "시도해주세요."
+                    ),
                 )

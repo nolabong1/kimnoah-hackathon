@@ -8,6 +8,10 @@ from services.review_material_repository import (
 from services.review_material_service import (
     generate_review_material,
 )
+from views.error_feedback import (
+    render_unexpected_error,
+    render_unexpected_warning,
+)
 
 
 def render_review_material_section(
@@ -42,9 +46,13 @@ def render_review_material_section(
             )
 
         except Exception as error:
-            st.error(
-                "저장된 AI 학습자료를 불러오지 "
-                f"못했습니다: {error}"
+            render_unexpected_error(
+                error,
+                operation="review_material.load_for_task",
+                user_message=(
+                    "저장된 AI 학습자료를 불러오지 못했습니다. 잠시 후 "
+                    "다시 시도해주세요."
+                ),
             )
             return
 
@@ -87,10 +95,14 @@ def render_review_material_section(
                             user_id=user_id,
                             course_name=course_name,
                         )
-                    except Exception:
-                        st.warning(
-                            "최근 숙련도는 불러오지 못해 현재 계획과 "
-                            "과제 정보만으로 자료를 생성합니다."
+                    except Exception as error:
+                        render_unexpected_warning(
+                            error,
+                            operation="review_material.load_learner_context",
+                            user_message=(
+                                "최근 숙련도는 불러오지 못해 현재 계획과 "
+                                "과제 정보만으로 자료를 생성합니다."
+                            ),
                         )
                     material_draft = (
                         generate_review_material(
@@ -129,9 +141,13 @@ def render_review_material_section(
                     )
 
             except Exception as error:
-                st.error(
-                    "AI 학습자료 생성 또는 저장에 "
-                    f"실패했습니다: {error}"
+                render_unexpected_error(
+                    error,
+                    operation="review_material.generate_and_save",
+                    user_message=(
+                        "AI 학습자료 생성 또는 저장에 실패했습니다. 잠시 "
+                        "후 다시 시도해주세요."
+                    ),
                 )
 
         if material is None:

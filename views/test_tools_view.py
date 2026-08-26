@@ -3,6 +3,7 @@ from typing import Any
 
 import streamlit as st
 
+from services.error_reporting import report_exception
 from services.shop_repository import (
     get_active_shop_test_session,
     reset_shop_test_session,
@@ -15,6 +16,7 @@ from services.study_plan_repository import (
     reset_today_test_progress,
 )
 from services.test_tools_repository import can_use_test_tools
+from views.error_feedback import render_unexpected_error
 from views.weekly_review_state import TEST_COMPLETED_PLAN_PENDING_KEY
 
 
@@ -125,7 +127,14 @@ def _render_reset_tool(supabase) -> None:
                     )
                     st.rerun()
                 except Exception as error:
-                    st.error(f"테스트 초기화에 실패했습니다: {error}")
+                    render_unexpected_error(
+                        error,
+                        operation="test_tools.reset_today",
+                        user_message=(
+                            "테스트 초기화에 실패했습니다. 잠시 후 다시 "
+                            "시도해주세요."
+                        ),
+                    )
 
             if st.button(
                 "취소",
@@ -165,8 +174,15 @@ def _render_plan_completion_tool(
             supabase=supabase,
             user_id=user_id,
         )
-    except Exception:
-        st.error("테스트할 학습계획을 불러오지 못했습니다.")
+    except Exception as error:
+        render_unexpected_error(
+            error,
+            operation="test_tools.load_plans",
+            user_message=(
+                "테스트할 학습계획을 불러오지 못했습니다. 잠시 후 다시 "
+                "시도해주세요."
+            ),
+        )
         return
 
     if not plans:
@@ -197,8 +213,15 @@ def _render_plan_completion_tool(
             user_id=user_id,
             plan_id=selected_plan_id,
         )
-    except Exception:
-        st.error("선택한 계획의 과제를 불러오지 못했습니다.")
+    except Exception as error:
+        render_unexpected_error(
+            error,
+            operation="test_tools.load_plan_tasks",
+            user_message=(
+                "선택한 계획의 과제를 불러오지 못했습니다. 잠시 후 다시 "
+                "시도해주세요."
+            ),
+        )
         return
 
     incomplete_tasks = [
@@ -279,16 +302,21 @@ def _render_plan_completion_tool(
                     st.rerun()
                 except Exception as error:
                     if _is_missing_test_completion_rpc_error(error):
-                        st.error(
+                        user_message = (
                             "테스트 완료 RPC가 아직 없습니다. Supabase SQL "
                             "Editor에서 supabase_weekly_review_test_completion.sql을 "
                             "먼저 실행해주세요."
                         )
                     else:
-                        st.error(
+                        user_message = (
                             "학습계획 테스트 완료 처리에 실패했습니다. "
                             "연결 상태를 확인한 뒤 다시 시도해주세요."
                         )
+                    render_unexpected_error(
+                        error,
+                        operation="test_tools.complete_plan",
+                        user_message=user_message,
+                    )
                 finally:
                     st.session_state[PLAN_RUNNING_KEY] = False
 
@@ -322,12 +350,20 @@ def _render_shop_test_tool(
         )
     except Exception as error:
         if _is_missing_shop_test_tools_error(error):
-            st.info(
+            user_message = (
                 "상점 테스트 도구를 사용하려면 Supabase SQL Editor에서 "
                 "supabase_shop_test_tools.sql을 먼저 실행해주세요."
             )
         else:
-            st.error("상점 테스트 상태를 불러오지 못했습니다.")
+            user_message = (
+                "상점 테스트 상태를 불러오지 못했습니다. 잠시 후 다시 "
+                "시도해주세요."
+            )
+        render_unexpected_error(
+            error,
+            operation="test_tools.load_shop_session",
+            user_message=user_message,
+        )
         return
 
     confirmation = st.session_state.get(SHOP_TEST_CONFIRM_KEY)
@@ -379,12 +415,20 @@ def _render_shop_test_tool(
                     st.rerun()
                 except Exception as error:
                     if _is_missing_shop_test_tools_error(error):
-                        st.error(
+                        user_message = (
                             "Supabase SQL Editor에서 "
                             "supabase_shop_test_tools.sql을 먼저 실행해주세요."
                         )
                     else:
-                        st.error("상점 테스트 세션을 시작하지 못했습니다.")
+                        user_message = (
+                            "상점 테스트 세션을 시작하지 못했습니다. 잠시 "
+                            "후 다시 시도해주세요."
+                        )
+                    render_unexpected_error(
+                        error,
+                        operation="test_tools.start_shop_session",
+                        user_message=user_message,
+                    )
                 finally:
                     st.session_state.pop(SHOP_TEST_RUNNING_KEY, None)
 
@@ -446,12 +490,20 @@ def _render_shop_test_tool(
                 st.rerun()
             except Exception as error:
                 if _is_missing_shop_test_tools_error(error):
-                    st.error(
+                    user_message = (
                         "상점 테스트 초기화 RPC가 없습니다. "
                         "Supabase 마이그레이션을 확인해주세요."
                     )
                 else:
-                    st.error("상점 테스트 상태를 안전하게 초기화하지 못했습니다.")
+                    user_message = (
+                        "상점 테스트 상태를 안전하게 초기화하지 못했습니다. "
+                        "잠시 후 다시 시도해주세요."
+                    )
+                render_unexpected_error(
+                    error,
+                    operation="test_tools.reset_shop_session",
+                    user_message=user_message,
+                )
             finally:
                 st.session_state.pop(SHOP_TEST_RUNNING_KEY, None)
 
@@ -474,7 +526,8 @@ def render_sidebar_test_tools(
     if not st.session_state.get(ACCESS_CHECKED_KEY, False):
         try:
             access_allowed = can_use_test_tools(supabase)
-        except Exception:
+        except Exception as error:
+            report_exception("test_tools.check_access", error)
             access_allowed = False
         st.session_state[ACCESS_ALLOWED_KEY] = access_allowed
         st.session_state[ACCESS_CHECKED_KEY] = True

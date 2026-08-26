@@ -18,6 +18,7 @@ from services.study_room_service import (
     validate_study_room_equipment,
     validate_study_room_transforms,
 )
+from views.error_feedback import render_unexpected_error
 from views.shop_state import (
     ROOM_EDITOR_COMPONENT_KEY,
     ROOM_EQUIPMENT_DRAFT_KEY,
@@ -176,7 +177,11 @@ def render_study_room(
                 )
                 st.rerun()
             except Exception as error:
-                st.error(_friendly_room_save_error(error))
+                render_unexpected_error(
+                    error,
+                    operation="study_room.save",
+                    user_message=_friendly_room_save_error(error),
+                )
             finally:
                 st.session_state.pop(ROOM_SAVE_IN_PROGRESS_KEY, None)
 
@@ -200,10 +205,14 @@ def render_study_room(
                             _capture_study_room_editor_transforms
                         ),
                     )
-                except Exception:
-                    st.error(
-                        "학습방 미리보기를 만들지 못했습니다. "
-                        "로컬 에셋 파일을 확인해주세요."
+                except Exception as error:
+                    render_unexpected_error(
+                        error,
+                        operation="study_room.build_preview",
+                        user_message=(
+                            "학습방 미리보기를 만들지 못했습니다. 로컬 "
+                            "에셋 파일을 확인해주세요."
+                        ),
                     )
             else:
                 st.info("장착 구성을 확인하면 미리보기가 표시됩니다.")
@@ -293,12 +302,19 @@ def render_study_room_load_error(error: Exception) -> None:
             "PGRST205",
         )
     ):
-        st.error(
+        user_message = (
             "학습방 데이터베이스 설정이 아직 적용되지 않았습니다. "
             "Supabase에서 학습방 마이그레이션을 실행해주세요."
         )
-        return
-    st.error("학습방을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
+    else:
+        user_message = (
+            "학습방을 불러오지 못했습니다. 잠시 후 다시 시도해주세요."
+        )
+    render_unexpected_error(
+        error,
+        operation="study_room.load",
+        user_message=user_message,
+    )
 
 
 def _friendly_room_save_error(error: Exception) -> str:

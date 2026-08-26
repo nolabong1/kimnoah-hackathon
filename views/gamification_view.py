@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 
 import streamlit as st
 
+from services.error_reporting import report_exception
 from models.gamification import (
     AchievementCategory,
     ChallengePeriodType,
@@ -36,6 +37,7 @@ from views.gamification_state import (
     pop_gamification_notifications,
     queue_gamification_notifications,
 )
+from views.error_feedback import render_unexpected_error
 from views.ui_components import (
     MetricItem,
     render_metric_row,
@@ -143,34 +145,50 @@ def render_gamification_page(supabase, user) -> None:
             )
             st.rerun()
         except Exception as error:
-            st.error(_friendly_gamification_error(error))
+            render_unexpected_error(
+                error,
+                operation="gamification.sync",
+                user_message=_friendly_gamification_error(error),
+            )
         finally:
             st.session_state[SYNC_IN_PROGRESS_KEY] = False
 
     try:
         achievements = get_user_achievements(supabase, str(user_id))
     except Exception as error:
-        st.error(
-            "업적 데이터를 불러오지 못했습니다. "
-            + _friendly_gamification_error(error)
+        render_unexpected_error(
+            error,
+            operation="gamification.load_achievements",
+            user_message=(
+                "업적 데이터를 불러오지 못했습니다. "
+                + _friendly_gamification_error(error)
+            ),
         )
         return
 
     try:
         challenges = get_user_challenges(supabase, str(user_id))
     except Exception as error:
-        st.error(
-            "도전과제 데이터를 불러오지 못했습니다. "
-            + _friendly_gamification_error(error)
+        render_unexpected_error(
+            error,
+            operation="gamification.load_challenges",
+            user_message=(
+                "도전과제 데이터를 불러오지 못했습니다. "
+                + _friendly_gamification_error(error)
+            ),
         )
         return
 
     try:
         showcase = get_badge_showcase(supabase, str(user_id))
     except Exception as error:
-        st.error(
-            "대표 배지 데이터를 불러오지 못했습니다. "
-            + _friendly_gamification_error(error)
+        render_unexpected_error(
+            error,
+            operation="gamification.load_showcase",
+            user_message=(
+                "대표 배지 데이터를 불러오지 못했습니다. "
+                + _friendly_gamification_error(error)
+            ),
         )
         return
 
@@ -223,8 +241,23 @@ def render_gamification_dashboard_summary(
         achievements = get_user_achievements(supabase, user_id)
         challenges = get_user_challenges(supabase, user_id)
         showcase = get_badge_showcase(supabase, user_id)
-    except Exception:
+    except Exception as error:
+        report_exception("gamification.load_dashboard_summary", error)
         return
+
+    render_gamification_dashboard_summary_from_data(
+        achievements=achievements,
+        challenges=challenges,
+        showcase=showcase,
+    )
+
+
+def render_gamification_dashboard_summary_from_data(
+    achievements: list[dict],
+    challenges: list[dict],
+    showcase: list[dict],
+) -> None:
+    """이미 조회한 게임화 데이터로 오늘의 성장 요약을 표시합니다."""
 
     now = datetime.now(timezone.utc)
     daily_window = get_period_window(
@@ -421,7 +454,11 @@ def _render_claim_button(supabase, challenge: dict) -> None:
             )
             st.rerun()
         except Exception as error:
-            st.error(_friendly_gamification_error(error))
+            render_unexpected_error(
+                error,
+                operation="gamification.claim_challenge",
+                user_message=_friendly_gamification_error(error),
+            )
         finally:
             st.session_state.pop(CLAIM_IN_PROGRESS_KEY, None)
 
@@ -640,7 +677,11 @@ def _apply_badge_selection(
         st.session_state[SUCCESS_MESSAGE_KEY] = message
         st.rerun()
     except Exception as error:
-        st.error(_friendly_gamification_error(error))
+        render_unexpected_error(
+            error,
+            operation="gamification.update_badge",
+            user_message=_friendly_gamification_error(error),
+        )
     finally:
         st.session_state.pop(BADGE_IN_PROGRESS_KEY, None)
 
