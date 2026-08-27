@@ -11,6 +11,9 @@ from services.review_material_repository import (
     get_learning_materials_by_plan,
     get_review_materials_by_plan,
 )
+from services.reference_material_service import (
+    build_reference_material_options,
+)
 from services.study_plan_repository import (
     get_study_plan_tasks,
     get_user_study_plans,
@@ -83,39 +86,6 @@ def _ensure_valid_widget_value(
         st.session_state[state_key] = allowed_values[0]
         return had_existing_value
     return False
-
-
-def _build_material_options(
-    learning_materials: list[dict],
-    review_materials: list[dict],
-) -> dict[str, dict]:
-    """두 자료 테이블을 충돌 없는 선택 옵션으로 합칩니다."""
-
-    material_options = {}
-    for material in learning_materials:
-        material_key = f"learning:{material['id']}"
-        material_type = material.get("material_type", "text")
-        material_options[material_key] = {
-            "id": str(material["id"]),
-            "kind": "learning",
-            "title": material["title"],
-            "label": (
-                f"원본 자료 · {material['title']} "
-                f"({'PDF' if material_type == 'pdf' else '텍스트'})"
-            ),
-            "content": material.get("content_text"),
-        }
-
-    for material in review_materials:
-        material_key = f"review:{material['id']}"
-        material_options[material_key] = {
-            "id": str(material["id"]),
-            "kind": "review",
-            "title": material["title"],
-            "label": f"AI 학습·복습 자료 · {material['title']}",
-            "content": material.get("content_markdown"),
-        }
-    return material_options
 
 
 def _render_feedback(feedback_data: dict | None) -> None:
@@ -485,7 +455,7 @@ def _render_tutor_setup(supabase, user_id: str) -> None:
         )
 
     task_by_id = {str(task["id"]): task for task in tasks}
-    material_by_key = _build_material_options(
+    material_by_key = build_reference_material_options(
         learning_materials,
         review_materials,
     )

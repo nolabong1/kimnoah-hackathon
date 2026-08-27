@@ -1,12 +1,16 @@
 import io
+import json
 import unittest
 from copy import deepcopy
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from pypdf import PdfWriter
 
 from models.review_material import (
     ReviewMaterialDraft,
+    SourceGroundedPoint,
+    SourceRecallQuestion,
     SourceReviewMaterialDraft,
 )
 from services.review_material_repository import (
@@ -14,13 +18,21 @@ from services.review_material_repository import (
 )
 from services.review_material_service import (
     convert_source_review_to_markdown,
+    estimate_source_review_ai_calls,
+    find_source_evidence_page,
     generate_source_review_material,
 )
 from services.source_material_service import (
+    MAX_DIRECT_SOURCE_TEXT_CHARS,
+    MAX_SOURCE_CHUNK_CHARS,
     MAX_SOURCE_TEXT_CHARS,
     SourceMaterialValidationError,
+    _normalize_pdf_page_text,
+    _remove_repeated_page_edges,
+    extract_pdf_document,
     extract_pdf_text,
     normalize_source_text,
+    split_source_text,
     validate_source_text,
     validate_source_title,
 )
@@ -93,6 +105,23 @@ class FakeSupabase:
         return FakeTableRequest(self, table_name)
 
 
+class FakeResponses:
+    def __init__(self, parsed_outputs):
+        self.parsed_outputs = list(parsed_outputs)
+        self.calls = []
+
+    def parse(self, **kwargs):
+        self.calls.append(kwargs)
+        return SimpleNamespace(
+            output_parsed=self.parsed_outputs.pop(0)
+        )
+
+
+class FakeOpenAIClient:
+    def __init__(self, parsed_outputs):
+        self.responses = FakeResponses(parsed_outputs)
+
+
 def build_text_pdf_bytes(text: str) -> bytes:
     """외부 파일 없이 테스트용 단일 페이지 텍스트 PDF를 만듭니다."""
 
@@ -155,6 +184,31 @@ class SourceMaterialValidationTests(unittest.TestCase):
         with self.assertRaises(SourceMaterialValidationError):
             validate_source_text("가" * (MAX_SOURCE_TEXT_CHARS + 1))
 
+    def test_long_source_is_split_deterministically_without_oversized_chunk(self):
+        source = "\n\n".join(
+            f"[페이지 {index}]\n{index}번째 핵심 문장 " + ("가" * 1500)
+            for index in range(1, 25)
+        )
+
+        first_chunks = split_source_text(source)
+        second_chunks = split_source_text(source)
+
+        self.assertEqual(first_chunks, second_chunks)
+        self.assertGreater(len(first_chunks), 1)
+        self.assertTrue(
+            all(
+                len(chunk) <= MAX_SOURCE_CHUNK_CHARS
+                for chunk in first_chunks
+            )
+        )
+        for index in range(1, 25):
+            self.assertTrue(
+                any(
+                    f"{index}번째 핵심 문장" in chunk
+                    for chunk in first_chunks
+                )
+            )
+
     def test_text_pdf_is_extracted_in_memory(self):
         expected = "This is a normal text based PDF document."
         extracted = extract_pdf_text(
@@ -162,6 +216,38 @@ class SourceMaterialValidationTests(unittest.TestCase):
             "notes.pdf",
         )
         self.assertIn(expected, extracted)
+        self.assertIn("[페이지 1]", extracted)
+
+    def test_pdf_extraction_returns_page_quality_summary(self):
+        result = extract_pdf_document(
+            build_text_pdf_bytes("Readable PDF source text for review."),
+            "notes.pdf",
+        )
+
+        self.assertEqual(result.page_count, 1)
+        self.assertEqual(result.extracted_page_count, 1)
+        self.assertNotIn("text", result.to_summary())
+
+    def test_pdf_cleanup_joins_hyphen_and_removes_repeated_edges(self):
+        self.assertEqual(
+            _normalize_pdf_page_text("inter-\noperability"),
+            "interoperability",
+        )
+        cleaned_pages, removed_count = _remove_repeated_page_edges(
+            [
+                (1, "공통 강의 노트\n첫 페이지 핵심 내용\n1"),
+                (2, "공통 강의 노트\n둘째 페이지 핵심 내용\n2"),
+            ]
+        )
+
+        self.assertEqual(removed_count, 4)
+        self.assertEqual(
+            cleaned_pages,
+            [
+                (1, "첫 페이지 핵심 내용"),
+                (2, "둘째 페이지 핵심 내용"),
+            ],
+        )
 
     def test_empty_pdf_is_rejected_as_unsupported(self):
         writer = PdfWriter()
@@ -189,18 +275,53 @@ class SourceMaterialValidationTests(unittest.TestCase):
 
 
 class SourceReviewMaterialTests(unittest.TestCase):
-    def test_structured_result_converts_to_required_markdown(self):
-        structured = SourceReviewMaterialDraft(
+    @staticmethod
+    def build_structured_review(
+        source_evidence: str = "정규화는 데이터 중복을 줄입니다.",
+    ) -> SourceReviewMaterialDraft:
+        return SourceReviewMaterialDraft(
             title="정규화 복습",
             source_overview="데이터 중복을 줄이는 정규화를 다룹니다.",
-            core_concepts=["함수 종속성", "정규형"],
-            important_details=["부분 함수 종속성을 제거합니다."],
-            caution_points=["무조건 테이블 수를 늘리는 작업은 아닙니다."],
+            core_concepts=[
+                SourceGroundedPoint(
+                    content="정규화는 데이터 중복을 줄입니다.",
+                    source_evidence=source_evidence,
+                )
+            ],
+            important_details=[
+                SourceGroundedPoint(
+                    content="부분 함수 종속성을 제거합니다.",
+                    source_evidence="부분 함수 종속성을 제거합니다.",
+                )
+            ],
+            caution_points=[],
             self_review_checklist=["정규화의 목적을 설명할 수 있다."],
+            active_recall_questions=[
+                SourceRecallQuestion(
+                    question="정규화의 목적은 무엇인가요?",
+                    answer="데이터 중복을 줄이는 것입니다.",
+                    source_evidence="정규화는 데이터 중복을 줄입니다.",
+                ),
+                SourceRecallQuestion(
+                    question="제거해야 하는 종속성은 무엇인가요?",
+                    answer="부분 함수 종속성입니다.",
+                    source_evidence="부분 함수 종속성을 제거합니다.",
+                ),
+            ],
             final_summary="중복과 이상 현상을 줄이기 위한 구조화 과정입니다.",
         )
 
-        markdown = convert_source_review_to_markdown(structured)
+    def test_structured_result_converts_to_required_markdown(self):
+        structured = self.build_structured_review()
+        source_text = (
+            "[페이지 2]\n정규화는 데이터 중복을 줄입니다.\n"
+            "부분 함수 종속성을 제거합니다."
+        )
+
+        markdown = convert_source_review_to_markdown(
+            structured,
+            source_text,
+        )
 
         for heading in [
             "## 원본 개요",
@@ -208,10 +329,117 @@ class SourceReviewMaterialTests(unittest.TestCase):
             "## 중요 세부 내용",
             "## 자주 하는 오해와 주의점",
             "## 셀프 복습 체크리스트",
+            "## 능동 회상 문제",
             "## 최종 요약",
         ]:
             self.assertIn(heading, markdown)
         self.assertIn("- [ ] 정규화의 목적을 설명할 수 있다.", markdown)
+        self.assertIn("원문 근거 · 2페이지", markdown)
+        self.assertEqual(
+            find_source_evidence_page(
+                source_text,
+                "정규화는 데이터 중복을 줄입니다.",
+            ),
+            2,
+        )
+
+    @patch("services.review_material_service.get_openai_model")
+    @patch("services.review_material_service.get_openai_client")
+    def test_grounded_review_retries_unsupported_evidence(
+        self,
+        get_client,
+        _get_model,
+    ):
+        invalid_review = self.build_structured_review(
+            "원본에 없는 근거 문장입니다."
+        )
+        valid_review = self.build_structured_review()
+        fake_client = FakeOpenAIClient(
+            [invalid_review, valid_review]
+        )
+        get_client.return_value = fake_client
+        source_text = (
+            "정규화는 데이터 중복을 줄입니다. "
+            "부분 함수 종속성을 제거합니다."
+        )
+
+        result = generate_source_review_material(
+            source_title="정규화 원본",
+            course_name="데이터베이스",
+            goal="정규화를 이해한다.",
+            current_level=3,
+            source_text=source_text,
+            learner_context={
+                "course_key": "데이터베이스",
+                "evaluated_concept_count": 1,
+                "weak_concept_count": 1,
+                "average_mastery_score": 50,
+                "focus_concepts": [
+                    {
+                        "concept_key": "normalization",
+                        "concept_name": "정규화",
+                        "mastery_score": 50,
+                        "correct_count": 0,
+                        "incorrect_count": 2,
+                        "consecutive_incorrect_count": 2,
+                        "recent_result": "incorrect",
+                        "is_weak": True,
+                        "repeated_diagnoses": [],
+                    }
+                ],
+                "stable_concepts": [],
+            },
+        )
+
+        self.assertEqual(len(fake_client.responses.calls), 2)
+        request_payload = json.loads(
+            fake_client.responses.calls[0]["input"][1]["content"]
+        )
+        self.assertIn("learner_context", request_payload)
+        self.assertIn("## 능동 회상 문제", result.content_markdown)
+
+    @patch("services.review_material_service.get_openai_model")
+    @patch("services.review_material_service.get_openai_client")
+    def test_long_source_uses_chunk_analysis_then_synthesis(
+        self,
+        get_client,
+        _get_model,
+    ):
+        repeated_source = (
+            "정규화는 데이터 중복을 줄입니다. "
+            "부분 함수 종속성을 제거합니다. "
+        )
+        source_text = repeated_source * (
+            MAX_DIRECT_SOURCE_TEXT_CHARS // len(repeated_source) + 100
+        )
+        expected_calls = estimate_source_review_ai_calls(source_text)
+        structured_review = self.build_structured_review()
+        fake_client = FakeOpenAIClient(
+            [structured_review] * expected_calls
+        )
+        get_client.return_value = fake_client
+
+        result = generate_source_review_material(
+            source_title="긴 정규화 원본",
+            course_name="데이터베이스",
+            goal="정규화를 이해한다.",
+            current_level=3,
+            source_text=source_text,
+        )
+
+        self.assertEqual(
+            len(fake_client.responses.calls),
+            expected_calls,
+        )
+        synthesis_payload = json.loads(
+            fake_client.responses.calls[-1]["input"][1]["content"]
+        )
+        self.assertEqual(
+            len(synthesis_payload["partial_reviews"]),
+            expected_calls - 1,
+        )
+        self.assertNotIn("source_text", synthesis_payload)
+        self.assertIn("## 능동 회상 문제", result.content_markdown)
 
     def test_partial_save_failure_removes_new_source_row(self):
         supabase = FakeSupabase(fail_review_insert=True)

@@ -33,6 +33,13 @@ SAVED_PLAN_SELECT_KEY = "saved_plan_selected_id"
 DELETED_PLAN_CLEANUP_KEY = "saved_plan_deleted_plan_id"
 DELETE_PLAN_MESSAGE_KEY = "saved_plan_delete_message"
 SAVED_DATE_SELECT_PREFIX = "saved_plan_selected_date_"
+PENDING_NAVIGATION_KEY = "saved_plans_pending_navigation"
+
+
+def request_create_plan_navigation() -> None:
+    """다음 rerun에서 계획 만들기 화면으로 이동하도록 요청합니다."""
+
+    st.session_state[PENDING_NAVIGATION_KEY] = "계획 만들기"
 
 
 def get_date_select_key(plan_id: str) -> str:
@@ -380,13 +387,20 @@ def render_saved_plans(supabase, user):
                 "시도해주세요."
             ),
         )
-        saved_plans = []
+        return
 
     if not saved_plans:
         render_empty_state(
             "저장된 학습계획이 없습니다",
             "계획 만들기에서 새로운 7일 계획을 생성해보세요.",
             icon=":material/folder_open:",
+        )
+        st.button(
+            "새 계획 만들기",
+            key="saved_plans_create_plan_button",
+            type="primary",
+            icon=":material/add_circle:",
+            on_click=request_create_plan_navigation,
         )
         return
 

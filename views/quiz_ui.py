@@ -19,7 +19,18 @@ from services.quiz_repository import (
     save_quiz,
     submit_quiz_attempt,
 )
-from services.quiz_service import generate_quiz
+from services.reference_material_service import (
+    build_reference_material_options,
+)
+from services.review_material_repository import (
+    get_learning_materials_by_plan,
+    get_review_materials_by_plan,
+)
+from services.quiz_service import (
+    MAX_QUIZ_REFERENCE_CHARS,
+    generate_quiz,
+    prepare_quiz_reference,
+)
 from views.gamification_state import queue_gamification_notifications
 from views.error_feedback import (
     render_unexpected_error,
@@ -154,6 +165,26 @@ def _get_choice_diagnostic(
         "label": QUIZ_DIAGNOSIS_LABELS[diagnosis_type],
         "feedback": feedback.strip(),
         "next_step": next_step.strip(),
+    }
+
+
+def _get_question_source_support(
+    question: dict,
+) -> dict[str, str] | None:
+    """저장된 문항의 자료명과 근거 문장을 안전하게 꺼냅니다."""
+
+    source_title = question.get("source_title")
+    source_evidence = question.get("source_evidence")
+    if (
+        not isinstance(source_title, str)
+        or not source_title.strip()
+        or not isinstance(source_evidence, str)
+        or not source_evidence.strip()
+    ):
+        return None
+    return {
+        "title": source_title.strip(),
+        "evidence": source_evidence.strip(),
     }
 
 
@@ -421,6 +452,15 @@ def _render_quiz_answer_results(
             f"**해설:** "
             f"{question.get('explanation', '')}"
         )
+        source_support = _get_question_source_support(question)
+        if source_support is not None:
+            with st.container(border=True):
+                st.caption(
+                    f"근거 자료 · {source_support['title']}"
+                )
+                st.markdown(
+                    f"> {source_support['evidence']}"
+                )
 
     return True
 
@@ -650,6 +690,8 @@ def _generate_quiz_for_task(
     goal,
     current_level,
     task: dict,
+    reference_title: str | None = None,
+    reference_content: str | None = None,
 ) -> dict:
     """학습자 문맥을 반영한 퀴즈를 생성하고 현재 과제에 저장합니다."""
 
@@ -687,6 +729,8 @@ def _generate_quiz_for_task(
         estimated_minutes=task["estimated_minutes"],
         existing_concepts=concept_catalog,
         learner_context=learner_context,
+        reference_title=reference_title,
+        reference_content=reference_content,
     )
     quiz_draft = canonicalize_quiz_concepts(
         quiz=quiz_draft,
@@ -701,6 +745,101 @@ def _generate_quiz_for_task(
         course_name=course_name,
         quiz=quiz_draft,
     )
+
+
+def _render_quiz_reference_selector(
+    supabase,
+    user_id: str,
+    plan_id: str,
+    task_id: str,
+    widget_scope: str,
+) -> tuple[str | None, str | None, bool]:
+    """현재 계획의 저장 자료를 퀴즈 근거로 선택하고 검증합니다."""
+
+    try:
+        learning_materials = get_learning_materials_by_plan(
+            supabase=supabase,
+            user_id=user_id,
+            plan_id=plan_id,
+        )
+        review_materials = get_review_materials_by_plan(
+            supabase=supabase,
+            user_id=user_id,
+            plan_id=plan_id,
+        )
+    except Exception as error:
+        render_unexpected_warning(
+            error,
+            operation="quiz.load_reference_materials",
+            user_message=(
+                "저장된 참고자료를 불러오지 못해 지금은 퀴즈를 생성할 수 "
+                "없습니다. 잠시 후 다시 시도해주세요."
+            ),
+        )
+        return None, None, False
+
+    material_by_key = build_reference_material_options(
+        learning_materials=learning_materials,
+        review_materials=review_materials,
+    )
+    if not material_by_key:
+        st.caption(
+            "저장된 원본 또는 AI 학습자료가 있으면 근거 기반 퀴즈를 "
+            "만들 수 있습니다."
+        )
+        return None, None, True
+
+    selection_key = (
+        f"{widget_scope}_quiz_reference_{task_id}"
+    )
+    material_keys: list[str | None] = [None, *material_by_key]
+    if st.session_state.get(selection_key) not in material_keys:
+        st.session_state[selection_key] = None
+
+    selected_material_key = st.selectbox(
+        "퀴즈 근거 자료 (선택)",
+        options=material_keys,
+        format_func=lambda material_key: (
+            "선택하지 않음 · 계획과 과제 정보만 사용"
+            if material_key is None
+            else material_by_key[material_key]["label"]
+        ),
+        key=selection_key,
+        help=(
+            "선택하면 문제와 정답, 해설을 해당 자료에서 확인할 수 있는 "
+            "내용으로 제한합니다."
+        ),
+    )
+    if selected_material_key is None:
+        return None, None, True
+
+    selected_material = material_by_key[selected_material_key]
+    try:
+        (
+            reference_title,
+            reference_content,
+            reference_was_limited,
+        ) = prepare_quiz_reference(
+            reference_title=selected_material.get("title"),
+            reference_content=selected_material.get("content"),
+        )
+    except ValueError as error:
+        st.warning(str(error))
+        return None, None, False
+
+    if reference_was_limited:
+        st.info(
+            "자료가 길어 앞부분 "
+            f"{MAX_QUIZ_REFERENCE_CHARS:,}자 이내만 이번 퀴즈의 근거로 "
+            "사용합니다. 원본 자료 자체는 변경되지 않습니다."
+        )
+    else:
+        st.caption(
+            "선택한 자료에서 확인 가능한 내용만 사용하고, 결과 해설에 "
+            "근거 문장을 함께 표시합니다."
+        )
+
+    return reference_title, reference_content, True
 
 
 def _render_quiz_generation_control(
@@ -725,6 +864,18 @@ def _render_quiz_generation_control(
             "과제 정보를 바탕으로 5문항 퀴즈를 생성할 수 있습니다."
         )
 
+    (
+        reference_title,
+        reference_content,
+        reference_is_valid,
+    ) = _render_quiz_reference_selector(
+        supabase=supabase,
+        user_id=user_id,
+        plan_id=plan_id,
+        task_id=str(task["id"]),
+        widget_scope=widget_scope,
+    )
+
     button_label = (
         "AI 퀴즈 다시 생성하기"
         if is_regeneration
@@ -734,6 +885,7 @@ def _render_quiz_generation_control(
         button_label,
         key=f"{widget_scope}_generate_quiz_{task['id']}",
         type="secondary" if is_regeneration else "primary",
+        disabled=not reference_is_valid,
     ):
         return quiz, completion_unlocked
 
@@ -749,6 +901,8 @@ def _render_quiz_generation_control(
                 goal=goal,
                 current_level=current_level,
                 task=task,
+                reference_title=reference_title,
+                reference_content=reference_content,
             )
 
         completion_unlocked = False

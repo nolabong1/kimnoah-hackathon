@@ -13,7 +13,10 @@ from views.auth_session_storage import (
     clear_auth_session_state,
     initialize_auth_session,
 )
-from views.saved_plans_view import render_saved_plans
+from views.saved_plans_view import (
+    PENDING_NAVIGATION_KEY as SAVED_PLANS_PENDING_NAVIGATION_KEY,
+    render_saved_plans,
+)
 from views.create_plan_view import render_create_plan
 from views.dashboard_view import render_dashboard
 from views.error_feedback import render_unexpected_error
@@ -408,6 +411,11 @@ pending_navigation = st.session_state.pop(
 if pending_navigation is None:
     pending_navigation = st.session_state.pop(
         GAMIFICATION_PENDING_NAVIGATION_KEY,
+        None,
+    )
+if pending_navigation is None:
+    pending_navigation = st.session_state.pop(
+        SAVED_PLANS_PENDING_NAVIGATION_KEY,
         None,
     )
 if pending_navigation in pages_by_title:

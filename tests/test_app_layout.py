@@ -684,6 +684,72 @@ class AppLayoutTests(unittest.TestCase):
         future_material_section.assert_not_called()
         future_quiz_section.assert_called_once()
 
+    def test_saved_plans_empty_state_links_to_create_plan(self):
+        from views.saved_plans_view import PENDING_NAVIGATION_KEY
+
+        with (
+            patch(
+                "views.saved_plans_view.get_user_study_plans",
+                return_value=[],
+            ),
+            patch(
+                "views.saved_plans_view.get_study_plan_tasks"
+            ) as load_tasks,
+        ):
+            app = AppTest.from_function(
+                render_saved_plans_test_page,
+                args=(object(), SimpleNamespace(id=USER_ID)),
+            ).run()
+
+            self.assertEqual(list(app.exception), [])
+            self.assertTrue(
+                any(
+                    "저장된 학습계획이 없습니다" in item.value
+                    for item in app.markdown
+                )
+            )
+            create_button = next(
+                button
+                for button in app.button
+                if button.label == "새 계획 만들기"
+            )
+            create_button.click().run()
+
+        self.assertEqual(
+            app.session_state[PENDING_NAVIGATION_KEY],
+            "계획 만들기",
+        )
+        load_tasks.assert_not_called()
+
+    def test_saved_plans_load_failure_does_not_show_empty_state(self):
+        with (
+            patch(
+                "views.saved_plans_view.get_user_study_plans",
+                side_effect=RuntimeError("database detail"),
+            ),
+            patch(
+                "views.saved_plans_view.get_study_plan_tasks"
+            ) as load_tasks,
+            patch(
+                "views.saved_plans_view.render_empty_state"
+            ) as empty_state,
+            patch(
+                "views.error_feedback.report_exception",
+                return_value="A1B2C3D4",
+            ),
+        ):
+            app = AppTest.from_function(
+                render_saved_plans_test_page,
+                args=(object(), SimpleNamespace(id=USER_ID)),
+            ).run()
+
+        self.assertEqual(list(app.exception), [])
+        self.assertEqual(len(app.error), 1)
+        self.assertNotIn("database detail", app.error[0].value)
+        self.assertIn("A1B2C3D4", app.error[0].value)
+        empty_state.assert_not_called()
+        load_tasks.assert_not_called()
+
     def test_saved_plan_tasks_use_consistent_full_page_width(self):
         from views import saved_plans_view
 

@@ -92,6 +92,18 @@ class QuizQuestionDraft(BaseModel):
             "공통 학습 설계도의 성공 기준 중 이 문항이 평가하는 한 가지 기준"
         ),
     )
+    source_title: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        description="근거 기반 퀴즈에 사용한 저장 자료 제목",
+    )
+    source_evidence: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=500,
+        description="정답을 뒷받침하는 저장 자료의 짧은 원문 구절",
+    )
 
     @field_validator(
         "question",
@@ -113,6 +125,18 @@ class QuizQuestionDraft(BaseModel):
             )
 
         return cleaned_value
+
+    @field_validator("source_title", "source_evidence")
+    @classmethod
+    def strip_optional_source_text(
+        cls,
+        value: str | None,
+    ) -> str | None:
+        """선택적인 자료 근거 필드의 앞뒤 공백을 정리합니다."""
+
+        if value is None:
+            return None
+        return value.strip()
 
     @field_validator("choices")
     @classmethod

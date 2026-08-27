@@ -43,6 +43,63 @@ class ReviewMaterialDraft(BaseModel):
         return cleaned_value
 
 
+class SourceGroundedPoint(BaseModel):
+    """사용자 원본의 짧은 인용으로 뒷받침되는 복습 항목입니다."""
+
+    content: str = Field(
+        min_length=1,
+        max_length=700,
+        description="원본을 학습하기 쉽게 풀어 쓴 간결한 한국어 설명",
+    )
+    source_evidence: str = Field(
+        min_length=1,
+        max_length=500,
+        description=(
+            "설명을 직접 뒷받침하며 원본에서 그대로 복사한 짧은 구절"
+        ),
+    )
+
+    @field_validator("content", "source_evidence")
+    @classmethod
+    def strip_grounded_text(cls, value: str) -> str:
+        """근거 항목의 앞뒤 공백을 제거합니다."""
+
+        cleaned_value = value.strip()
+        if not cleaned_value:
+            raise ValueError("원문 근거 항목은 비어 있을 수 없습니다.")
+        return cleaned_value
+
+
+class SourceRecallQuestion(BaseModel):
+    """원본 범위 안에서 답할 수 있는 능동 회상 문제입니다."""
+
+    question: str = Field(
+        min_length=1,
+        max_length=500,
+        description="원본의 핵심 내용을 스스로 떠올리게 하는 짧은 질문",
+    )
+    answer: str = Field(
+        min_length=1,
+        max_length=700,
+        description="원본 범위 안에서 작성한 간결한 모범 답안",
+    )
+    source_evidence: str = Field(
+        min_length=1,
+        max_length=500,
+        description="답을 직접 뒷받침하며 원본에서 그대로 복사한 짧은 구절",
+    )
+
+    @field_validator("question", "answer", "source_evidence")
+    @classmethod
+    def strip_recall_text(cls, value: str) -> str:
+        """회상 문제 문자열의 앞뒤 공백을 제거합니다."""
+
+        cleaned_value = value.strip()
+        if not cleaned_value:
+            raise ValueError("회상 문제 내용은 비어 있을 수 없습니다.")
+        return cleaned_value
+
+
 class SourceReviewMaterialDraft(BaseModel):
     """사용자 원본을 바탕으로 생성한 구조화된 복습자료입니다."""
 
@@ -55,25 +112,29 @@ class SourceReviewMaterialDraft(BaseModel):
         min_length=1,
         description="원본이 다루는 범위와 목적에 대한 간결한 개요",
     )
-    core_concepts: list[str] = Field(
+    core_concepts: list[SourceGroundedPoint] = Field(
         min_length=1,
-        max_length=12,
-        description="원본에서 확인되는 핵심 개념 목록",
+        max_length=8,
+        description="원문 인용으로 뒷받침되는 핵심 개념 목록",
     )
-    important_details: list[str] = Field(
-        min_length=1,
-        max_length=15,
-        description="학습자가 기억해야 할 중요한 세부 내용 목록",
-    )
-    caution_points: list[str] = Field(
+    important_details: list[SourceGroundedPoint] = Field(
         min_length=1,
         max_length=10,
-        description="흔한 오해 또는 원본 해석 시 주의할 점 목록",
+        description="원문 인용으로 뒷받침되는 중요한 세부 내용 목록",
+    )
+    caution_points: list[SourceGroundedPoint] = Field(
+        max_length=6,
+        description="원문 인용으로 뒷받침되는 오해 또는 주의점 목록",
     )
     self_review_checklist: list[str] = Field(
         min_length=1,
-        max_length=10,
+        max_length=8,
         description="학습자가 스스로 확인할 짧은 체크리스트",
+    )
+    active_recall_questions: list[SourceRecallQuestion] = Field(
+        min_length=2,
+        max_length=5,
+        description="정답과 원문 근거를 포함한 짧은 능동 회상 문제",
     )
     final_summary: str = Field(
         min_length=1,
@@ -95,9 +156,6 @@ class SourceReviewMaterialDraft(BaseModel):
         return cleaned_value
 
     @field_validator(
-        "core_concepts",
-        "important_details",
-        "caution_points",
         "self_review_checklist",
     )
     @classmethod
