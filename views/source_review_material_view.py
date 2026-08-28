@@ -1,4 +1,6 @@
 import hashlib
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
@@ -8,6 +10,7 @@ from services.pdf_visual_extraction_service import (
     extract_pdf_with_ai_vision,
 )
 from services.review_material_repository import (
+    get_source_review_material_bundles_by_plan,
     save_source_review_material_bundle,
 )
 from services.review_material_service import (
@@ -40,6 +43,9 @@ TITLE_KEY = "source_review_material_title"
 TEXT_KEY = "source_review_material_text"
 PDF_KEY = "source_review_material_pdf"
 PDF_READING_MODE_KEY = "source_review_material_pdf_reading_mode"
+VIEW_MODE_KEY = "source_review_material_view_mode"
+ARCHIVE_PLAN_KEY = "source_review_material_archive_plan_id"
+ARCHIVE_ITEM_KEY = "source_review_material_archive_item_id"
 SOURCE_REVIEW_SESSION_KEYS = (
     RESULT_STATE_KEY,
     FINGERPRINT_STATE_KEY,
@@ -50,7 +56,12 @@ SOURCE_REVIEW_SESSION_KEYS = (
     TEXT_KEY,
     PDF_KEY,
     PDF_READING_MODE_KEY,
+    VIEW_MODE_KEY,
+    ARCHIVE_PLAN_KEY,
+    ARCHIVE_ITEM_KEY,
 )
+
+SEOUL_TIMEZONE = ZoneInfo("Asia/Seoul")
 
 
 def _build_request_fingerprint(
@@ -81,6 +92,123 @@ def _clear_other_user_result(user_id: str) -> None:
     if saved_result and saved_result.get("user_id") != user_id:
         st.session_state.pop(RESULT_STATE_KEY, None)
         st.session_state.pop(FINGERPRINT_STATE_KEY, None)
+
+
+def _format_saved_at(value: object) -> str:
+    """Supabase 저장 시각을 서울 기준의 짧은 표시로 변환합니다."""
+
+    if not value:
+        return "저장 시각 정보 없음"
+    try:
+        parsed_value = datetime.fromisoformat(
+            str(value).replace("Z", "+00:00")
+        )
+        if parsed_value.tzinfo is None:
+            parsed_value = parsed_value.replace(tzinfo=SEOUL_TIMEZONE)
+        return parsed_value.astimezone(SEOUL_TIMEZONE).strftime(
+            "%Y-%m-%d %H:%M"
+        )
+    except ValueError:
+        return str(value)
+
+
+def _render_saved_source_review_materials(
+    supabase,
+    user_id: str,
+    plan_by_id: dict[str, dict],
+) -> None:
+    """계획별로 저장된 원본 기반 AI 복습자료를 표시합니다."""
+
+    plan_ids = list(plan_by_id)
+    if st.session_state.get(ARCHIVE_PLAN_KEY) not in plan_ids:
+        st.session_state[ARCHIVE_PLAN_KEY] = plan_ids[0]
+
+    selected_plan_id = st.selectbox(
+        "확인할 학습계획",
+        options=plan_ids,
+        format_func=lambda plan_id: (
+            f"{plan_by_id[plan_id]['title']} · "
+            f"{plan_by_id[plan_id]['course_name']}"
+        ),
+        key=ARCHIVE_PLAN_KEY,
+    )
+
+    try:
+        saved_bundles = get_source_review_material_bundles_by_plan(
+            supabase=supabase,
+            user_id=user_id,
+            plan_id=selected_plan_id,
+        )
+    except Exception as error:
+        render_unexpected_error(
+            error,
+            operation="source_review.load_saved_materials",
+            user_message=(
+                "저장된 복습자료를 불러오지 못했습니다. 잠시 후 다시 "
+                "시도해주세요."
+            ),
+        )
+        return
+
+    if not saved_bundles:
+        render_empty_state(
+            "저장된 복습자료가 없습니다",
+            "새 자료 만들기에서 텍스트나 PDF로 복습자료를 생성해주세요.",
+            icon=":material/library_books:",
+        )
+        return
+
+    bundle_by_id = {
+        str(bundle["review_material"]["id"]): bundle
+        for bundle in saved_bundles
+    }
+    bundle_ids = list(bundle_by_id)
+    if st.session_state.get(ARCHIVE_ITEM_KEY) not in bundle_ids:
+        st.session_state[ARCHIVE_ITEM_KEY] = bundle_ids[0]
+
+    selector_column, detail_column = st.columns(
+        [0.72, 1.28],
+        gap="large",
+        vertical_alignment="top",
+    )
+    with selector_column:
+        with st.container(border=True):
+            st.subheader("저장된 자료")
+            selected_bundle_id = st.selectbox(
+                "열어볼 복습자료",
+                options=bundle_ids,
+                format_func=lambda bundle_id: (
+                    bundle_by_id[bundle_id]["review_material"].get(
+                        "title", "제목 없는 복습자료"
+                    )
+                ),
+                key=ARCHIVE_ITEM_KEY,
+            )
+            selected_bundle = bundle_by_id[selected_bundle_id]
+            source_material = selected_bundle["source_material"]
+            st.caption(
+                "원본 · "
+                f"{source_material.get('title', '제목 없음')} · "
+                f"{'PDF' if source_material.get('material_type') == 'pdf' else '텍스트'}"
+            )
+            st.caption(
+                "저장 · "
+                f"{_format_saved_at(selected_bundle['review_material'].get('created_at'))}"
+            )
+
+    with detail_column:
+        selected_bundle = bundle_by_id[selected_bundle_id]
+        source_material = selected_bundle["source_material"]
+        review_material = selected_bundle["review_material"]
+        with st.container(border=True):
+            st.caption(
+                f"{plan_by_id[selected_plan_id]['course_name']} · "
+                f"원본 {source_material.get('title', '제목 없음')}"
+            )
+            st.markdown(
+                f"## {review_material.get('title', '제목 없는 복습자료')}"
+            )
+            st.markdown(review_material.get("content_markdown", ""))
 
 
 def render_source_review_material(supabase, user) -> None:
@@ -130,6 +258,25 @@ def render_source_review_material(supabase, user) -> None:
         for plan in study_plans
     }
     plan_ids = list(plan_by_id)
+
+    view_mode = st.segmented_control(
+        "복습자료 화면",
+        options=["create", "saved"],
+        default="create",
+        format_func=lambda value: (
+            "새 자료 만들기" if value == "create" else "저장된 자료"
+        ),
+        key=VIEW_MODE_KEY,
+        required=True,
+        persist_state="page",
+    )
+    if view_mode == "saved":
+        _render_saved_source_review_materials(
+            supabase=supabase,
+            user_id=user_id,
+            plan_by_id=plan_by_id,
+        )
+        return
 
     input_column, result_column = st.columns(
         [0.9, 1.1],

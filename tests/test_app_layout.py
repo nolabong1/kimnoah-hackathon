@@ -262,6 +262,70 @@ class AppLayoutTests(unittest.TestCase):
             [item.value for item in tutor_app.subheader],
         )
 
+    def test_source_review_archive_reopens_saved_markdown(self):
+        plan = {
+            "id": PLAN_ID,
+            "title": "파이썬 7일 계획",
+            "course_name": "파이썬",
+            "goal": "반복문 익히기",
+            "current_level": 3,
+        }
+        saved_bundles = [
+            {
+                "source_material": {
+                    "id": "source-id",
+                    "user_id": USER_ID,
+                    "plan_id": PLAN_ID,
+                    "title": "반복문 PDF",
+                    "material_type": "pdf",
+                    "created_at": "2026-08-28T01:00:00+00:00",
+                },
+                "review_material": {
+                    "id": "review-id",
+                    "user_id": USER_ID,
+                    "plan_id": PLAN_ID,
+                    "source_material_id": "source-id",
+                    "title": "반복문 핵심 복습",
+                    "content_markdown": "## 핵심 개념\n\n반복문 내용",
+                    "created_at": "2026-08-28T01:00:00+00:00",
+                },
+            }
+        ]
+        user = SimpleNamespace(id=USER_ID)
+
+        with (
+            patch(
+                "views.source_review_material_view.get_user_study_plans",
+                return_value=[plan],
+            ),
+            patch(
+                "views.source_review_material_view."
+                "get_source_review_material_bundles_by_plan",
+                return_value=saved_bundles,
+            ) as load_saved,
+        ):
+            app = AppTest.from_function(
+                render_source_review_test_page,
+                args=(object(), user),
+            ).run()
+            app.get("button_group")[0].set_value("saved").run()
+
+        self.assertEqual(list(app.exception), [])
+        self.assertIn(
+            "저장된 자료",
+            [item.value for item in app.subheader],
+        )
+        rendered_markdown = "\n".join(
+            item.value for item in app.markdown
+        )
+        self.assertIn("반복문 핵심 복습", rendered_markdown)
+        self.assertIn("반복문 내용", rendered_markdown)
+        load_saved.assert_called_once_with(
+            supabase=ANY,
+            user_id=USER_ID,
+            plan_id=PLAN_ID,
+        )
+
     def test_mastery_page_separates_overview_and_concept_detail(self):
         mastery = {
             "course_key": "python",

@@ -1,5 +1,6 @@
 import json
 import re
+import unicodedata
 
 from models.review_material import (
     ReviewMaterialDraft,
@@ -317,6 +318,51 @@ def _normalize_source_evidence(value: str) -> str:
     return " ".join(value.split()).casefold()
 
 
+def _normalize_evidence_search_text(
+    value: str,
+) -> tuple[str, list[int]]:
+    """표현 차이를 제거한 검색 문자열과 원문 글자 위치를 만듭니다."""
+
+    normalized_characters = []
+    source_indexes = []
+    for source_index, character in enumerate(value):
+        normalized_character = unicodedata.normalize(
+            "NFKC",
+            character,
+        ).casefold()
+        for candidate in normalized_character:
+            if candidate.isalnum():
+                normalized_characters.append(candidate)
+                source_indexes.append(source_index)
+    return "".join(normalized_characters), source_indexes
+
+
+def _resolve_source_evidence(
+    source_text: str,
+    source_evidence: str,
+) -> str | None:
+    """표현만 다른 인용을 원본의 정확한 연속 구절로 복원합니다."""
+
+    normalized_evidence, _ = _normalize_evidence_search_text(
+        source_evidence
+    )
+    if len(normalized_evidence) < MIN_SOURCE_EVIDENCE_ALNUM_CHARS:
+        return None
+
+    normalized_source, source_indexes = _normalize_evidence_search_text(
+        source_text
+    )
+    match_start = normalized_source.find(normalized_evidence)
+    if match_start < 0:
+        return None
+
+    match_end = match_start + len(normalized_evidence) - 1
+    source_start = source_indexes[match_start]
+    source_end = source_indexes[match_end] + 1
+    resolved_evidence = source_text[source_start:source_end].strip()
+    return resolved_evidence or None
+
+
 def find_source_evidence_page(
     source_text: str,
     source_evidence: str,
@@ -341,45 +387,30 @@ def find_source_evidence_page(
     return None
 
 
-def _iter_source_evidence(
-    material: SourceReviewMaterialDraft,
-) -> list[str]:
-    """구조화 결과에서 검증할 모든 원문 인용을 한 목록으로 모읍니다."""
-
-    grounded_points: list[SourceGroundedPoint] = [
-        *material.core_concepts,
-        *material.important_details,
-        *material.caution_points,
-    ]
-    recall_questions: list[SourceRecallQuestion] = (
-        material.active_recall_questions
-    )
-    return [
-        point.source_evidence for point in grounded_points
-    ] + [
-        question.source_evidence for question in recall_questions
-    ]
-
-
-def _is_valid_source_review_material(
+def _resolve_source_review_evidence(
     material: SourceReviewMaterialDraft,
     source_text: str,
-) -> bool:
-    """모든 인용이 실제 원본의 의미 있는 구절인지 검사합니다."""
+) -> SourceReviewMaterialDraft | None:
+    """모든 인용을 검증하고 원본의 정확한 구절로 치환합니다."""
 
-    normalized_source = _normalize_source_evidence(source_text)
-    if not normalized_source:
-        return False
-
-    for evidence in _iter_source_evidence(material):
-        if (
-            sum(character.isalnum() for character in evidence)
-            < MIN_SOURCE_EVIDENCE_ALNUM_CHARS
-            or _normalize_source_evidence(evidence)
-            not in normalized_source
-        ):
-            return False
-    return True
+    resolved_material = material.model_copy(deep=True)
+    grounded_points: list[SourceGroundedPoint] = [
+        *resolved_material.core_concepts,
+        *resolved_material.important_details,
+        *resolved_material.caution_points,
+    ]
+    recall_questions: list[SourceRecallQuestion] = (
+        resolved_material.active_recall_questions
+    )
+    for grounded_item in [*grounded_points, *recall_questions]:
+        resolved_evidence = _resolve_source_evidence(
+            source_text,
+            grounded_item.source_evidence,
+        )
+        if resolved_evidence is None:
+            return None
+        grounded_item.source_evidence = resolved_evidence
+    return resolved_material
 
 
 def _format_source_evidence(
@@ -489,13 +520,13 @@ def _request_grounded_source_review(
         )
 
         parsed_material = response.output_parsed
-        if parsed_material is not None and (
-            _is_valid_source_review_material(
+        if parsed_material is not None:
+            resolved_material = _resolve_source_review_evidence(
                 parsed_material,
                 validation_source_text,
             )
-        ):
-            return parsed_material
+            if resolved_material is not None:
+                return resolved_material
 
     raise RuntimeError(
         "AI가 원문 근거 규칙에 맞는 복습자료를 생성하지 못했습니다."

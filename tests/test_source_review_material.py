@@ -3,7 +3,7 @@ import json
 import unittest
 from copy import deepcopy
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from pypdf import PdfWriter
 
@@ -14,6 +14,8 @@ from models.review_material import (
     SourceReviewMaterialDraft,
 )
 from services.review_material_repository import (
+    _build_source_review_material_bundles,
+    get_source_review_material_bundles_by_plan,
     save_source_review_material_bundle,
 )
 from services.review_material_service import (
@@ -166,6 +168,10 @@ def build_text_pdf_bytes(text: str) -> bytes:
 class SourceMaterialValidationTests(unittest.TestCase):
     def test_title_is_stripped_and_validated(self):
         self.assertEqual(validate_source_title("  강의 노트  "), "강의 노트")
+        self.assertEqual(
+            validate_source_title("\x00강의\u0007 노트"),
+            "강의 노트",
+        )
         with self.assertRaises(SourceMaterialValidationError):
             validate_source_title("   ")
         with self.assertRaises(SourceMaterialValidationError):
@@ -177,6 +183,17 @@ class SourceMaterialValidationTests(unittest.TestCase):
             normalize_source_text(source),
             "첫 문장 입니다.\n\n둘째 문단입니다.",
         )
+
+    def test_text_normalization_removes_database_unsafe_controls(self):
+        source = "PDF\x00원문\u0007 제어문자\n다음 문단"
+
+        normalized = normalize_source_text(source)
+
+        self.assertEqual(
+            normalized,
+            "PDF원문 제어문자\n다음 문단",
+        )
+        self.assertNotIn("\x00", normalized)
 
     def test_empty_and_oversized_text_are_rejected(self):
         with self.assertRaises(SourceMaterialValidationError):
@@ -400,6 +417,47 @@ class SourceReviewMaterialTests(unittest.TestCase):
 
     @patch("services.review_material_service.get_openai_model")
     @patch("services.review_material_service.get_openai_client")
+    def test_grounded_review_restores_pdf_punctuation_to_source_text(
+        self,
+        get_client,
+        _get_model,
+    ):
+        structured_review = self.build_structured_review()
+        normalized_evidence = (
+            "정규화(正規化)는 데이터 중복을 줄입니다"
+        )
+        structured_review.core_concepts[0].source_evidence = (
+            normalized_evidence
+        )
+        structured_review.active_recall_questions[
+            0
+        ].source_evidence = normalized_evidence
+        fake_client = FakeOpenAIClient([structured_review])
+        get_client.return_value = fake_client
+        source_evidence = (
+            "정규화（正規化）는 “데이터 중복”을 줄입니다"
+        )
+        source_text = (
+            f"[페이지 1]\n{source_evidence}.\n"
+            "부분 함수 종속성을 제거합니다."
+        )
+
+        result = generate_source_review_material(
+            source_title="PDF 정규화 원본",
+            course_name="데이터베이스",
+            goal="정규화를 이해한다.",
+            current_level=3,
+            source_text=source_text,
+        )
+
+        self.assertEqual(len(fake_client.responses.calls), 1)
+        self.assertIn(
+            f"> 원문 근거 · 1페이지: {source_evidence}",
+            result.content_markdown,
+        )
+
+    @patch("services.review_material_service.get_openai_model")
+    @patch("services.review_material_service.get_openai_client")
     def test_long_source_uses_chunk_analysis_then_synthesis(
         self,
         get_client,
@@ -440,6 +498,144 @@ class SourceReviewMaterialTests(unittest.TestCase):
         )
         self.assertNotIn("source_text", synthesis_payload)
         self.assertIn("## 능동 회상 문제", result.content_markdown)
+
+    def test_bundle_removes_nulls_at_database_boundary(self):
+        supabase = FakeSupabase()
+        material = ReviewMaterialDraft(
+            title="복습\x00 자료",
+            content_markdown="## 원본 개요\n\n복습\x00 내용",
+        )
+
+        saved_bundle = save_source_review_material_bundle(
+            supabase=supabase,
+            user_id=USER_ID,
+            plan_id=PLAN_ID,
+            source_title="원본\x00 제목",
+            material_type="pdf",
+            source_text="PDF\x00 원본 내용",
+            material=material,
+        )
+
+        self.assertNotIn(
+            "\x00",
+            saved_bundle["source_material"]["title"],
+        )
+        self.assertNotIn(
+            "\x00",
+            saved_bundle["source_material"]["content_text"],
+        )
+        self.assertNotIn(
+            "\x00",
+            saved_bundle["review_material"]["title"],
+        )
+        self.assertNotIn(
+            "\x00",
+            saved_bundle["review_material"]["content_markdown"],
+        )
+
+    def test_archive_bundles_only_owned_source_linked_reviews(self):
+        valid_source = {
+            "id": SOURCE_ID,
+            "user_id": USER_ID,
+            "plan_id": PLAN_ID,
+            "title": "PDF 원본",
+        }
+        review_materials = [
+            {
+                "id": "valid-review",
+                "user_id": USER_ID,
+                "plan_id": PLAN_ID,
+                "source_material_id": SOURCE_ID,
+            },
+            {
+                "id": "task-review",
+                "user_id": USER_ID,
+                "plan_id": PLAN_ID,
+                "source_material_id": None,
+            },
+            {
+                "id": "other-user-review",
+                "user_id": "other-user",
+                "plan_id": PLAN_ID,
+                "source_material_id": SOURCE_ID,
+            },
+            {
+                "id": "missing-source-review",
+                "user_id": USER_ID,
+                "plan_id": PLAN_ID,
+                "source_material_id": "missing-source",
+            },
+        ]
+
+        bundles = _build_source_review_material_bundles(
+            learning_materials=[
+                valid_source,
+                {
+                    "id": "other-plan-source",
+                    "user_id": USER_ID,
+                    "plan_id": "other-plan",
+                },
+            ],
+            review_materials=review_materials,
+            user_id=USER_ID,
+            plan_id=PLAN_ID,
+        )
+
+        self.assertEqual(len(bundles), 1)
+        self.assertEqual(
+            bundles[0]["review_material"]["id"],
+            "valid-review",
+        )
+        self.assertEqual(bundles[0]["source_material"], valid_source)
+
+    def test_archive_query_uses_source_metadata_and_linked_ids_only(self):
+        source_row = {
+            "id": SOURCE_ID,
+            "user_id": USER_ID,
+            "plan_id": PLAN_ID,
+            "title": "PDF 원본",
+            "material_type": "pdf",
+        }
+        review_row = {
+            "id": "review-id",
+            "user_id": USER_ID,
+            "plan_id": PLAN_ID,
+            "source_material_id": SOURCE_ID,
+            "title": "복습자료",
+            "content_markdown": "## 복습",
+        }
+        source_request = MagicMock()
+        review_request = MagicMock()
+        for request in (source_request, review_request):
+            request.select.return_value = request
+            request.eq.return_value = request
+            request.in_.return_value = request
+            request.order.return_value = request
+        source_request.execute.return_value = FakeResponse([source_row])
+        review_request.execute.return_value = FakeResponse([review_row])
+        supabase = MagicMock()
+        supabase.table.side_effect = (
+            lambda table_name: source_request
+            if table_name == "learning_materials"
+            else review_request
+        )
+
+        bundles = get_source_review_material_bundles_by_plan(
+            supabase=supabase,
+            user_id=USER_ID,
+            plan_id=PLAN_ID,
+        )
+
+        selected_source_fields = source_request.select.call_args.args[0]
+        self.assertNotIn("content_text", selected_source_fields)
+        review_request.in_.assert_called_once_with(
+            "source_material_id",
+            [SOURCE_ID],
+        )
+        self.assertEqual(
+            bundles[0]["review_material"]["id"],
+            "review-id",
+        )
 
     def test_partial_save_failure_removes_new_source_row(self):
         supabase = FakeSupabase(fail_review_insert=True)

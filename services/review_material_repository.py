@@ -1,6 +1,16 @@
 from supabase import Client
 
 from models.review_material import ReviewMaterialDraft
+from services.source_material_service import sanitize_database_text
+
+
+def _prepare_database_text(value: str, field_name: str) -> str:
+    """DB 저장 직전에 NUL을 제거하고 비어 버린 문자열을 거부합니다."""
+
+    sanitized_value = sanitize_database_text(value)
+    if not sanitized_value.strip():
+        raise ValueError(f"{field_name}은 비어 있을 수 없습니다.")
+    return sanitized_value
 
 
 def get_learning_materials_by_plan(
@@ -45,6 +55,92 @@ def get_review_materials_by_plan(
     return response.data or []
 
 
+def _build_source_review_material_bundles(
+    learning_materials: list[dict],
+    review_materials: list[dict],
+    user_id: str,
+    plan_id: str,
+) -> list[dict]:
+    """같은 사용자·계획에 속한 원본과 복습자료만 안전하게 연결합니다."""
+
+    source_by_id = {
+        str(source_material["id"]): source_material
+        for source_material in learning_materials
+        if source_material.get("id")
+        and str(source_material.get("user_id")) == user_id
+        and str(source_material.get("plan_id")) == plan_id
+    }
+
+    bundles = []
+    for review_material in review_materials:
+        source_material_id = review_material.get("source_material_id")
+        if (
+            not source_material_id
+            or str(review_material.get("user_id")) != user_id
+            or str(review_material.get("plan_id")) != plan_id
+        ):
+            continue
+
+        source_material = source_by_id.get(str(source_material_id))
+        if source_material is None:
+            continue
+
+        bundles.append(
+            {
+                "source_material": source_material,
+                "review_material": review_material,
+            }
+        )
+
+    return bundles
+
+
+def get_source_review_material_bundles_by_plan(
+    supabase: Client,
+    user_id: str,
+    plan_id: str,
+) -> list[dict]:
+    """본인 계획의 원본 기반 AI 복습자료 보관함을 불러옵니다."""
+
+    source_response = (
+        supabase.table("learning_materials")
+        .select(
+            "id, user_id, plan_id, title, material_type, created_at"
+        )
+        .eq("user_id", user_id)
+        .eq("plan_id", plan_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    learning_materials = source_response.data or []
+    source_material_ids = [
+        str(source_material["id"])
+        for source_material in learning_materials
+        if source_material.get("id")
+    ]
+    if not source_material_ids:
+        return []
+
+    review_response = (
+        supabase.table("review_materials")
+        .select(
+            "id, user_id, plan_id, task_id, source_material_id, "
+            "title, content_markdown, created_at, updated_at"
+        )
+        .eq("user_id", user_id)
+        .eq("plan_id", plan_id)
+        .in_("source_material_id", source_material_ids)
+        .order("updated_at", desc=True)
+        .execute()
+    )
+    return _build_source_review_material_bundles(
+        learning_materials=learning_materials,
+        review_materials=review_response.data or [],
+        user_id=user_id,
+        plan_id=plan_id,
+    )
+
+
 def get_review_material_by_task(
     supabase: Client,
     user_id: str,
@@ -84,8 +180,11 @@ def save_review_material(
         "user_id": user_id,
         "plan_id": plan_id,
         "task_id": task_id,
-        "title": material.title,
-        "content_markdown": material.content_markdown,
+        "title": _prepare_database_text(material.title, "학습자료 제목"),
+        "content_markdown": _prepare_database_text(
+            material.content_markdown,
+            "학습자료 내용",
+        ),
     }
 
     response = (
@@ -121,9 +220,12 @@ def create_learning_material(
             {
                 "user_id": user_id,
                 "plan_id": plan_id,
-                "title": title,
+                "title": _prepare_database_text(title, "원본 제목"),
                 "material_type": material_type,
-                "content_text": content_text,
+                "content_text": _prepare_database_text(
+                    content_text,
+                    "원본 내용",
+                ),
                 "storage_path": None,
             }
         )
@@ -150,8 +252,14 @@ def create_source_review_material(
                 "user_id": user_id,
                 "plan_id": plan_id,
                 "source_material_id": source_material_id,
-                "title": material.title,
-                "content_markdown": material.content_markdown,
+                "title": _prepare_database_text(
+                    material.title,
+                    "복습자료 제목",
+                ),
+                "content_markdown": _prepare_database_text(
+                    material.content_markdown,
+                    "복습자료 내용",
+                ),
             }
         )
         .execute()

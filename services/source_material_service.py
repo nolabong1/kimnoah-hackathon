@@ -1,6 +1,7 @@
 import io
 import math
 import re
+import unicodedata
 from collections import Counter
 from dataclasses import asdict, dataclass
 
@@ -42,13 +43,26 @@ class PdfExtractionResult:
         return summary
 
 
+def sanitize_database_text(value: str) -> str:
+    """PostgreSQL text가 거부하는 NUL과 숨은 제어문자를 정리합니다."""
+
+    without_nulls = value.replace("\x00", "")
+    return "".join(
+        character
+        if character in {"\r", "\n", "\t"}
+        or unicodedata.category(character) != "Cc"
+        else " "
+        for character in without_nulls
+    )
+
+
 def validate_source_title(title: str) -> str:
     """원본 제목을 정리하고 1~200자 범위를 검증합니다."""
 
     if not isinstance(title, str):
         raise SourceMaterialValidationError("원본 제목을 입력해주세요.")
 
-    cleaned_title = title.strip()
+    cleaned_title = " ".join(sanitize_database_text(title).split())
     if not cleaned_title:
         raise SourceMaterialValidationError("원본 제목을 입력해주세요.")
     if len(cleaned_title) > MAX_SOURCE_TITLE_CHARS:
@@ -59,9 +73,10 @@ def validate_source_title(title: str) -> str:
 
 
 def normalize_source_text(source_text: str) -> str:
-    """문단 구조를 유지하며 과도한 공백과 빈 줄을 정리합니다."""
+    """DB에 저장 가능한 텍스트로 정리하며 문단 구조를 유지합니다."""
 
-    normalized_newlines = source_text.replace("\r\n", "\n").replace(
+    sanitized_controls = sanitize_database_text(source_text)
+    normalized_newlines = sanitized_controls.replace("\r\n", "\n").replace(
         "\r",
         "\n",
     )
