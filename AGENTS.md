@@ -135,7 +135,7 @@ AI Structured Output과 RPC 응답은 가능한 한 Pydantic 모델로 검증한
 - `review_material_service.py`: 과제·원본 기반 AI 학습자료 생성, 원문 인용
   포함 여부 검증과 교정 재시도, 긴 원본 구간별 분석·최종 통합
 - `review_material_repository.py`: 과제별 학습자료 조회/upsert와
-  원본·복습자료 순차 저장 및 부분 실패 정리
+  원본·복습자료 순차 저장 및 부분 실패 정리, 원본 기반 자료 원자적 삭제 RPC 연결
 - `reference_material_service.py`: 원본·AI 자료를 튜터와 퀴즈가 공유하는
   충돌 없는 참고자료 선택 항목으로 변환
 - `quiz_service.py`: 5문항 객관식 퀴즈 생성, 선택 자료 길이 제한,
@@ -204,8 +204,8 @@ AI 호출과 DB 저장 책임도 분리한다.
 - `review_material_ui.py`: `learn`과 `review` 과제의 자료 생성·저장·조회
 - `source_review_material_view.py`: 붙여넣은 텍스트 또는 PDF 기반 AI 복습자료
   입력과 생성 결과를 좌우 영역으로 표시하고, 계획별 저장 보관함에서 기존
-  결과를 다시 조회. PDF는 기본 빠른 추출과 사용자가 명시적으로 선택하는
-  AI 정밀 읽기, 추출 품질·근거 확인 상태를 제공
+  결과를 다시 조회·확인 후 삭제. PDF는 기본 빠른 추출과 사용자가 명시적으로
+  선택하는 AI 정밀 읽기, 추출 품질·근거 확인 상태를 제공
 - `quiz_ui.py`: 퀴즈 생성·응시·재응시·결과. 결과 화면은 왼쪽 문항 해설과
   오른쪽 숙련도·취약 개념·자동 복습 진단 영역으로 분리. 공개 진입 함수는
   완료 조건, 생성, 응시 상태, 제출, 결과·진단 helper를 조합하며 동일 답안의
@@ -284,6 +284,12 @@ standalone 통합 검증 중 하나로 분류되는지와 순서·의존성·누
 쓰기 권한, 계획 저장 원자성과 동시 과제 완료 멱등성을 검사한다. 기본 테스트
 실행에서는 원격 검사를 건너뛰며 service role key를 저장소나 Streamlit에
 보관하지 않는다. 실행 절차는 `docs/testing/SUPABASE_INTEGRATION_TESTS.md`를 따른다.
+
+`.github/workflows/ci.yml`은 `main` push·pull request와 수동 실행에서 Python
+3.13 전체 컴파일, SQL migration manifest 검사, 오프라인 unittest를 실행한다.
+GitHub 공식 action은 전체 commit SHA로 고정하고 토큰은 `contents: read`만
+허용한다. OpenAI·Supabase secret과 원격 통합 테스트는 일반 CI에 넣지 않는다.
+운영 절차는 `docs/testing/GITHUB_ACTIONS.md`를 따른다.
 
 ## 주요 실행 흐름
 
