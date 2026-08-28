@@ -41,6 +41,11 @@ class SqlMigrationManifestTests(unittest.TestCase):
             "supabase_dashboard_snapshot_validation.sql",
             plan,
         )
+        self.assertIn(
+            "032  supabase_source_review_material_delete.sql  ->  "
+            "supabase_source_review_material_delete_validation.sql",
+            plan,
+        )
         self.assertTrue(plan[-1].startswith("CHECK after "))
 
     def test_reordered_dependency_is_rejected(self):
@@ -75,6 +80,26 @@ class SqlMigrationManifestTests(unittest.TestCase):
             DEFAULT_MANIFEST_PATH,
             PROJECT_ROOT / "supabase" / "migrations.toml",
         )
+
+    def test_source_review_delete_rpc_is_owner_scoped_and_atomic(self):
+        migration = (
+            PROJECT_ROOT / "supabase_source_review_material_delete.sql"
+        ).read_text(encoding="utf-8").lower()
+        validation = (
+            PROJECT_ROOT
+            / "supabase_source_review_material_delete_validation.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("security invoker", migration)
+        self.assertIn("set search_path = ''", migration)
+        self.assertIn("auth.uid()", migration)
+        self.assertIn("delete from public.review_materials", migration)
+        self.assertIn("delete from public.learning_materials", migration)
+        self.assertIn("task_id is null", migration)
+        self.assertIn("to authenticated", migration)
+        self.assertIn("from public, anon, authenticated", migration)
+        self.assertIn("set transaction read only", validation)
+        self.assertIn("not procedure.prosecdef", validation)
 
 
 if __name__ == "__main__":

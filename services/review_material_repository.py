@@ -289,6 +289,57 @@ def delete_learning_material(
         raise RuntimeError("미사용 원본 학습자료를 정리하지 못했습니다.")
 
 
+def delete_source_review_material(
+    supabase: Client,
+    user_id: str,
+    plan_id: str,
+    review_material_id: str,
+    source_material_id: str,
+) -> dict:
+    """본인 원본 기반 복습자료와 미사용 원본을 원자적으로 삭제합니다."""
+
+    required_ids = {
+        "사용자 ID": user_id,
+        "학습계획 ID": plan_id,
+        "복습자료 ID": review_material_id,
+        "원본 자료 ID": source_material_id,
+    }
+    for field_name, field_value in required_ids.items():
+        if not isinstance(field_value, str) or not field_value.strip():
+            raise ValueError(f"{field_name}가 필요합니다.")
+
+    response = (
+        supabase.rpc(
+            "delete_source_review_material",
+            {
+                "p_review_material_id": review_material_id,
+                "p_source_material_id": source_material_id,
+                "p_plan_id": plan_id,
+            },
+        )
+        .execute()
+    )
+    result = response.data
+    if not isinstance(result, dict):
+        raise RuntimeError("복습자료 삭제 결과가 비어 있습니다.")
+
+    required_fields = {
+        "review_material_id",
+        "source_material_id",
+        "source_deleted",
+    }
+    if not required_fields.issubset(result):
+        raise RuntimeError("복습자료 삭제 응답 형식이 올바르지 않습니다.")
+    if (
+        str(result["review_material_id"]) != review_material_id
+        or str(result["source_material_id"]) != source_material_id
+        or not isinstance(result["source_deleted"], bool)
+    ):
+        raise RuntimeError("복습자료 삭제 응답 값이 올바르지 않습니다.")
+
+    return result
+
+
 def save_source_review_material_bundle(
     supabase: Client,
     user_id: str,

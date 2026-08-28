@@ -64,6 +64,24 @@ def render_source_review_test_page(supabase, user):
     render_source_review_material(supabase, user)
 
 
+def render_source_review_delete_dialog_test_page(
+    supabase,
+    user,
+    plan_id,
+    bundle,
+):
+    from views.source_review_material_view import (
+        _show_delete_source_review_material_dialog,
+    )
+
+    _show_delete_source_review_material_dialog(
+        supabase=supabase,
+        user_id=str(user.id),
+        plan_id=plan_id,
+        bundle=bundle,
+    )
+
+
 def render_tutor_test_page(supabase, user):
     from views.tutor_view import render_tutor
 
@@ -320,10 +338,99 @@ class AppLayoutTests(unittest.TestCase):
         )
         self.assertIn("반복문 핵심 복습", rendered_markdown)
         self.assertIn("반복문 내용", rendered_markdown)
+        self.assertIn(
+            "복습자료 삭제",
+            [button.label for button in app.button],
+        )
         load_saved.assert_called_once_with(
             supabase=ANY,
             user_id=USER_ID,
             plan_id=PLAN_ID,
+        )
+
+    def test_source_review_delete_requires_confirmation(self):
+        plan = {
+            "id": PLAN_ID,
+            "title": "파이썬 7일 계획",
+            "course_name": "파이썬",
+            "goal": "반복문 익히기",
+            "current_level": 3,
+        }
+        saved_bundles = [
+            {
+                "source_material": {
+                    "id": "source-id",
+                    "user_id": USER_ID,
+                    "plan_id": PLAN_ID,
+                    "title": "반복문 PDF",
+                    "material_type": "pdf",
+                },
+                "review_material": {
+                    "id": "review-id",
+                    "user_id": USER_ID,
+                    "plan_id": PLAN_ID,
+                    "source_material_id": "source-id",
+                    "title": "반복문 핵심 복습",
+                    "content_markdown": "## 핵심 개념\n\n반복문 내용",
+                },
+            }
+        ]
+        user = SimpleNamespace(id=USER_ID)
+
+        with (
+            patch(
+                "views.source_review_material_view.get_user_study_plans",
+                return_value=[plan],
+            ),
+            patch(
+                "views.source_review_material_view."
+                "get_source_review_material_bundles_by_plan",
+                return_value=saved_bundles,
+            ),
+            patch(
+                "views.source_review_material_view."
+                "delete_source_review_material",
+                return_value={
+                    "review_material_id": "review-id",
+                    "source_material_id": "source-id",
+                    "source_deleted": True,
+                },
+            ) as delete_saved,
+        ):
+            app = AppTest.from_function(
+                render_source_review_test_page,
+                args=(object(), user),
+            ).run()
+            app.get("button_group")[0].set_value("saved").run()
+            app.button(key="delete_source_review_review-id").click().run()
+
+            delete_saved.assert_not_called()
+            self.assertIn(
+                "삭제하기",
+                [button.label for button in app.button],
+            )
+
+            dialog_app = AppTest.from_function(
+                render_source_review_delete_dialog_test_page,
+                args=(object(), user, PLAN_ID, saved_bundles[0]),
+            ).run()
+            dialog_app.button(
+                key="confirm_delete_source_review_review-id"
+            ).click().run()
+
+        self.assertEqual(list(dialog_app.exception), [])
+        delete_saved.assert_called_once_with(
+            supabase=ANY,
+            user_id=USER_ID,
+            plan_id=PLAN_ID,
+            review_material_id="review-id",
+            source_material_id="source-id",
+        )
+        self.assertEqual(
+            dialog_app.session_state[
+                "source_review_material_deleted_item_id"
+            ],
+            "review-id",
         )
 
     def test_mastery_page_separates_overview_and_concept_detail(self):

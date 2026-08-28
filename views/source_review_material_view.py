@@ -10,6 +10,7 @@ from services.pdf_visual_extraction_service import (
     extract_pdf_with_ai_vision,
 )
 from services.review_material_repository import (
+    delete_source_review_material,
     get_source_review_material_bundles_by_plan,
     save_source_review_material_bundle,
 )
@@ -46,6 +47,8 @@ PDF_READING_MODE_KEY = "source_review_material_pdf_reading_mode"
 VIEW_MODE_KEY = "source_review_material_view_mode"
 ARCHIVE_PLAN_KEY = "source_review_material_archive_plan_id"
 ARCHIVE_ITEM_KEY = "source_review_material_archive_item_id"
+DELETED_ITEM_CLEANUP_KEY = "source_review_material_deleted_item_id"
+DELETE_MESSAGE_KEY = "source_review_material_delete_message"
 SOURCE_REVIEW_SESSION_KEYS = (
     RESULT_STATE_KEY,
     FINGERPRINT_STATE_KEY,
@@ -59,6 +62,8 @@ SOURCE_REVIEW_SESSION_KEYS = (
     VIEW_MODE_KEY,
     ARCHIVE_PLAN_KEY,
     ARCHIVE_ITEM_KEY,
+    DELETED_ITEM_CLEANUP_KEY,
+    DELETE_MESSAGE_KEY,
 )
 
 SEOUL_TIMEZONE = ZoneInfo("Asia/Seoul")
@@ -92,6 +97,97 @@ def _clear_other_user_result(user_id: str) -> None:
     if saved_result and saved_result.get("user_id") != user_id:
         st.session_state.pop(RESULT_STATE_KEY, None)
         st.session_state.pop(FINGERPRINT_STATE_KEY, None)
+
+
+def _apply_deleted_material_state() -> None:
+    """삭제 다음 rerun에서 관련 위젯과 생성 결과 상태를 정리합니다."""
+
+    deleted_item_id = st.session_state.pop(
+        DELETED_ITEM_CLEANUP_KEY,
+        None,
+    )
+    if deleted_item_id is None:
+        return
+
+    st.session_state.pop(ARCHIVE_ITEM_KEY, None)
+    saved_result = st.session_state.get(RESULT_STATE_KEY)
+    saved_review = (
+        saved_result.get("review_material", {})
+        if isinstance(saved_result, dict)
+        else {}
+    )
+    if str(saved_review.get("id")) == str(deleted_item_id):
+        st.session_state.pop(RESULT_STATE_KEY, None)
+        st.session_state.pop(FINGERPRINT_STATE_KEY, None)
+
+
+@st.dialog("복습자료 삭제")
+def _show_delete_source_review_material_dialog(
+    supabase,
+    user_id: str,
+    plan_id: str,
+    bundle: dict,
+) -> None:
+    """선택한 원본 기반 복습자료의 영구 삭제를 확인합니다."""
+
+    review_material = bundle["review_material"]
+    source_material = bundle["source_material"]
+    st.warning(
+        "삭제한 복습자료는 복구할 수 없습니다.",
+        icon=":material/warning:",
+    )
+    st.write(
+        f"**{review_material.get('title', '제목 없는 복습자료')}**를 "
+        "삭제할까요?"
+    )
+    st.caption(
+        "생성된 AI 복습자료와 저장된 원본 추출 텍스트가 함께 "
+        "삭제됩니다. 학습계획, 과제, 퀴즈와 EXP에는 영향을 주지 않습니다."
+    )
+
+    with st.container(
+        horizontal=True,
+        horizontal_alignment="right",
+    ):
+        if st.button(
+            "취소",
+            key=f"cancel_delete_source_review_{review_material['id']}",
+        ):
+            st.rerun()
+
+        if st.button(
+            "삭제하기",
+            key=f"confirm_delete_source_review_{review_material['id']}",
+            type="primary",
+            icon=":material/delete:",
+        ):
+            try:
+                with st.spinner("복습자료를 삭제하고 있습니다..."):
+                    delete_source_review_material(
+                        supabase=supabase,
+                        user_id=user_id,
+                        plan_id=plan_id,
+                        review_material_id=str(review_material["id"]),
+                        source_material_id=str(source_material["id"]),
+                    )
+
+                st.session_state[DELETED_ITEM_CLEANUP_KEY] = str(
+                    review_material["id"]
+                )
+                st.session_state[DELETE_MESSAGE_KEY] = (
+                    f"'{review_material.get('title', '복습자료')}'를 "
+                    "삭제했습니다."
+                )
+                st.rerun()
+            except Exception as error:
+                render_unexpected_error(
+                    error,
+                    operation="source_review.delete",
+                    user_message=(
+                        "복습자료를 삭제하지 못했습니다. 잠시 후 다시 "
+                        "시도해주세요."
+                    ),
+                )
 
 
 def _format_saved_at(value: object) -> str:
@@ -209,6 +305,21 @@ def _render_saved_source_review_materials(
                 f"## {review_material.get('title', '제목 없는 복습자료')}"
             )
             st.markdown(review_material.get("content_markdown", ""))
+            with st.container(
+                horizontal=True,
+                horizontal_alignment="right",
+            ):
+                if st.button(
+                    "복습자료 삭제",
+                    key=f"delete_source_review_{selected_bundle_id}",
+                    icon=":material/delete:",
+                ):
+                    _show_delete_source_review_material_dialog(
+                        supabase=supabase,
+                        user_id=user_id,
+                        plan_id=selected_plan_id,
+                        bundle=selected_bundle,
+                    )
 
 
 def render_source_review_material(supabase, user) -> None:
@@ -227,7 +338,12 @@ def render_source_review_material(supabase, user) -> None:
     )
 
     _clear_other_user_result(user_id)
+    _apply_deleted_material_state()
     st.session_state.setdefault(RUNNING_STATE_KEY, False)
+
+    delete_message = st.session_state.pop(DELETE_MESSAGE_KEY, None)
+    if delete_message:
+        st.success(delete_message)
 
     try:
         study_plans = get_user_study_plans(

@@ -15,6 +15,7 @@ from models.review_material import (
 )
 from services.review_material_repository import (
     _build_source_review_material_bundles,
+    delete_source_review_material,
     get_source_review_material_bundles_by_plan,
     save_source_review_material_bundle,
 )
@@ -636,6 +637,57 @@ class SourceReviewMaterialTests(unittest.TestCase):
             bundles[0]["review_material"]["id"],
             "review-id",
         )
+
+    def test_source_review_delete_uses_owner_scoped_rpc_contract(self):
+        rpc_request = MagicMock()
+        rpc_request.execute.return_value = FakeResponse(
+            {
+                "review_material_id": "review-id",
+                "source_material_id": SOURCE_ID,
+                "source_deleted": True,
+            }
+        )
+        supabase = MagicMock()
+        supabase.rpc.return_value = rpc_request
+
+        result = delete_source_review_material(
+            supabase=supabase,
+            user_id=USER_ID,
+            plan_id=PLAN_ID,
+            review_material_id="review-id",
+            source_material_id=SOURCE_ID,
+        )
+
+        supabase.rpc.assert_called_once_with(
+            "delete_source_review_material",
+            {
+                "p_review_material_id": "review-id",
+                "p_source_material_id": SOURCE_ID,
+                "p_plan_id": PLAN_ID,
+            },
+        )
+        self.assertTrue(result["source_deleted"])
+
+    def test_source_review_delete_rejects_mismatched_rpc_response(self):
+        rpc_request = MagicMock()
+        rpc_request.execute.return_value = FakeResponse(
+            {
+                "review_material_id": "different-review",
+                "source_material_id": SOURCE_ID,
+                "source_deleted": True,
+            }
+        )
+        supabase = MagicMock()
+        supabase.rpc.return_value = rpc_request
+
+        with self.assertRaisesRegex(RuntimeError, "응답 값"):
+            delete_source_review_material(
+                supabase=supabase,
+                user_id=USER_ID,
+                plan_id=PLAN_ID,
+                review_material_id="review-id",
+                source_material_id=SOURCE_ID,
+            )
 
     def test_partial_save_failure_removes_new_source_row(self):
         supabase = FakeSupabase(fail_review_insert=True)

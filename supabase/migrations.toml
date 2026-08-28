@@ -209,12 +209,19 @@ path = "supabase_dashboard_snapshot.sql"
 validation = "supabase_dashboard_snapshot_validation.sql"
 depends_on = ["030_core_write_boundary"]
 
+[[migrations]]
+order = 32
+id = "032_source_review_material_delete"
+path = "supabase_source_review_material_delete.sql"
+validation = "supabase_source_review_material_delete_validation.sql"
+depends_on = ["031_dashboard_snapshot"]
+
 [[standalone_checks]]
 id = "adaptive_learning_integration"
 path = "supabase_adaptive_learning_integration_validation.sql"
-after = "031_dashboard_snapshot"
+after = "032_source_review_material_delete"
 
 [[standalone_checks]]
 id = "shop_room_integration"
 path = "supabase_shop_room_integration_validation.sql"
-after = "031_dashboard_snapshot"
+after = "032_source_review_material_delete"
