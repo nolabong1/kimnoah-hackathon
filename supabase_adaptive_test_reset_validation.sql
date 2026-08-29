@@ -6,10 +6,18 @@ declare
   reset_function regprocedure := pg_catalog.to_regprocedure(
     'public.reset_today_test_progress()'
   );
+  reset_implementation regprocedure;
 begin
   if reset_function is null then
     raise exception '테스트 초기화 RPC가 없습니다.';
   end if;
+
+  reset_implementation := coalesce(
+    pg_catalog.to_regprocedure(
+      'public.reset_today_test_progress_unchecked()'
+    ),
+    reset_function
+  );
 
   if not exists (
     select 1
@@ -38,7 +46,20 @@ begin
     raise exception 'anon 초기화 권한이 남아 있습니다.';
   end if;
 
-  if pg_catalog.pg_get_functiondef(reset_function)
+  if reset_implementation <> reset_function
+     and (
+       pg_catalog.has_function_privilege(
+         'authenticated', reset_implementation, 'EXECUTE'
+       )
+       or pg_catalog.has_function_privilege(
+         'anon', reset_implementation, 'EXECUTE'
+       )
+     )
+  then
+    raise exception '비공개 초기화 구현에 직접 실행 권한이 남아 있습니다.';
+  end if;
+
+  if pg_catalog.pg_get_functiondef(reset_implementation)
        not like '%removed_mastery_event_count%'
   then
     raise exception '적응형 학습 초기화 버전이 적용되지 않았습니다.';
@@ -47,143 +68,72 @@ end;
 $$;
 
 
+-- 계획 삭제로 이벤트 이력이 압축될 수 있으므로 남아 있는 이벤트가 현재
+-- 숙련도에 포함되는지와 유효한 마지막 응시 연결만 확인합니다.
 do $$
 begin
   if exists (
-    with event_rows as (
+    select 1
+    from public.concept_mastery_events as event
+    left join public.concept_mastery as mastery
+      on mastery.user_id = event.user_id
+     and mastery.concept_id = event.concept_id
+    where mastery.user_id is null
+  ) then
+    raise exception '현재값이 없는 숙련도 이벤트가 있습니다.';
+  end if;
+
+  if exists (
+    with event_totals as (
       select
         event.user_id,
         event.concept_id,
-        event.quiz_attempt_id,
-        event.question_index,
-        event.is_correct,
-        event.score_after,
-        event.created_at as event_created_at,
-        attempt.submitted_at
+        count(*) filter (where event.is_correct)::integer
+          as correct_count,
+        count(*) filter (where not event.is_correct)::integer
+          as incorrect_count
       from public.concept_mastery_events as event
-      join public.quiz_attempts as attempt
-        on attempt.id = event.quiz_attempt_id
-       and attempt.quiz_id = event.quiz_id
-       and attempt.user_id = event.user_id
-    ),
-    latest as (
-      select distinct on (
-        event_row.user_id,
-        event_row.concept_id
-      )
-        event_row.user_id,
-        event_row.concept_id,
-        event_row.score_after as mastery_score,
-        event_row.is_correct as last_answer_correct,
-        event_row.quiz_attempt_id as last_attempt_id,
-        event_row.submitted_at as last_assessed_at
-      from event_rows as event_row
-      order by
-        event_row.user_id,
-        event_row.concept_id,
-        event_row.submitted_at desc,
-        event_row.question_index desc,
-        event_row.event_created_at desc
-    ),
-    totals as (
-      select
-        event_row.user_id,
-        event_row.concept_id,
-        count(*) filter (
-          where event_row.is_correct
-        )::integer as correct_count,
-        count(*) filter (
-          where not event_row.is_correct
-        )::integer as incorrect_count
-      from event_rows as event_row
-      group by event_row.user_id, event_row.concept_id
-    ),
-    reverse_ranked as (
-      select
-        event_row.user_id,
-        event_row.concept_id,
-        event_row.is_correct,
-        row_number() over (
-          partition by
-            event_row.user_id,
-            event_row.concept_id
-          order by
-            event_row.submitted_at desc,
-            event_row.question_index desc,
-            event_row.event_created_at desc
-        ) as reverse_rank
-      from event_rows as event_row
-    ),
-    first_recent_correct as (
-      select
-        ranked.user_id,
-        ranked.concept_id,
-        min(ranked.reverse_rank) filter (
-          where ranked.is_correct
-        ) as first_correct_rank
-      from reverse_ranked as ranked
-      group by ranked.user_id, ranked.concept_id
-    ),
-    streaks as (
-      select
-        ranked.user_id,
-        ranked.concept_id,
-        count(*) filter (
-          where not ranked.is_correct
-            and (
-              recent_correct.first_correct_rank is null
-              or ranked.reverse_rank
-                < recent_correct.first_correct_rank
-            )
-        )::integer as consecutive_incorrect_count
-      from reverse_ranked as ranked
-      join first_recent_correct as recent_correct
-        on recent_correct.user_id = ranked.user_id
-       and recent_correct.concept_id = ranked.concept_id
-      group by ranked.user_id, ranked.concept_id
-    ),
-    expected as (
-      select
-        latest.user_id,
-        latest.concept_id,
-        latest.mastery_score,
-        totals.correct_count,
-        totals.incorrect_count,
-        streaks.consecutive_incorrect_count,
-        latest.last_answer_correct,
-        latest.last_attempt_id,
-        latest.last_assessed_at
-      from latest
-      join totals
-        on totals.user_id = latest.user_id
-       and totals.concept_id = latest.concept_id
-      join streaks
-        on streaks.user_id = latest.user_id
-       and streaks.concept_id = latest.concept_id
+      group by event.user_id, event.concept_id
     )
     select 1
     from public.concept_mastery as mastery
-    full join expected
-      on expected.user_id = mastery.user_id
-     and expected.concept_id = mastery.concept_id
-    where mastery.user_id is null
-       or expected.user_id is null
-       or mastery.mastery_score
-         is distinct from expected.mastery_score
-       or mastery.correct_count
-         is distinct from expected.correct_count
-       or mastery.incorrect_count
-         is distinct from expected.incorrect_count
-       or mastery.consecutive_incorrect_count
-         is distinct from expected.consecutive_incorrect_count
-       or mastery.last_answer_correct
-         is distinct from expected.last_answer_correct
-       or mastery.last_attempt_id
-         is distinct from expected.last_attempt_id
-       or mastery.last_assessed_at
-         is distinct from expected.last_assessed_at
+    join event_totals as totals
+      on totals.user_id = mastery.user_id
+     and totals.concept_id = mastery.concept_id
+    where mastery.correct_count < totals.correct_count
+       or mastery.incorrect_count < totals.incorrect_count
   ) then
-    raise exception '숙련도 현재값과 변경 이력이 일치하지 않습니다.';
+    raise exception '현재 숙련도 누적 횟수보다 남아 있는 이벤트 수가 많습니다.';
+  end if;
+
+  if exists (
+    select 1
+    from public.concept_mastery as mastery
+    where mastery.last_attempt_id is not null
+      and not exists (
+        select 1
+        from public.concept_mastery_events as event
+        join public.quiz_attempts as attempt
+          on attempt.id = event.quiz_attempt_id
+         and attempt.quiz_id = event.quiz_id
+         and attempt.user_id = event.user_id
+        where event.user_id = mastery.user_id
+          and event.concept_id = mastery.concept_id
+          and event.quiz_attempt_id = mastery.last_attempt_id
+          and not exists (
+            select 1
+            from public.concept_mastery_events as later_event
+            where later_event.user_id = event.user_id
+              and later_event.concept_id = event.concept_id
+              and later_event.quiz_attempt_id = event.quiz_attempt_id
+              and later_event.question_index > event.question_index
+          )
+          and event.score_after = mastery.mastery_score
+          and event.is_correct = mastery.last_answer_correct
+          and attempt.submitted_at = mastery.last_assessed_at
+      )
+  ) then
+    raise exception '현재 숙련도의 마지막 응시 연결이 이벤트와 일치하지 않습니다.';
   end if;
 end;
 $$;

@@ -3,9 +3,8 @@
 ## 기준 파일
 
 [`supabase/migrations.toml`](../../supabase/migrations.toml)이 이 저장소의 SQL
-적용 순서와 검증 파일 관계를 정의하는 단일 기준입니다. 기존 루트 SQL 55개는
-이미 적용된 프로젝트와 테스트 경로를 깨지 않도록 이동하거나 이름을 바꾸지
-않습니다.
+적용 순서와 검증 파일 관계를 정의하는 단일 기준입니다. 기존 루트 SQL은 이미
+적용된 프로젝트와 테스트 경로를 깨지 않도록 이동하거나 이름을 바꾸지 않습니다.
 
 이 manifest는 원격 DB의 적용 여부를 자동으로 추측하지 않습니다. 기존
 프로젝트에서는 이미 적용한 SQL을 다시 일괄 실행하지 말고, 새로 추가된 항목만
@@ -64,3 +63,9 @@ rollback;
 manifest 끝에 새로 추가된 migration만 적용합니다. 장기적으로 Supabase CLI를
 도입하면 이 manifest를 기준으로 timestamp migration으로 전환할 수 있지만,
 해커톤 MVP에서는 기존 운영 스키마를 안전하게 보존하는 방식을 우선합니다.
+
+학습목표 연결 기능의 마지막 단계에서는
+`supabase_learning_objective_auto_reviews.sql`을 적용하고 대응 validation을
+실행합니다. 이후 읽기 전용
+`supabase_learning_objective_integration_validation.sql`로 계획 목표, 과제,
+원본·AI 자료, 퀴즈와 자동 복습의 전체 연결을 확인합니다.

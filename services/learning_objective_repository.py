@@ -109,3 +109,73 @@ def get_learning_objective_for_task(
     if str(objective.user_id) != user_id or str(objective.plan_id) != plan_id:
         raise RuntimeError("과제 학습목표의 소유권이 올바르지 않습니다.")
     return objective
+
+
+def _validate_owned_connection_rows(
+    rows: list[dict],
+    *,
+    user_id: str,
+    plan_id: str,
+    record_name: str,
+) -> list[dict]:
+    """연결 요약 조회 결과가 요청한 사용자·계획에만 속하는지 확인합니다."""
+
+    for row in rows:
+        if (
+            str(row.get("user_id")) != user_id
+            or str(row.get("plan_id")) != plan_id
+        ):
+            raise RuntimeError(f"{record_name} 조회 결과의 소유권이 올바르지 않습니다.")
+    return rows
+
+
+def get_learning_objective_connection_data(
+    supabase: Client,
+    user_id: str,
+    plan_id: str,
+) -> dict:
+    """본인 계획의 목표와 연결된 자료·퀴즈 최소 필드만 조회합니다."""
+
+    if not isinstance(user_id, str) or not user_id.strip():
+        raise ValueError("사용자 ID가 필요합니다.")
+    if not isinstance(plan_id, str) or not plan_id.strip():
+        raise ValueError("학습계획 ID가 필요합니다.")
+
+    objectives = get_learning_objectives_by_plan_ids(
+        supabase=supabase,
+        user_id=user_id,
+        plan_ids=[plan_id],
+    )[plan_id]
+    table_fields = {
+        "learning_materials": (
+            "id, user_id, plan_id, title, material_type, "
+            "learning_objective_id"
+        ),
+        "review_materials": (
+            "id, user_id, plan_id, task_id, source_material_id, title, "
+            "learning_objective_id"
+        ),
+        "quizzes": (
+            "id, user_id, plan_id, task_id, title, learning_objective_id, "
+            "reference_learning_material_id, reference_review_material_id"
+        ),
+    }
+    result: dict[str, object] = {"objectives": objectives}
+
+    for table_name, fields in table_fields.items():
+        response = (
+            supabase.table(table_name)
+            .select(fields)
+            .eq("user_id", user_id)
+            .eq("plan_id", plan_id)
+            .order("created_at")
+            .execute()
+        )
+        result[table_name] = _validate_owned_connection_rows(
+            response.data or [],
+            user_id=user_id,
+            plan_id=plan_id,
+            record_name=table_name,
+        )
+
+    return result

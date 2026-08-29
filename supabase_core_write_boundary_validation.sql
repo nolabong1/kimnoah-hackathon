@@ -67,12 +67,29 @@ begin
     raise exception '익명 사용자가 학습계획 저장 RPC를 실행할 수 있습니다.';
   end if;
 
-  if not pg_catalog.has_function_privilege(
-    'authenticated',
-    'public.save_quiz_with_concepts(uuid,uuid,text,text,text,jsonb,jsonb)',
-    'EXECUTE'
+  if not (
+    pg_catalog.has_function_privilege(
+      'authenticated',
+      'public.save_quiz_with_concepts(uuid,uuid,text,text,text,jsonb,jsonb)',
+      'EXECUTE'
+    )
+    or (
+      pg_catalog.to_regprocedure(
+        'public.save_quiz_with_concepts(uuid,uuid,text,text,text,jsonb,jsonb,uuid,uuid)'
+      ) is not null
+      and pg_catalog.has_function_privilege(
+        'authenticated',
+        'public.save_quiz_with_concepts(uuid,uuid,text,text,text,jsonb,jsonb,uuid,uuid)',
+        'EXECUTE'
+      )
+      and not pg_catalog.has_function_privilege(
+        'authenticated',
+        'public.save_quiz_with_concepts(uuid,uuid,text,text,text,jsonb,jsonb)',
+        'EXECUTE'
+      )
+    )
   ) then
-    raise exception '기존 원자적 퀴즈 저장 RPC 권한이 없습니다.';
+    raise exception '사용자에게 현재 퀴즈 저장 RPC 권한이 없습니다.';
   end if;
 
   select pg_catalog.pg_get_functiondef(

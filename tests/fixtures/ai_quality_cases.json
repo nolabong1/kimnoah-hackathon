@@ -155,7 +155,7 @@
   {
     "case_id": "quiz_python_range_boundary",
     "feature": "quiz",
-    "prompt_version": "quiz_v6_grounded_reference",
+    "prompt_version": "quiz_v7_learning_objective",
     "course_name": "Python",
     "learner_level": 3,
     "learning_goal": "range의 종료값 포함 여부를 적용 문제로 점검한다.",
@@ -201,7 +201,7 @@
   {
     "case_id": "quiz_probability_conditional_intermediate",
     "feature": "quiz",
-    "prompt_version": "quiz_v6_grounded_reference",
+    "prompt_version": "quiz_v7_learning_objective",
     "course_name": "확률과 통계",
     "learner_level": 5,
     "learning_goal": "조건부확률에서 표본공간이 어떻게 제한되는지 적용 문제로 구분한다.",
@@ -223,7 +223,7 @@
   {
     "case_id": "quiz_sql_join_advanced",
     "feature": "quiz",
-    "prompt_version": "quiz_v6_grounded_reference",
+    "prompt_version": "quiz_v7_learning_objective",
     "course_name": "SQL",
     "learner_level": 8,
     "learning_goal": "INNER JOIN과 LEFT JOIN의 결과 차이를 중복 행과 NULL까지 고려해 판단한다.",

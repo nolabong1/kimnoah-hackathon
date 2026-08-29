@@ -14,6 +14,9 @@ from views.completion_feedback import (
 )
 from views.error_feedback import render_unexpected_error
 from views.gamification_state import queue_gamification_notifications
+from views.learning_objective_connections_ui import (
+    render_learning_objective_connections,
+)
 from views.quiz_ui import render_quiz_section
 from views.review_material_ui import (
     render_review_material_section,
@@ -73,7 +76,10 @@ def apply_deleted_plan_state() -> None:
     for state_key in list(st.session_state.keys()):
         if state_key.startswith(
             f"saved_plan_date_expander_{deleted_plan_id}_"
-        ) or state_key == get_date_select_key(deleted_plan_id):
+        ) or state_key in {
+            get_date_select_key(deleted_plan_id),
+            f"saved_plan_objective_connections_{deleted_plan_id}",
+        }:
             st.session_state.pop(state_key, None)
 
 
@@ -486,6 +492,13 @@ def render_saved_plans(supabase, user):
             icon=":material/event_busy:",
         )
         return
+
+    render_learning_objective_connections(
+        supabase=supabase,
+        user_id=str(user.id),
+        plan_id=selected_plan_id,
+        tasks=saved_tasks,
+    )
 
     tasks_by_date = {}
 

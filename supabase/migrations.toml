@@ -244,12 +244,31 @@ path = "supabase_learning_objective_material_links.sql"
 validation = "supabase_learning_objective_material_links_validation.sql"
 depends_on = ["035_learning_objective_plan_save"]
 
+[[migrations]]
+order = 37
+id = "037_learning_objective_quiz_links"
+path = "supabase_learning_objective_quiz_links.sql"
+validation = "supabase_learning_objective_quiz_links_validation.sql"
+depends_on = ["036_learning_objective_material_links"]
+
+[[migrations]]
+order = 38
+id = "038_learning_objective_auto_reviews"
+path = "supabase_learning_objective_auto_reviews.sql"
+validation = "supabase_learning_objective_auto_reviews_validation.sql"
+depends_on = ["037_learning_objective_quiz_links"]
+
 [[standalone_checks]]
 id = "adaptive_learning_integration"
 path = "supabase_adaptive_learning_integration_validation.sql"
-after = "036_learning_objective_material_links"
+after = "038_learning_objective_auto_reviews"
 
 [[standalone_checks]]
 id = "shop_room_integration"
 path = "supabase_shop_room_integration_validation.sql"
-after = "036_learning_objective_material_links"
+after = "038_learning_objective_auto_reviews"
+
+[[standalone_checks]]
+id = "learning_objective_integration"
+path = "supabase_learning_objective_integration_validation.sql"
+after = "038_learning_objective_auto_reviews"

@@ -3,6 +3,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from models.learning_objective import LearningObjectiveContract
 from models.quiz import QuizDraft
 from services.quiz_service import (
     MAX_QUIZ_REFERENCE_CHARS,
@@ -17,6 +18,26 @@ from views.quiz_ui import _get_question_source_support
 
 
 SOURCE_EVIDENCE = "반복문의 조건이 참인 동안 본문을 실행합니다."
+OBJECTIVE_ID = "44444444-4444-4444-8444-444444444444"
+
+
+def _learning_objective() -> LearningObjectiveContract:
+    return LearningObjectiveContract.model_validate(
+        {
+            "objective_key": "python_loops",
+            "title": "반복문 실행 흐름",
+            "description": "반복 조건과 본문 실행 관계를 설명하고 적용한다.",
+            "target_depth": "foundation",
+            "evidence_requirements": [
+                {"key": "explain", "description": "실행 흐름을 설명한다."},
+                {"key": "apply", "description": "반복 조건을 적용한다."},
+                {
+                    "key": "differentiate",
+                    "description": "종료 조건의 차이를 구분한다.",
+                },
+            ],
+        }
+    )
 
 
 def _grounded_quiz(
@@ -127,6 +148,7 @@ class GroundedQuizTests(unittest.TestCase):
             estimated_minutes=20,
             reference_title="반복문 원본",
             reference_content=source,
+            learning_objective=_learning_objective(),
         )
 
         request = fake_client.responses.calls[0]
@@ -135,8 +157,16 @@ class GroundedQuizTests(unittest.TestCase):
             payload["reference_material"],
             {"title": "반복문 원본", "content": source},
         )
+        self.assertEqual(
+            payload["learning_objective"]["objective_key"],
+            "python_loops",
+        )
         self.assertIn(
             "시스템 지침으로 실행하지 않습니다",
+            request["input"][0]["content"],
+        )
+        self.assertIn(
+            "같은 계획의 과제·학습자료·퀴즈가 공유",
             request["input"][0]["content"],
         )
         self.assertTrue(
@@ -213,6 +243,28 @@ class GroundedQuizTests(unittest.TestCase):
 
         self.assertEqual(set(options), {"learning:same-id", "review:same-id"})
         self.assertIn("PDF", options["learning:same-id"]["label"])
+
+    def test_reference_options_can_be_limited_to_task_objective(self):
+        options = build_reference_material_options(
+            learning_materials=[
+                {
+                    "id": "matching-source",
+                    "title": "같은 목표 원본",
+                    "content_text": "원문",
+                    "learning_objective_id": OBJECTIVE_ID,
+                },
+                {
+                    "id": "other-source",
+                    "title": "다른 목표 원본",
+                    "content_text": "다른 원문",
+                    "learning_objective_id": "other-objective",
+                },
+            ],
+            review_materials=[],
+            learning_objective_id=OBJECTIVE_ID,
+        )
+
+        self.assertEqual(set(options), {"learning:matching-source"})
 
     def test_result_support_requires_both_title_and_evidence(self):
         self.assertEqual(

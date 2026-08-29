@@ -199,6 +199,13 @@ class CoreWriteBoundaryMigrationTests(unittest.TestCase):
         self.validation = (
             PROJECT_ROOT / "supabase_core_write_boundary_validation.sql"
         ).read_text(encoding="utf-8").casefold()
+        self.adaptive_validation = (
+            PROJECT_ROOT
+            / "supabase_adaptive_learning_integration_validation.sql"
+        ).read_text(encoding="utf-8").casefold()
+        self.adaptive_reset_validation = (
+            PROJECT_ROOT / "supabase_adaptive_test_reset_validation.sql"
+        ).read_text(encoding="utf-8").casefold()
 
     def test_plan_rpc_owns_identity_status_and_dates(self):
         self.assertIn("security definer", self.migration)
@@ -228,6 +235,60 @@ class CoreWriteBoundaryMigrationTests(unittest.TestCase):
         self.assertIn("save_quiz_with_concepts", self.validation)
         self.assertIn("core write boundary validation: success", self.validation)
         self.assertTrue(self.validation.rstrip().endswith("rollback;"))
+
+    def test_adaptive_validation_uses_public_gamification_wrappers(self):
+        self.assertIn(
+            "submit_quiz_attempt_with_gamification",
+            self.adaptive_validation,
+        )
+        self.assertIn(
+            "complete_study_task_with_gamification",
+            self.adaptive_validation,
+        )
+        self.assertIn(
+            "'public.submit_quiz_attempt(uuid,timestamptz,jsonb,uuid)'",
+            self.adaptive_validation,
+        )
+        self.assertIn(
+            "'public.complete_study_task(uuid)'",
+            self.adaptive_validation,
+        )
+
+    def test_adaptive_validations_allow_compacted_event_history(self):
+        for validation in (
+            self.adaptive_validation,
+            self.adaptive_reset_validation,
+        ):
+            self.assertIn(
+                "mastery.correct_count < totals.correct_count",
+                validation,
+            )
+            self.assertIn(
+                "mastery.incorrect_count < totals.incorrect_count",
+                validation,
+            )
+            self.assertIn(
+                "mastery.last_attempt_id is not null",
+                validation,
+            )
+            self.assertNotIn(
+                "or totals.user_id is null",
+                validation,
+            )
+
+    def test_adaptive_validations_inspect_private_reset_implementation(self):
+        for validation in (
+            self.adaptive_validation,
+            self.adaptive_reset_validation,
+        ):
+            self.assertIn(
+                "reset_today_test_progress_unchecked()",
+                validation,
+            )
+            self.assertIn(
+                "pg_catalog.pg_get_functiondef(reset_implementation)",
+                validation,
+            )
 
 
 if __name__ == "__main__":

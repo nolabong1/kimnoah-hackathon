@@ -8,19 +8,23 @@ set transaction read only;
 do $$
 declare
   submit_function regprocedure := pg_catalog.to_regprocedure(
-    'public.submit_quiz_attempt(uuid,timestamptz,jsonb,uuid)'
+    'public.submit_quiz_attempt_with_gamification(uuid,timestamptz,jsonb,uuid)'
   );
   complete_function regprocedure := pg_catalog.to_regprocedure(
-    'public.complete_study_task(uuid)'
+    'public.complete_study_task_with_gamification(uuid)'
   );
   reset_function regprocedure := pg_catalog.to_regprocedure(
     'public.reset_today_test_progress()'
+  );
+  reset_implementation regprocedure := pg_catalog.to_regprocedure(
+    'public.reset_today_test_progress_unchecked()'
   );
   internal_function regprocedure;
 begin
   if submit_function is null
      or complete_function is null
      or reset_function is null
+     or reset_implementation is null
   then
     raise exception '필수 공개 RPC가 없습니다.';
   end if;
@@ -61,6 +65,13 @@ begin
   end if;
 
   foreach internal_function in array array[
+    reset_implementation,
+    pg_catalog.to_regprocedure(
+      'public.submit_quiz_attempt(uuid,timestamptz,jsonb,uuid)'
+    ),
+    pg_catalog.to_regprocedure(
+      'public.complete_study_task(uuid)'
+    ),
     pg_catalog.to_regprocedure(
       'public.process_quiz_attempt_mastery(uuid,timestamptz,jsonb,uuid)'
     ),
@@ -167,6 +178,9 @@ $$;
 
 
 -- 3. 숙련도 계산식과 문항별 변경 원장의 일관성을 확인합니다.
+-- 계획 삭제 시 연결된 응시와 이벤트는 삭제되지만 사용자 누적 숙련도는
+-- 보존됩니다. 따라서 남아 있는 이벤트가 현재값에 포함되는지와 유효한
+-- 마지막 응시 연결만 검사하며, 전체 누적값과 이벤트 수가 같다고 가정하지 않습니다.
 do $$
 begin
   if exists (
@@ -204,6 +218,17 @@ begin
   end if;
 
   if exists (
+    select 1
+    from public.concept_mastery_events as event
+    left join public.concept_mastery as mastery
+      on mastery.user_id = event.user_id
+     and mastery.concept_id = event.concept_id
+    where mastery.user_id is null
+  ) then
+    raise exception '현재값이 없는 숙련도 이벤트가 있습니다.';
+  end if;
+
+  if exists (
     with event_totals as (
       select
         event.user_id,
@@ -214,51 +239,46 @@ begin
           as incorrect_count
       from public.concept_mastery_events as event
       group by event.user_id, event.concept_id
-    ),
-    latest_event as (
-      select distinct on (event.user_id, event.concept_id)
-        event.user_id,
-        event.concept_id,
-        event.score_after,
-        event.is_correct,
-        event.quiz_attempt_id,
-        attempt.submitted_at
-      from public.concept_mastery_events as event
-      join public.quiz_attempts as attempt
-        on attempt.id = event.quiz_attempt_id
-       and attempt.quiz_id = event.quiz_id
-       and attempt.user_id = event.user_id
-      order by
-        event.user_id,
-        event.concept_id,
-        attempt.submitted_at desc,
-        event.question_index desc,
-        event.created_at desc
     )
     select 1
     from public.concept_mastery as mastery
-    full join event_totals as totals
+    join event_totals as totals
       on totals.user_id = mastery.user_id
      and totals.concept_id = mastery.concept_id
-    left join latest_event as latest
-      on latest.user_id = mastery.user_id
-     and latest.concept_id = mastery.concept_id
-    where mastery.user_id is null
-       or totals.user_id is null
-       or mastery.correct_count
-         is distinct from totals.correct_count
-       or mastery.incorrect_count
-         is distinct from totals.incorrect_count
-       or mastery.mastery_score
-         is distinct from latest.score_after
-       or mastery.last_answer_correct
-         is distinct from latest.is_correct
-       or mastery.last_attempt_id
-         is distinct from latest.quiz_attempt_id
-       or mastery.last_assessed_at
-         is distinct from latest.submitted_at
+    where mastery.correct_count < totals.correct_count
+       or mastery.incorrect_count < totals.incorrect_count
   ) then
-    raise exception '현재 숙련도와 숙련도 이벤트 원장이 일치하지 않습니다.';
+    raise exception '현재 숙련도 누적 횟수보다 남아 있는 이벤트 수가 많습니다.';
+  end if;
+
+  if exists (
+    select 1
+    from public.concept_mastery as mastery
+    where mastery.last_attempt_id is not null
+      and not exists (
+        select 1
+        from public.concept_mastery_events as event
+        join public.quiz_attempts as attempt
+          on attempt.id = event.quiz_attempt_id
+         and attempt.quiz_id = event.quiz_id
+         and attempt.user_id = event.user_id
+        where event.user_id = mastery.user_id
+          and event.concept_id = mastery.concept_id
+          and event.quiz_attempt_id = mastery.last_attempt_id
+          and not exists (
+            select 1
+            from public.concept_mastery_events as later_event
+            where later_event.user_id = event.user_id
+              and later_event.concept_id = event.concept_id
+              and later_event.quiz_attempt_id = event.quiz_attempt_id
+              and later_event.question_index > event.question_index
+          )
+          and event.score_after = mastery.mastery_score
+          and event.is_correct = mastery.last_answer_correct
+          and attempt.submitted_at = mastery.last_assessed_at
+      )
+  ) then
+    raise exception '현재 숙련도의 마지막 응시 연결이 이벤트와 일치하지 않습니다.';
   end if;
 end;
 $$;
@@ -324,6 +344,7 @@ begin
       and (
         task.task_type <> 'review'
         or task.estimated_minutes <> 20
+        or task.learning_objective_id is null
         or task.concept_id is null
         or task.source_quiz_id is null
         or task.source_quiz_attempt_id is null
@@ -565,7 +586,13 @@ $$;
 
 
 -- 8. 테스트 초기화 이후 남은 데이터의 참조 무결성을 확인합니다.
+-- 공개 함수는 접근 허용 목록을 검사하는 래퍼이며 실제 초기화 구현은
+-- authenticated가 직접 실행할 수 없는 unchecked 함수에 보존됩니다.
 do $$
+declare
+  reset_implementation regprocedure := pg_catalog.to_regprocedure(
+    'public.reset_today_test_progress_unchecked()'
+  );
 begin
   if exists (
     select 1
@@ -592,11 +619,9 @@ begin
     raise exception '원본 응시가 없는 숙련도 이벤트가 남아 있습니다.';
   end if;
 
-  if pg_catalog.pg_get_functiondef(
-    pg_catalog.to_regprocedure(
-      'public.reset_today_test_progress()'
-    )
-  ) not like '%removed_mastery_event_count%'
+  if reset_implementation is null
+     or pg_catalog.pg_get_functiondef(reset_implementation)
+       not like '%removed_mastery_event_count%'
   then
     raise exception '적응형 학습 데이터를 되돌리는 초기화 RPC 버전이 아닙니다.';
   end if;

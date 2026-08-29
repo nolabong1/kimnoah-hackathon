@@ -152,3 +152,25 @@ class StoredLearningObjective(LearningObjectiveContract):
         if self.origin == "legacy_backfill" and self.contract_hash is not None:
             raise ValueError("기존 계획 호환 목표에는 계약 해시를 만들지 않습니다.")
         return self
+
+
+class LearningObjectiveConnectionSummary(BaseModel):
+    """학습목표 하나에 실제로 연결된 학습 활동의 읽기 전용 요약입니다."""
+
+    objective: StoredLearningObjective
+    task_titles: list[str] = Field(default_factory=list)
+    source_material_titles: list[str] = Field(default_factory=list)
+    review_material_titles: list[str] = Field(default_factory=list)
+    quiz_titles: list[str] = Field(default_factory=list)
+
+
+class LearningObjectiveConnectionReport(BaseModel):
+    """계획의 목표별 연결과 이전 버전 미연결 행 개수를 함께 보존합니다."""
+
+    summaries: list[LearningObjectiveConnectionSummary] = Field(
+        default_factory=list
+    )
+    unlinked_task_count: int = Field(default=0, ge=0)
+    unlinked_source_material_count: int = Field(default=0, ge=0)
+    unlinked_review_material_count: int = Field(default=0, ge=0)
+    unlinked_quiz_count: int = Field(default=0, ge=0)

@@ -6,6 +6,9 @@ from services.concept_mastery_repository import (
     get_quiz_attempt_analysis,
 )
 from services.learner_context_service import load_learner_context
+from services.learning_objective_repository import (
+    get_learning_objective_for_task,
+)
 from services.concept_service import (
     canonicalize_quiz_concepts,
     normalize_course_key,
@@ -690,8 +693,8 @@ def _generate_quiz_for_task(
     goal,
     current_level,
     task: dict,
-    reference_title: str | None = None,
-    reference_content: str | None = None,
+    learning_objective,
+    reference_material: dict | None = None,
 ) -> dict:
     """학습자 문맥을 반영한 퀴즈를 생성하고 현재 과제에 저장합니다."""
 
@@ -719,6 +722,16 @@ def _generate_quiz_for_task(
             ),
         )
 
+    reference_title = (
+        reference_material.get("title")
+        if reference_material is not None
+        else None
+    )
+    reference_content = (
+        reference_material.get("content")
+        if reference_material is not None
+        else None
+    )
     quiz_draft = generate_quiz(
         course_name=course_name,
         goal=goal,
@@ -731,6 +744,7 @@ def _generate_quiz_for_task(
         learner_context=learner_context,
         reference_title=reference_title,
         reference_content=reference_content,
+        learning_objective=learning_objective,
     )
     quiz_draft = canonicalize_quiz_concepts(
         quiz=quiz_draft,
@@ -744,6 +758,18 @@ def _generate_quiz_for_task(
         course_key=course_key,
         course_name=course_name,
         quiz=quiz_draft,
+        reference_learning_material_id=(
+            reference_material["id"]
+            if reference_material is not None
+            and reference_material["kind"] == "learning"
+            else None
+        ),
+        reference_review_material_id=(
+            reference_material["id"]
+            if reference_material is not None
+            and reference_material["kind"] == "review"
+            else None
+        ),
     )
 
 
@@ -753,7 +779,8 @@ def _render_quiz_reference_selector(
     plan_id: str,
     task_id: str,
     widget_scope: str,
-) -> tuple[str | None, str | None, bool]:
+    learning_objective_id: str,
+) -> tuple[dict | None, bool]:
     """현재 계획의 저장 자료를 퀴즈 근거로 선택하고 검증합니다."""
 
     try:
@@ -776,18 +803,19 @@ def _render_quiz_reference_selector(
                 "없습니다. 잠시 후 다시 시도해주세요."
             ),
         )
-        return None, None, False
+        return None, False
 
     material_by_key = build_reference_material_options(
         learning_materials=learning_materials,
         review_materials=review_materials,
+        learning_objective_id=learning_objective_id,
     )
     if not material_by_key:
         st.caption(
-            "저장된 원본 또는 AI 학습자료가 있으면 근거 기반 퀴즈를 "
-            "만들 수 있습니다."
+            "이 학습목표에 연결된 원본 또는 AI 학습자료가 있으면 근거 기반 "
+            "퀴즈를 만들 수 있습니다."
         )
-        return None, None, True
+        return None, True
 
     selection_key = (
         f"{widget_scope}_quiz_reference_{task_id}"
@@ -811,7 +839,7 @@ def _render_quiz_reference_selector(
         ),
     )
     if selected_material_key is None:
-        return None, None, True
+        return None, True
 
     selected_material = material_by_key[selected_material_key]
     try:
@@ -825,7 +853,7 @@ def _render_quiz_reference_selector(
         )
     except ValueError as error:
         st.warning(str(error))
-        return None, None, False
+        return None, False
 
     if reference_was_limited:
         st.info(
@@ -839,7 +867,11 @@ def _render_quiz_reference_selector(
             "근거 문장을 함께 표시합니다."
         )
 
-    return reference_title, reference_content, True
+    return {
+        **selected_material,
+        "title": reference_title,
+        "content": reference_content,
+    }, True
 
 
 def _render_quiz_generation_control(
@@ -863,17 +895,58 @@ def _render_quiz_generation_control(
             "아직 저장된 AI 퀴즈가 없습니다. "
             "과제 정보를 바탕으로 5문항 퀴즈를 생성할 수 있습니다."
         )
+    else:
+        objective_snapshot = quiz.get("objective_snapshot")
+        if isinstance(objective_snapshot, dict):
+            st.caption(
+                "현재 퀴즈 목표 · "
+                f"{objective_snapshot.get('title', '제목 없음')}"
+            )
+        elif quiz.get("learning_objective_id") is None:
+            st.caption(
+                "현재 저장된 퀴즈는 학습목표 연결 기능 도입 전 버전입니다."
+            )
 
-    (
-        reference_title,
-        reference_content,
-        reference_is_valid,
-    ) = _render_quiz_reference_selector(
+    try:
+        learning_objective = get_learning_objective_for_task(
+            supabase=supabase,
+            user_id=user_id,
+            plan_id=plan_id,
+            task_id=str(task["id"]),
+            learning_objective_id=(
+                str(task["learning_objective_id"])
+                if task.get("learning_objective_id")
+                else None
+            ),
+        )
+    except Exception as error:
+        render_unexpected_error(
+            error,
+            operation="quiz.load_learning_objective",
+            user_message=(
+                "퀴즈 과제의 학습목표를 불러오지 못했습니다. 잠시 후 다시 "
+                "시도해주세요."
+            ),
+        )
+        return quiz, completion_unlocked
+    if learning_objective is None:
+        st.warning(
+            "이 퀴즈 과제에 연결된 학습목표가 없습니다. 학습목표 migration "
+            "적용 상태를 확인해주세요."
+        )
+        return quiz, completion_unlocked
+
+    st.caption(
+        f"{'다시 생성할 목표' if is_regeneration else '출제 목표'} · "
+        f"{learning_objective.title}"
+    )
+    reference_material, reference_is_valid = _render_quiz_reference_selector(
         supabase=supabase,
         user_id=user_id,
         plan_id=plan_id,
         task_id=str(task["id"]),
         widget_scope=widget_scope,
+        learning_objective_id=str(learning_objective.id),
     )
 
     button_label = (
@@ -901,8 +974,8 @@ def _render_quiz_generation_control(
                 goal=goal,
                 current_level=current_level,
                 task=task,
-                reference_title=reference_title,
-                reference_content=reference_content,
+                learning_objective=learning_objective,
+                reference_material=reference_material,
             )
 
         completion_unlocked = False

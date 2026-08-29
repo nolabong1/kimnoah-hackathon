@@ -88,7 +88,10 @@ def get_quiz_by_task(
         supabase.table("quizzes")
         .select(
             "id, user_id, plan_id, task_id, title, "
-            "questions, question_count, created_at, updated_at"
+            "questions, question_count, learning_objective_id, "
+            "objective_snapshot, objective_contract_hash, "
+            "reference_learning_material_id, "
+            "reference_review_material_id, created_at, updated_at"
         )
         .eq("user_id", user_id)
         .eq("task_id", task_id)
@@ -110,8 +113,16 @@ def save_quiz(
     course_key: str,
     course_name: str,
     quiz: QuizDraft,
+    reference_learning_material_id: str | None = None,
+    reference_review_material_id: str | None = None,
 ) -> dict:
     """개념 사전과 객관식 퀴즈를 서버에서 원자적으로 저장합니다."""
+
+    if (
+        reference_learning_material_id is not None
+        and reference_review_material_id is not None
+    ):
+        raise ValueError("퀴즈 참고자료는 하나만 선택할 수 있습니다.")
 
     questions = [
         question.model_dump()
@@ -130,6 +141,12 @@ def save_quiz(
                 "p_title": quiz.title,
                 "p_questions": questions,
                 "p_concepts": concepts,
+                "p_reference_learning_material_id": (
+                    reference_learning_material_id
+                ),
+                "p_reference_review_material_id": (
+                    reference_review_material_id
+                ),
             },
         )
         .execute()
@@ -143,6 +160,19 @@ def save_quiz(
     if response.data.get("user_id") != user_id:
         raise RuntimeError(
             "저장된 퀴즈의 사용자 정보가 올바르지 않습니다."
+        )
+    if not response.data.get("learning_objective_id"):
+        raise RuntimeError(
+            "저장된 퀴즈에 학습목표가 연결되지 않았습니다."
+        )
+    if (
+        response.data.get("reference_learning_material_id")
+        != reference_learning_material_id
+        or response.data.get("reference_review_material_id")
+        != reference_review_material_id
+    ):
+        raise RuntimeError(
+            "저장된 퀴즈의 참고자료 연결이 요청과 일치하지 않습니다."
         )
 
     return response.data
