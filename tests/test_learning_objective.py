@@ -1,4 +1,5 @@
 import unittest
+from uuid import UUID
 
 from pydantic import ValidationError
 
@@ -7,11 +8,13 @@ from models.learning_objective import (
     LearningActivityContext,
     LearningObjectiveContract,
     LinkedLearningBlueprint,
+    StoredLearningObjective,
 )
 from services.learning_objective_service import (
     calculate_learning_objective_hash,
     learning_objective_to_canonical_payload,
     validate_new_plan_objective_links,
+    validate_stored_learning_objective,
 )
 
 
@@ -127,11 +130,39 @@ class LearningObjectiveServiceTests(unittest.TestCase):
         self.assertEqual(len(calculate_learning_objective_hash(first)), 64)
 
     def test_canonical_payload_contains_no_runtime_identifiers(self):
-        payload = learning_objective_to_canonical_payload(_objective())
+        objective = _objective()
+        stored_objective = StoredLearningObjective(
+            **objective.model_dump(),
+            id=UUID("11111111-1111-4111-8111-111111111111"),
+            user_id=UUID("22222222-2222-4222-8222-222222222222"),
+            plan_id=UUID("33333333-3333-4333-8333-333333333333"),
+            contract_hash=calculate_learning_objective_hash(objective),
+            sort_order=1,
+            origin="generated",
+        )
 
+        payload = learning_objective_to_canonical_payload(stored_objective)
+
+        self.assertNotIn("id", payload)
         self.assertNotIn("user_id", payload)
         self.assertNotIn("plan_id", payload)
-        self.assertNotIn("task_id", payload)
+        self.assertNotIn("contract_hash", payload)
+
+    def test_stored_generated_objective_rejects_changed_contract(self):
+        objective = _objective()
+        stored_data = {
+            **objective.model_dump(mode="json"),
+            "id": "11111111-1111-4111-8111-111111111111",
+            "user_id": "22222222-2222-4222-8222-222222222222",
+            "plan_id": "33333333-3333-4333-8333-333333333333",
+            "contract_hash": calculate_learning_objective_hash(objective),
+            "sort_order": 1,
+            "origin": "generated",
+        }
+        stored_data["title"] = "변조된 목표 제목"
+
+        with self.assertRaisesRegex(ValueError, "해시가 내용과 일치하지"):
+            validate_stored_learning_objective(stored_data)
 
     def test_new_plan_links_accept_two_used_objectives(self):
         objectives = [

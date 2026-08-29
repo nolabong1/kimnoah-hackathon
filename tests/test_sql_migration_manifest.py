@@ -46,6 +46,21 @@ class SqlMigrationManifestTests(unittest.TestCase):
             "supabase_source_review_material_delete_validation.sql",
             plan,
         )
+        self.assertIn(
+            "033  supabase_learning_objectives_schema.sql  ->  "
+            "supabase_learning_objectives_schema_validation.sql",
+            plan,
+        )
+        self.assertIn(
+            "034  supabase_learning_objectives_security.sql  ->  "
+            "supabase_learning_objectives_security_validation.sql",
+            plan,
+        )
+        self.assertIn(
+            "035  supabase_learning_objective_plan_save.sql  ->  "
+            "supabase_learning_objective_plan_save_validation.sql",
+            plan,
+        )
         self.assertTrue(plan[-1].startswith("CHECK after "))
 
     def test_reordered_dependency_is_rejected(self):

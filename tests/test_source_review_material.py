@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from pypdf import PdfWriter
 
+from models.learning_objective import LearningObjectiveContract
 from models.review_material import (
     ReviewMaterialDraft,
     SourceGroundedPoint,
@@ -407,6 +408,22 @@ class SourceReviewMaterialTests(unittest.TestCase):
                 ],
                 "stable_concepts": [],
             },
+            learning_objective=LearningObjectiveContract.model_validate(
+                {
+                    "objective_key": "database_normalization",
+                    "title": "정규화 원리 적용",
+                    "description": "정규화 목적과 적용 조건을 설명한다.",
+                    "target_depth": "foundation",
+                    "evidence_requirements": [
+                        {"key": "explain", "description": "목적을 설명한다."},
+                        {"key": "apply", "description": "규칙을 적용한다."},
+                        {
+                            "key": "differentiate",
+                            "description": "종속성 차이를 구분한다.",
+                        },
+                    ],
+                }
+            ),
         )
 
         self.assertEqual(len(fake_client.responses.calls), 2)
@@ -414,6 +431,10 @@ class SourceReviewMaterialTests(unittest.TestCase):
             fake_client.responses.calls[0]["input"][1]["content"]
         )
         self.assertIn("learner_context", request_payload)
+        self.assertEqual(
+            request_payload["learning_objective"]["objective_key"],
+            "database_normalization",
+        )
         self.assertIn("## 능동 회상 문제", result.content_markdown)
 
     @patch("services.review_material_service.get_openai_model")
@@ -515,6 +536,9 @@ class SourceReviewMaterialTests(unittest.TestCase):
             material_type="pdf",
             source_text="PDF\x00 원본 내용",
             material=material,
+            learning_objective_id=(
+                "44444444-4444-4444-8444-444444444444"
+            ),
         )
 
         self.assertNotIn(
@@ -532,6 +556,10 @@ class SourceReviewMaterialTests(unittest.TestCase):
         self.assertNotIn(
             "\x00",
             saved_bundle["review_material"]["content_markdown"],
+        )
+        self.assertEqual(
+            saved_bundle["source_material"]["learning_objective_id"],
+            "44444444-4444-4444-8444-444444444444",
         )
 
     def test_archive_bundles_only_owned_source_linked_reviews(self):

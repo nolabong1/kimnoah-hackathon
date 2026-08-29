@@ -8,6 +8,8 @@ from models.study_plan import (
     StudyTaskDraft,
     WeeklyStudyPlan,
 )
+from models.learning_blueprint import LearningEvidenceRequirement
+from models.learning_objective import LearningObjectiveContract
 from models.weekly_review import WeeklyReviewAnalysis
 from services.study_plan_service import generate_weekly_study_plan
 from services.study_plan_repository import (
@@ -86,18 +88,66 @@ def build_analysis() -> WeeklyReviewAnalysis:
 
 
 def build_weekly_plan() -> WeeklyStudyPlan:
+    objectives = [
+        LearningObjectiveContract(
+            objective_key="loop_fundamentals",
+            title="반복문 기본 원리",
+            description="반복문의 실행 순서와 종료 조건을 설명합니다.",
+            target_depth="foundation",
+            evidence_requirements=[
+                LearningEvidenceRequirement(
+                    key="explain",
+                    description="반복 실행 순서를 설명할 수 있습니다.",
+                ),
+                LearningEvidenceRequirement(
+                    key="apply",
+                    description="반복문 예제를 작성할 수 있습니다.",
+                ),
+                LearningEvidenceRequirement(
+                    key="differentiate",
+                    description="반복 조건의 차이를 구분할 수 있습니다.",
+                ),
+            ],
+        ),
+        LearningObjectiveContract(
+            objective_key="loop_problem_solving",
+            title="반복문 문제 해결",
+            description="문제 조건을 반복 구조로 변환해 해결합니다.",
+            target_depth="foundation",
+            evidence_requirements=[
+                LearningEvidenceRequirement(
+                    key="explain",
+                    description="반복 구조 선택 이유를 설명할 수 있습니다.",
+                ),
+                LearningEvidenceRequirement(
+                    key="apply",
+                    description="문제를 반복 코드로 해결할 수 있습니다.",
+                ),
+                LearningEvidenceRequirement(
+                    key="differentiate",
+                    description="잘못된 종료 조건을 구분할 수 있습니다.",
+                ),
+            ],
+        ),
+    ]
     return WeeklyStudyPlan(
         title="다음 파이썬 계획",
         course_name="Python",
         level_assessment="기초 개념을 활용하는 단계입니다.",
         weekly_goal="반복문 문제를 해결합니다.",
         strategy="매일 짧게 연습합니다.",
+        learning_objectives=objectives,
         days=[
             DailyStudyPlan(
                 day_offset=day_offset,
                 daily_focus=f"{day_offset + 1}일차 목표",
                 tasks=[
                     StudyTaskDraft(
+                        objective_key=(
+                            "loop_fundamentals"
+                            if day_offset < 4
+                            else "loop_problem_solving"
+                        ),
                         title="반복문 연습",
                         description="예제 한 개를 작성합니다.",
                         task_type="learn",
@@ -406,6 +456,28 @@ class WeeklyReviewServiceTests(unittest.TestCase):
             review_context,
         )
         self.assertEqual(request_body["recent_assessment_score"], 75)
+
+    @patch("services.study_plan_service.get_openai_model", return_value="test")
+    @patch("services.study_plan_service.get_openai_client")
+    def test_plan_generation_rejects_depth_that_conflicts_with_level(
+        self,
+        mock_client,
+        _mock_model,
+    ):
+        invalid_plan = build_weekly_plan()
+        invalid_plan.learning_objectives[0].target_depth = "developing"
+        fake_client = FakeOpenAIClient(invalid_plan)
+        mock_client.return_value = fake_client
+
+        with self.assertRaisesRegex(RuntimeError, "계획을 생성하지 못했습니다"):
+            generate_weekly_study_plan(
+                course_name="Python",
+                goal="반복문 익히기",
+                current_level=3,
+                available_schedule={f"{day}일차": 60 for day in range(7)},
+            )
+
+        self.assertEqual(len(fake_client.responses.calls), 2)
 
 
 class WeeklyReviewPersistenceTests(unittest.TestCase):

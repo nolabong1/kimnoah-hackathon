@@ -7,6 +7,8 @@ from models.study_plan import (
     StudyTaskDraft,
     WeeklyStudyPlan,
 )
+from models.learning_blueprint import LearningEvidenceRequirement
+from models.learning_objective import LearningObjectiveContract
 from services.study_plan_repository import save_weekly_study_plan
 
 
@@ -39,18 +41,66 @@ class FakeSupabase:
 
 
 def build_plan() -> WeeklyStudyPlan:
+    objectives = [
+        LearningObjectiveContract(
+            objective_key="python_conditionals",
+            title="조건문의 실행 흐름",
+            description="조건식에 따라 실행 경로가 달라지는 원리를 적용합니다.",
+            target_depth="foundation",
+            evidence_requirements=[
+                LearningEvidenceRequirement(
+                    key="explain",
+                    description="조건문의 실행 흐름을 설명할 수 있습니다.",
+                ),
+                LearningEvidenceRequirement(
+                    key="apply",
+                    description="조건에 맞는 분기 코드를 작성할 수 있습니다.",
+                ),
+                LearningEvidenceRequirement(
+                    key="differentiate",
+                    description="if와 elif의 역할을 구분할 수 있습니다.",
+                ),
+            ],
+        ),
+        LearningObjectiveContract(
+            objective_key="python_loops",
+            title="반복문의 실행과 적용",
+            description="반복 조건과 실행 횟수를 설명하고 코드에 적용합니다.",
+            target_depth="foundation",
+            evidence_requirements=[
+                LearningEvidenceRequirement(
+                    key="explain",
+                    description="반복문의 실행 순서를 설명할 수 있습니다.",
+                ),
+                LearningEvidenceRequirement(
+                    key="apply",
+                    description="반복 코드를 작성할 수 있습니다.",
+                ),
+                LearningEvidenceRequirement(
+                    key="differentiate",
+                    description="반복 조건의 차이를 구분할 수 있습니다.",
+                ),
+            ],
+        ),
+    ]
     return WeeklyStudyPlan(
         title="파이썬 7일 계획",
         course_name="파이썬",
         level_assessment="기초 문법을 적용할 수 있습니다.",
         weekly_goal="조건문과 반복문으로 작은 프로그램 완성",
         strategy="개념 학습 후 매일 짧은 실습을 진행합니다.",
+        learning_objectives=objectives,
         days=[
             DailyStudyPlan(
                 day_offset=day_offset,
                 daily_focus=f"{day_offset + 1}일차 핵심 학습",
                 tasks=[
                     StudyTaskDraft(
+                        objective_key=(
+                            "python_conditionals"
+                            if day_offset < 3
+                            else "python_loops"
+                        ),
                         title=f"{day_offset + 1}일차 실습",
                         description="예제를 실행하고 결과를 설명합니다.",
                         task_type=("quiz" if day_offset == 6 else "learn"),
@@ -71,6 +121,7 @@ class StudyPlanWriteBoundaryRepositoryTests(unittest.TestCase):
                 "id": PLAN_ID,
                 "user_id": USER_ID,
                 "title": "파이썬 7일 계획",
+                "learning_objective_count": 2,
             }
         )
         schedule = {f"{offset}일차": 60 for offset in range(7)}
@@ -92,6 +143,7 @@ class StudyPlanWriteBoundaryRepositoryTests(unittest.TestCase):
         self.assertEqual(function_name, "save_weekly_study_plan_with_tasks")
         self.assertEqual(payload["p_available_schedule"], schedule)
         self.assertEqual(len(payload["p_weekly_overview"]), 7)
+        self.assertEqual(len(payload["p_learning_objectives"]), 2)
         self.assertEqual(len(payload["p_tasks"]), 7)
         self.assertEqual(
             {task["day_offset"] for task in payload["p_tasks"]},
@@ -104,6 +156,16 @@ class StudyPlanWriteBoundaryRepositoryTests(unittest.TestCase):
                 and "status" not in task
                 for task in payload["p_tasks"]
             )
+        )
+        self.assertTrue(
+            all(
+                len(objective["contract_hash"]) == 64
+                for objective in payload["p_learning_objectives"]
+            )
+        )
+        self.assertEqual(
+            {task["objective_key"] for task in payload["p_tasks"]},
+            {"python_conditionals", "python_loops"},
         )
 
     def test_plan_save_rejects_wrong_owner_response(self):

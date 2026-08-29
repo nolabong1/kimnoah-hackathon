@@ -23,6 +23,7 @@ def build_reference_material_options(
                 f"({'PDF' if material_type == 'pdf' else '텍스트'})"
             ),
             "content": material.get("content_text"),
+            "learning_objective_id": material.get("learning_objective_id"),
         }
 
     for material in review_materials:
@@ -38,6 +39,11 @@ def build_reference_material_options(
             "title": title,
             "label": f"AI 학습·복습 자료 · {title}",
             "content": material.get("content_markdown"),
+            "learning_objective_id": material.get("learning_objective_id"),
+            "objective_snapshot": material.get("objective_snapshot"),
+            "objective_contract_hash": material.get(
+                "objective_contract_hash"
+            ),
         }
 
     return material_options

@@ -216,12 +216,40 @@ path = "supabase_source_review_material_delete.sql"
 validation = "supabase_source_review_material_delete_validation.sql"
 depends_on = ["031_dashboard_snapshot"]
 
+[[migrations]]
+order = 33
+id = "033_learning_objectives_schema"
+path = "supabase_learning_objectives_schema.sql"
+validation = "supabase_learning_objectives_schema_validation.sql"
+depends_on = ["032_source_review_material_delete"]
+
+[[migrations]]
+order = 34
+id = "034_learning_objectives_security"
+path = "supabase_learning_objectives_security.sql"
+validation = "supabase_learning_objectives_security_validation.sql"
+depends_on = ["033_learning_objectives_schema"]
+
+[[migrations]]
+order = 35
+id = "035_learning_objective_plan_save"
+path = "supabase_learning_objective_plan_save.sql"
+validation = "supabase_learning_objective_plan_save_validation.sql"
+depends_on = ["034_learning_objectives_security"]
+
+[[migrations]]
+order = 36
+id = "036_learning_objective_material_links"
+path = "supabase_learning_objective_material_links.sql"
+validation = "supabase_learning_objective_material_links_validation.sql"
+depends_on = ["035_learning_objective_plan_save"]
+
 [[standalone_checks]]
 id = "adaptive_learning_integration"
 path = "supabase_adaptive_learning_integration_validation.sql"
-after = "032_source_review_material_delete"
+after = "036_learning_objective_material_links"
 
 [[standalone_checks]]
 id = "shop_room_integration"
 path = "supabase_shop_room_integration_validation.sql"
-after = "032_source_review_material_delete"
+after = "036_learning_objective_material_links"

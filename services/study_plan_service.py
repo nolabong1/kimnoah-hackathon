@@ -1,6 +1,7 @@
 import json
 
 from models.study_plan import WeeklyStudyPlan
+from services.learning_blueprint_service import get_target_depth
 from services.openai_client import get_openai_client, get_openai_model
 
 
@@ -15,6 +16,13 @@ SYSTEM_PROMPT = """
 - 사용자가 각 요일에 사용할 수 있는 시간을 초과하지 않습니다.
 - 과제는 사용자가 바로 실행할 수 있을 정도로 구체적으로 작성합니다.
 - description에는 학습 방법과 명확한 완료 기준을 포함합니다.
+- 계획 전체에 2~5개의 learning_objectives를 만듭니다.
+- objective_key는 소문자 영문·숫자·밑줄만 사용하고 계획 안에서 중복하지 않습니다.
+- 각 목표의 evidence_requirements는 explain, apply, differentiate 순서로 작성합니다.
+- 모든 목표의 target_depth는 current_level 1~3이면 foundation,
+  4~7이면 developing, 8~10이면 advanced로 설정합니다.
+- 모든 과제에는 실제 learning_objectives 중 하나의 objective_key를 연결합니다.
+- 모든 learning_objective는 최소 한 개 이상의 과제에서 사용합니다.
 - learn, review, quiz 과제를 적절히 배치합니다.
 - 복습과 퀴즈를 뒤쪽 날짜에 다시 배치하여 기억을 강화합니다.
 - 계획이 지나치게 빡빡하지 않도록 현실적인 분량으로 구성합니다.
@@ -24,6 +32,7 @@ def _is_valid_plan(
     plan: WeeklyStudyPlan,
     available_schedule: dict[str, int],
     expected_course_name: str,
+    current_level: int,
 ) -> bool:
     """7일 구성과 일일 시간 제한을 검사합니다."""
 
@@ -55,6 +64,28 @@ def _is_valid_plan(
             for task in day.tasks
         ):
             return False
+
+    try:
+        from services.learning_objective_service import (
+            validate_new_plan_objective_links,
+        )
+
+        validate_new_plan_objective_links(
+            plan.learning_objectives,
+            [
+                task.objective_key
+                for day in plan.days
+                for task in day.tasks
+            ],
+        )
+        expected_depth = get_target_depth(current_level)
+        if any(
+            objective.target_depth != expected_depth
+            for objective in plan.learning_objectives
+        ):
+            return False
+    except ValueError:
+        return False
 
     return True
 
@@ -110,9 +141,11 @@ def generate_weekly_study_plan(
 
         if attempt == 1:
             correction = """
-            이전 결과가 날짜 중복 또는 일일 시간 제한을 위반했습니다.
+            이전 결과가 날짜·시간 또는 학습목표 연결 규칙을 위반했습니다.
             days는 반드시 정확히 7개이며,
             day_offset은 0, 1, 2, 3, 4, 5, 6을 한 번씩만 사용하세요.
+            learning_objectives는 2~5개로 만들고 모든 과제에 존재하는
+            objective_key를 연결하며 사용되지 않는 목표를 만들지 마세요.
             """
 
         response = client.responses.parse(
@@ -154,6 +187,7 @@ def generate_weekly_study_plan(
             plan,
             available_schedule,
             cleaned_course_name,
+            current_level,
         ):
             return plan
 

@@ -1,4 +1,5 @@
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -126,4 +127,28 @@ class LinkedLearningBlueprint(BaseModel):
             raise ValueError(
                 "과제의 학습목표 키가 학습목표 계약과 일치하지 않습니다."
             )
+        return self
+
+
+class StoredLearningObjective(LearningObjectiveContract):
+    """Supabase에 저장된 사용자·계획 소유 학습목표입니다."""
+
+    id: UUID
+    user_id: UUID
+    plan_id: UUID
+    contract_hash: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    sort_order: int = Field(ge=1, le=5)
+    origin: Literal["generated", "legacy_backfill"]
+
+    @model_validator(mode="after")
+    def validate_hash_origin(self) -> "StoredLearningObjective":
+        """생성 목표만 결정론적 계약 해시를 가지게 합니다."""
+
+        if self.origin == "generated" and self.contract_hash is None:
+            raise ValueError("생성 학습목표에는 계약 해시가 필요합니다.")
+        if self.origin == "legacy_backfill" and self.contract_hash is not None:
+            raise ValueError("기존 계획 호환 목표에는 계약 해시를 만들지 않습니다.")
         return self

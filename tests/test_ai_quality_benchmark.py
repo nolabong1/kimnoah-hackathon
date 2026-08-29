@@ -24,6 +24,33 @@ def _case(case_id: str):
     )
 
 
+def _plan_learning_objectives() -> list[dict]:
+    return [
+        {
+            "objective_key": "loop_fundamentals",
+            "title": "반복문 기본 원리",
+            "description": "반복문의 실행 흐름과 종료 조건을 설명합니다.",
+            "target_depth": "foundation",
+            "evidence_requirements": [
+                {"key": "explain", "description": "실행 흐름을 설명합니다."},
+                {"key": "apply", "description": "반복문을 작성합니다."},
+                {"key": "differentiate", "description": "조건 차이를 구분합니다."},
+            ],
+        },
+        {
+            "objective_key": "loop_application",
+            "title": "반복문 문제 적용",
+            "description": "문제 조건을 반복 구조로 변환해 적용합니다.",
+            "target_depth": "foundation",
+            "evidence_requirements": [
+                {"key": "explain", "description": "구조 선택을 설명합니다."},
+                {"key": "apply", "description": "문제를 해결합니다."},
+                {"key": "differentiate", "description": "오류를 구분합니다."},
+            ],
+        },
+    ]
+
+
 def _valid_python_plan() -> WeeklyStudyPlan:
     return WeeklyStudyPlan.model_validate(
         {
@@ -32,6 +59,7 @@ def _valid_python_plan() -> WeeklyStudyPlan:
             "level_assessment": "반복문 기초를 적용하는 단계입니다.",
             "weekly_goal": "반복문의 실행 원리를 설명하고 적용합니다.",
             "strategy": "학습 뒤 복습과 퀴즈로 확인합니다.",
+            "learning_objectives": _plan_learning_objectives(),
             "motivation_message": "매일 한 가지 기준을 확인해보세요.",
             "days": [
                 {
@@ -39,6 +67,11 @@ def _valid_python_plan() -> WeeklyStudyPlan:
                     "daily_focus": "반복문 적용",
                     "tasks": [
                         {
+                            "objective_key": (
+                                "loop_fundamentals"
+                                if day_offset < 4
+                                else "loop_application"
+                            ),
                             "title": "반복문 연습",
                             "description": "반복문의 결과를 예상하고 설명합니다.",
                             "task_type": (

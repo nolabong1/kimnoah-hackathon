@@ -24,7 +24,7 @@ def get_learning_materials_by_plan(
         supabase.table("learning_materials")
         .select(
             "id, user_id, plan_id, title, material_type, "
-            "content_text, created_at"
+            "content_text, learning_objective_id, created_at"
         )
         .eq("user_id", user_id)
         .eq("plan_id", plan_id)
@@ -45,7 +45,9 @@ def get_review_materials_by_plan(
         supabase.table("review_materials")
         .select(
             "id, user_id, plan_id, task_id, source_material_id, "
-            "title, content_markdown, created_at, updated_at"
+            "learning_objective_id, objective_snapshot, "
+            "objective_contract_hash, title, content_markdown, "
+            "created_at, updated_at"
         )
         .eq("user_id", user_id)
         .eq("plan_id", plan_id)
@@ -105,7 +107,8 @@ def get_source_review_material_bundles_by_plan(
     source_response = (
         supabase.table("learning_materials")
         .select(
-            "id, user_id, plan_id, title, material_type, created_at"
+            "id, user_id, plan_id, title, material_type, "
+            "learning_objective_id, created_at"
         )
         .eq("user_id", user_id)
         .eq("plan_id", plan_id)
@@ -125,7 +128,9 @@ def get_source_review_material_bundles_by_plan(
         supabase.table("review_materials")
         .select(
             "id, user_id, plan_id, task_id, source_material_id, "
-            "title, content_markdown, created_at, updated_at"
+            "learning_objective_id, objective_snapshot, "
+            "objective_contract_hash, title, content_markdown, "
+            "created_at, updated_at"
         )
         .eq("user_id", user_id)
         .eq("plan_id", plan_id)
@@ -152,7 +157,8 @@ def get_review_material_by_task(
         supabase.table("review_materials")
         .select(
             "id, user_id, plan_id, task_id, "
-            "source_material_id, title, "
+            "source_material_id, learning_objective_id, "
+            "objective_snapshot, objective_contract_hash, title, "
             "content_markdown, created_at, updated_at"
         )
         .eq("user_id", user_id)
@@ -211,6 +217,7 @@ def create_learning_material(
     title: str,
     material_type: str,
     content_text: str,
+    learning_objective_id: str | None = None,
 ) -> dict:
     """추출·검증된 사용자 원본 텍스트를 저장합니다."""
 
@@ -227,6 +234,7 @@ def create_learning_material(
                     "원본 내용",
                 ),
                 "storage_path": None,
+                "learning_objective_id": learning_objective_id,
             }
         )
         .execute()
@@ -348,6 +356,7 @@ def save_source_review_material_bundle(
     material_type: str,
     source_text: str,
     material: ReviewMaterialDraft,
+    learning_objective_id: str | None = None,
 ) -> dict:
     """원본과 AI 결과를 순서대로 저장하고 부분 실패를 정리합니다."""
 
@@ -361,6 +370,7 @@ def save_source_review_material_bundle(
         title=source_title,
         material_type=material_type,
         content_text=source_text,
+        learning_objective_id=learning_objective_id,
     )
 
     try:

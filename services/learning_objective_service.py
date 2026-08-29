@@ -1,7 +1,10 @@
 import hashlib
 import json
 
-from models.learning_objective import LearningObjectiveContract
+from models.learning_objective import (
+    LearningObjectiveContract,
+    StoredLearningObjective,
+)
 
 
 MIN_NEW_PLAN_OBJECTIVES = 2
@@ -13,7 +16,10 @@ def learning_objective_to_canonical_payload(
 ) -> dict:
     """학습목표 계약을 결정론적인 직렬화 입력으로 변환합니다."""
 
-    return objective.model_dump(mode="json")
+    contract = LearningObjectiveContract.model_validate(
+        objective.model_dump(mode="json")
+    )
+    return contract.model_dump(mode="json")
 
 
 def calculate_learning_objective_hash(
@@ -82,3 +88,16 @@ def validate_new_plan_objective_links(
         )
 
     return objective_by_key
+
+
+def validate_stored_learning_objective(
+    objective_data: dict,
+) -> StoredLearningObjective:
+    """DB 목표 행을 검증하고 생성 계약의 해시 변조를 감지합니다."""
+
+    objective = StoredLearningObjective.model_validate(objective_data)
+    if objective.origin == "generated":
+        expected_hash = calculate_learning_objective_hash(objective)
+        if objective.contract_hash != expected_hash:
+            raise ValueError("저장된 학습목표 계약 해시가 내용과 일치하지 않습니다.")
+    return objective

@@ -211,6 +211,14 @@ def render_create_plan(supabase, user):
         st.write(f"**이번 주 목표:** {plan.weekly_goal}")
         st.write(f"**학습 전략:** {plan.strategy}")
 
+        objective_titles = {
+            objective.objective_key: objective.title
+            for objective in plan.learning_objectives
+        }
+        st.markdown("#### 세부 학습목표")
+        for objective in plan.learning_objectives:
+            st.markdown(f"- **{objective.title}** — {objective.description}")
+
         for day in plan.days:
             actual_date = plan_start_date + timedelta(
                 days=day.day_offset
@@ -234,6 +242,10 @@ def render_create_plan(supabase, user):
                     st.markdown(
                         f"**{task_name} · {task.title}** "
                         f"— {task.estimated_minutes}분"
+                    )
+                    st.caption(
+                        "연결 목표 · "
+                        f"{objective_titles[task.objective_key]}"
                     )
                     st.write(task.description)
 

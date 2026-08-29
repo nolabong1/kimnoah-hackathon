@@ -329,6 +329,14 @@ def _render_next_plan_preview(plan: WeeklyStudyPlan, start_date: date) -> None:
     st.write(f"**다음 주 목표:** {plan.weekly_goal}")
     st.write(f"**학습전략:** {plan.strategy}")
 
+    objective_titles = {
+        objective.objective_key: objective.title
+        for objective in plan.learning_objectives
+    }
+    st.markdown("#### 세부 학습목표")
+    for objective in plan.learning_objectives:
+        st.markdown(f"- **{objective.title}** — {objective.description}")
+
     for day_plan in plan.days:
         actual_date = start_date + timedelta(days=day_plan.day_offset)
         with st.expander(
@@ -342,6 +350,10 @@ def _render_next_plan_preview(plan: WeeklyStudyPlan, start_date: date) -> None:
                 st.markdown(
                     f"**{task_type_names[task.task_type]} · {task.title}** "
                     f"— {task.estimated_minutes}분"
+                )
+                st.caption(
+                    "연결 목표 · "
+                    f"{objective_titles[task.objective_key]}"
                 )
                 st.write(task.description)
     st.success(plan.motivation_message)

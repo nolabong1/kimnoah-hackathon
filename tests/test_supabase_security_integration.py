@@ -139,12 +139,43 @@ def _build_plan_payload(title: str) -> dict:
     tasks = [
         {
             "day_offset": day_offset,
+            "objective_key": (
+                "security_ownership"
+                if day_offset < 4
+                else "atomic_writes"
+            ),
             "title": f"{day_offset + 1}일차 통합 테스트 과제",
             "description": "실제 Supabase 보안 경계를 확인하는 임시 과제입니다.",
             "task_type": "learn",
             "estimated_minutes": 10,
         }
         for day_offset in range(7)
+    ]
+    learning_objectives = [
+        {
+            "objective_key": "security_ownership",
+            "title": "사용자 소유권 경계",
+            "description": "사용자별 데이터 소유권과 접근 경계를 확인합니다.",
+            "target_depth": "foundation",
+            "evidence_requirements": [
+                {"key": "explain", "description": "소유권 경계를 설명합니다."},
+                {"key": "apply", "description": "소유권 조건을 적용합니다."},
+                {"key": "differentiate", "description": "허용과 거부를 구분합니다."},
+            ],
+            "contract_hash": "a" * 64,
+        },
+        {
+            "objective_key": "atomic_writes",
+            "title": "원자적 저장",
+            "description": "계획과 하위 데이터를 한 트랜잭션으로 저장합니다.",
+            "target_depth": "foundation",
+            "evidence_requirements": [
+                {"key": "explain", "description": "원자성을 설명합니다."},
+                {"key": "apply", "description": "원자 저장을 적용합니다."},
+                {"key": "differentiate", "description": "부분 저장을 구분합니다."},
+            ],
+            "contract_hash": "b" * 64,
+        },
     ]
     return {
         "p_title": title,
@@ -154,6 +185,7 @@ def _build_plan_payload(title: str) -> dict:
         "p_start_date": start_date.isoformat(),
         "p_available_schedule": schedule,
         "p_weekly_overview": overview,
+        "p_learning_objectives": learning_objectives,
         "p_tasks": tasks,
     }
 
@@ -414,7 +446,10 @@ class SupabaseSecurityIntegrationTests(unittest.TestCase):
         plan = _save_test_plan(self.user_a.client, title)
         tasks = (
             self.user_a.client.table("study_tasks")
-            .select("id,user_id,plan_id,scheduled_date,status,source_type")
+            .select(
+                "id,user_id,plan_id,learning_objective_id,"
+                "scheduled_date,status,source_type"
+            )
             .eq("plan_id", plan["id"])
             .order("scheduled_date")
             .execute()
@@ -422,6 +457,18 @@ class SupabaseSecurityIntegrationTests(unittest.TestCase):
         )
 
         self.assertEqual(plan["user_id"], self.user_a.id)
+        objectives = (
+            self.user_a.client.table("learning_objectives")
+            .select("id,user_id,plan_id,objective_key,origin")
+            .eq("plan_id", plan["id"])
+            .execute()
+            .data
+        )
+        self.assertEqual(len(objectives), 2)
+        self.assertEqual(
+            {objective["objective_key"] for objective in objectives},
+            {"security_ownership", "atomic_writes"},
+        )
         self.assertEqual(len(tasks), 7)
         self.assertTrue(
             all(
@@ -429,6 +476,7 @@ class SupabaseSecurityIntegrationTests(unittest.TestCase):
                 and task["plan_id"] == plan["id"]
                 and task["status"] == "pending"
                 and task["source_type"] == "weekly_plan"
+                and task["learning_objective_id"] is not None
                 for task in tasks
             )
         )

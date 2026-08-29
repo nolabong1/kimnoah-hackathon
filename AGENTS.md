@@ -89,7 +89,8 @@ DB 구조, 보상 규칙, 제품 동작, 아키텍처를 바꾸는 작업은 구
 
 ### `models/`
 
-- `models/study_plan.py`: AI가 반환하는 7일 계획과 과제 Pydantic 모델
+- `models/study_plan.py`: AI가 반환하는 2~5개 공통 학습목표, 목표 키가 연결된
+  과제와 7일 계획 Pydantic 모델
 - `models/review_material.py`: 과제 기반 AI 학습자료 초안과
   원본 기반 구조화 복습자료 모델
 - `models/quiz.py`: 객관식 퀴즈와 문항 모델, 대표 개념·성공 기준·
@@ -110,6 +111,8 @@ DB 구조, 보상 규칙, 제품 동작, 아키텍처를 바꾸는 작업은 구
   반복 오답 유형 신호 모델
 - `models/learning_blueprint.py`: 학습자료와 퀴즈가 공유하는 학습목표·범위·
   이해 깊이·성공 기준 모델
+- `models/learning_objective.py`: 여러 과제·자료·퀴즈가 공유할 계획별 학습목표
+  계약과 개별 과제 문맥, DB 저장 목표의 소유권·계약 해시 검증 모델
 - `models/source_material.py`: AI PDF 정밀 읽기의 페이지별 텍스트·시각 정보와
   추출 경고 Structured Output 모델
 
@@ -123,8 +126,9 @@ AI Structured Output과 RPC 응답은 가능한 한 Pydantic 모델로 검증한
 - `profile_service.py`: 프로필 조회와 `JWT issued at future` 단기 재시도
 - `error_reporting.py`: 내부 예외의 비밀값을 제한적으로 가리고 작업 식별자와
   오류 ID를 서버 로그에 남기는 공통 진단 helper
-- `study_plan_service.py`: AI 7일 학습계획 생성과 업무 규칙 검증
-- `study_plan_repository.py`: 계획·과제를 원자적으로 저장하는 서버 RPC와 조회/삭제,
+- `study_plan_service.py`: 공통 학습목표와 과제 목표 키를 포함한 AI 7일
+  학습계획 생성과 업무 규칙 검증
+- `study_plan_repository.py`: 계획·학습목표·과제를 원자적으로 저장하는 서버 RPC와 조회/삭제,
   완료 RPC와 테스트 초기화 RPC 연결. 여러 계획의 과제는 사용자 ID와 계획 ID
   목록으로 한 번에 조회해 계획별로 묶을 수 있음
 - `source_material_service.py`: 원본 제목·최대 90,000자 텍스트 검증,
@@ -133,9 +137,10 @@ AI Structured Output과 RPC 응답은 가능한 한 Pydantic 모델로 검증한
   PDF를 저장하지 않고 Responses API 파일 입력으로 한 번 정밀 읽어
   스캔 텍스트·표·도표·수식 관찰을 페이지별 텍스트로 변환
 - `review_material_service.py`: 과제·원본 기반 AI 학습자료 생성, 원문 인용
-  포함 여부 검증과 교정 재시도, 긴 원본 구간별 분석·최종 통합
+  포함 여부 검증과 교정 재시도, 긴 원본 구간별 분석·최종 통합. 연결된 세부
+  학습목표를 자료 구성 우선순위와 성공 기준 문맥으로 제한해 전달
 - `review_material_repository.py`: 과제별 학습자료 조회/upsert와
-  원본·복습자료 순차 저장 및 부분 실패 정리, 원본 기반 자료 원자적 삭제 RPC 연결
+  원본·복습자료의 목표 연결 순차 저장 및 부분 실패 정리, 원본 기반 자료 원자적 삭제 RPC 연결
 - `reference_material_service.py`: 원본·AI 자료를 튜터와 퀴즈가 공유하는
   충돌 없는 참고자료 선택 항목으로 변환
 - `quiz_service.py`: 5문항 객관식 퀴즈 생성, 선택 자료 길이 제한,
@@ -174,6 +179,10 @@ AI Structured Output과 RPC 응답은 가능한 한 Pydantic 모델로 검증한
   개념당 최대 2개로 제한해 학습자료·퀴즈 생성 문맥으로 제공
 - `learning_blueprint_service.py`: 계획 목표와 과제 범위를 결정론적으로
   공통 학습·평가 계약으로 변환
+- `learning_objective_service.py`: 학습목표 계약의 결정론적 SHA-256 해시와
+  새 계획의 목표 수·과제 참조·미사용 목표, DB 저장 목표의 해시를 검증하는 순수 함수
+- `learning_objective_repository.py`: 본인의 여러 계획 목표를 한 번에 조회하고
+  과제의 실제 DB 연결을 재확인해 생성 서비스에 검증된 목표만 전달
 
 View에서 SQL/RPC 응답을 직접 조립하기보다 repository와 service에 둔다.
 AI 호출과 DB 저장 책임도 분리한다.
@@ -279,6 +288,9 @@ service/repository 또는 Supabase RPC로 이동한다.
 `tests/test_sql_migration_manifest.py`는 모든 루트 SQL이 migration, 연결 validation,
 standalone 통합 검증 중 하나로 분류되는지와 순서·의존성·누락 감지를 검사한다.
 
+`tests/test_learning_objective_material_links.py`는 사용자·계획별 목표 조회,
+과제 연결 재확인과 AI 자료 목표·계약 스냅샷 동기화 trigger 구성을 검사한다.
+
 `tests/test_supabase_security_integration.py`는 명시적으로 승인한 전용 Supabase
 테스트 프로젝트에서만 임시 사용자 두 명을 생성해 실제 RLS, 핵심 테이블
 쓰기 권한, 계획 저장 원자성과 동시 과제 완료 멱등성을 검사한다. 기본 테스트
@@ -306,28 +318,33 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
 ### 학습계획
 
 1. 사용자는 과목, 목표, 현재 수준, 날짜별 가능 시간을 입력한다.
-2. `study_plan_service.py`가 OpenAI Structured Output으로 7일 계획을 만든다.
-3. Python에서 날짜 0~6과 일일 분량 제한을 다시 검증한다.
+2. `study_plan_service.py`가 OpenAI Structured Output으로 2~5개 공통 학습목표와
+   모든 과제의 목표 키가 포함된 7일 계획을 만든다.
+3. Python에서 날짜 0~6, 일일 분량, 목표 중복·누락·미사용을 다시 검증한다.
 4. `save_weekly_study_plan_with_tasks` RPC가 서버에서 사용자 소유권, 7일 구조,
-   일일 가능 시간과 개요 합계를 재검증하고 `study_plans`와 `study_tasks`를
-   한 트랜잭션으로 저장한다.
+   일일 가능 시간, 목표 계약과 과제 연결을 재검증하고 `study_plans`,
+   `learning_objectives`, `study_tasks`를 한 트랜잭션으로 저장한다.
 5. 대시보드에서는 사용자가 오늘 표시할 계획을 선택한다.
 
 ### AI 학습자료
 
 1. `learn` 또는 `review` 과제에서 자료를 생성한다.
-2. 계획 목표와 과제 범위를 공통 `LearningBlueprint`로 정규화한다.
-3. 평가된 개념이 있으면 본인 과목의 우선·안정 개념 문맥을 제한적으로
+2. 과제의 실제 DB 연결을 다시 조회하고 세부 학습목표 계약 해시를 검증한다.
+3. 계획 목표와 과제 범위를 공통 `LearningBlueprint`로 정규화하며 연결 목표를
+   자료의 설명·적용·오해 구분 성공 기준으로 함께 전달한다.
+4. 평가된 개념이 있으면 본인 과목의 우선·안정 개념 문맥을 제한적으로
    전달하고, 조회 실패나 데이터 없음은 기존 계획·과제 문맥으로 대체한다.
-4. Pydantic과 Python 업무 규칙으로 Markdown 결과를 검증한다.
-5. `review_materials`에 과제당 하나를 upsert한다.
-6. 재생성은 기존 자료를 갱신한다.
+5. Pydantic과 Python 업무 규칙으로 Markdown 결과를 검증한다.
+6. `review_materials`에 과제당 하나를 upsert한다. DB trigger가 과제 연결에서
+   목표를 다시 계산하고 생성 목표의 계약 스냅샷과 해시를 저장한다.
+7. 재생성은 기존 자료를 갱신한다.
 
 자료 생성이나 조회 자체는 과제를 완료하지 않으며 EXP도 지급하지 않는다.
 
 원본 기반 복습자료는 다음 순서로 처리한다.
 
-1. 사용자가 본인의 저장된 계획과 `text` 또는 `pdf` 원본을 선택한다.
+1. 사용자가 본인의 저장된 계획, 계획 안의 세부 학습목표와 `text` 또는 `pdf`
+   원본을 선택한다.
 2. 제목, PDF 10MB, 추출 결과와 최대 90,000자를 OpenAI 호출 전에 검증한다.
 3. 기본 PDF 처리는 일반·레이아웃 추출을 비교해 페이지 경계를 보존하고 반복
    머리말·꼬리말을 정리한다. AI 정밀 읽기는 사용자가 직접 선택한 최대
@@ -338,8 +355,9 @@ Streamlit Python 프로세스에 비밀번호나 영구 인증정보를 저장�
    존재하는지 Python에서 재검증하고 실패 시 한 번만 교정 재시도한다.
 6. OpenAI Structured Output을 페이지 근거가 포함된 고정 한국어 Markdown으로
    변환한다.
-7. 생성 성공 후 `learning_materials`에 추출 텍스트를 저장하고,
-   `review_materials.source_material_id`로 결과를 연결한다.
+7. 생성 성공 후 `learning_materials`에 추출 텍스트와 선택 목표를 저장하고,
+   `review_materials.source_material_id`로 결과를 연결한다. DB trigger는 원본의
+   목표를 복습자료에 상속하고 생성 당시 목표 계약 스냅샷과 해시를 보존한다.
 8. 두 번째 저장이 실패하면 이번 요청에서 생성한 원본 행만 정리한다.
 
 PDF 원본 파일은 로컬·Supabase에 저장하지 않는다. AI 정밀 읽기를 선택한 경우에만
@@ -515,6 +533,8 @@ PDF 원본 파일은 로컬·Supabase에 저장하지 않는다. AI 정밀 읽�
 - `study_plans`: 사용자 계획, 7일 가능 시간, 계획 기간,
   `weekly_overview`, 상태
 - `study_tasks`: 계획별 실제 과제와 완료 상태
+- `learning_objectives`: 계획 안에서 여러 과제·자료·퀴즈가 공유할 학습목표 계약.
+  기존 계획에는 계약을 소급해 꾸미지 않고 `legacy_primary` 호환 목표 하나를 연결
 - `learning_materials`: 붙여넣은 원본 또는 PDF 추출 텍스트
 - `review_materials`: 과제 또는 사용자 원본 기반 AI 생성 학습자료
 - `quizzes`: 과제별 현재 퀴즈와 JSON 문항
@@ -542,6 +562,10 @@ PDF 원본 파일은 로컬·Supabase에 저장하지 않는다. AI 정밀 읽�
 
 - 모든 사용자 소유 행은 `user_id`를 가진다.
 - `study_tasks`는 `(plan_id, user_id)`로 소유 계획에 연결된다.
+- 학습목표 DB 기반은 nullable 연결 열, 기존 계획 백필, 본인 조회 RLS,
+  사용자·계획 복합 외래 키와 조회 인덱스까지 준비되었다. 새 계획은 2~5개 목표와
+  과제 연결을 원자적으로 저장한다. AI 학습·복습자료는 과제 또는 원본의 목표를
+  DB trigger로 상속하고 생성 목표의 계약 스냅샷을 보존한다. 퀴즈 연결은 후속 단계이다.
 - 퀴즈와 응시는 계획·과제·사용자 소유권을 함께 검증한다.
 - 숙련도는 `(user_id, concept_id)` 단위이다.
 - 숙련도 이벤트는 사용자, 퀴즈, 응시, 문항 인덱스, 개념과 검증된 오답 유형을
@@ -734,6 +758,16 @@ manifest는 원격 DB 적용 이력을 자동으로 추측하지 않으므로 �
 `supabase_source_material_review_upgrade.sql`을 적용해
 `review_materials.task_id`를 선택 사항으로 변경한다. 과제 기반 자료는
 기존처럼 `task_id`를 사용하고 원본 기반 자료는 `source_material_id`를 사용한다.
+
+학습목표 DB 기반은 `supabase_learning_objectives_schema.sql` 적용 후
+`supabase_learning_objectives_schema_validation.sql`로 RLS 잠금 상태, nullable
+호환 열과 기존 계획·과제의 `legacy_primary` 백필을 검증한다. 이어서
+`supabase_learning_objectives_security.sql`과 해당 validation을 적용해 본인 조회
+RLS, 서버 전용 쓰기 경계, 복합 소유권 외래 키와 조회 인덱스를 검증한다. 이후
+`supabase_learning_objective_plan_save.sql`과 해당 validation으로 새 계획의
+목표·과제 원자 저장 RPC와 이전 8인자 RPC 실행 차단을 검증한다. 이어서
+`supabase_learning_objective_material_links.sql`과 해당 validation으로 과제·원본
+기반 AI 자료의 목표 상속, 사용자·계획 일치와 생성 시점 계약 스냅샷을 검증한다.
 
 현재 적응형 학습 계층의 주요 순서는 다음과 같다.
 

@@ -5,6 +5,9 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 
 from services.learner_context_service import load_learner_context
+from services.learning_objective_repository import (
+    get_learning_objectives_by_plan_ids,
+)
 from services.pdf_visual_extraction_service import (
     MAX_VISUAL_PDF_PAGES,
     extract_pdf_with_ai_vision,
@@ -40,6 +43,7 @@ FINGERPRINT_STATE_KEY = "source_review_material_fingerprint"
 RUNNING_STATE_KEY = "source_review_material_running"
 SOURCE_TYPE_KEY = "source_review_material_source_type"
 PLAN_KEY = "source_review_material_plan_id"
+OBJECTIVE_KEY = "source_review_material_objective_id"
 TITLE_KEY = "source_review_material_title"
 TEXT_KEY = "source_review_material_text"
 PDF_KEY = "source_review_material_pdf"
@@ -55,6 +59,7 @@ SOURCE_REVIEW_SESSION_KEYS = (
     RUNNING_STATE_KEY,
     SOURCE_TYPE_KEY,
     PLAN_KEY,
+    OBJECTIVE_KEY,
     TITLE_KEY,
     TEXT_KEY,
     PDF_KEY,
@@ -72,6 +77,7 @@ SEOUL_TIMEZONE = ZoneInfo("Asia/Seoul")
 def _build_request_fingerprint(
     user_id: str,
     plan_id: str,
+    learning_objective_id: str,
     source_title: str,
     material_type: str,
     source_text: str,
@@ -82,6 +88,7 @@ def _build_request_fingerprint(
         [
             user_id,
             plan_id,
+            learning_objective_id,
             source_title,
             material_type,
             source_text,
@@ -291,6 +298,14 @@ def _render_saved_source_review_materials(
                 "저장 · "
                 f"{_format_saved_at(selected_bundle['review_material'].get('created_at'))}"
             )
+            objective_snapshot = selected_bundle["review_material"].get(
+                "objective_snapshot"
+            )
+            if isinstance(objective_snapshot, dict):
+                st.caption(
+                    "연결 목표 · "
+                    f"{objective_snapshot.get('title', '제목 없음')}"
+                )
 
     with detail_column:
         selected_bundle = bundle_by_id[selected_bundle_id]
@@ -394,6 +409,23 @@ def render_source_review_material(supabase, user) -> None:
         )
         return
 
+    try:
+        objectives_by_plan = get_learning_objectives_by_plan_ids(
+            supabase=supabase,
+            user_id=user_id,
+            plan_ids=plan_ids,
+        )
+    except Exception as error:
+        render_unexpected_error(
+            error,
+            operation="source_review.load_learning_objectives",
+            user_message=(
+                "학습계획의 세부 목표를 불러오지 못했습니다. 잠시 후 "
+                "다시 시도해주세요."
+            ),
+        )
+        return
+
     input_column, result_column = st.columns(
         [0.9, 1.1],
         gap="large",
@@ -403,6 +435,28 @@ def render_source_review_material(supabase, user) -> None:
     with input_column:
         with st.container(border=True):
             st.subheader("원본 준비")
+            selected_plan_id = st.selectbox(
+                "학습계획",
+                options=plan_ids,
+                format_func=lambda plan_id: (
+                    f"{plan_by_id[plan_id]['title']} · "
+                    f"{plan_by_id[plan_id]['course_name']}"
+                ),
+                key=PLAN_KEY,
+            )
+            plan_objectives = objectives_by_plan.get(selected_plan_id, [])
+            if not plan_objectives:
+                st.warning(
+                    "선택한 계획에 연결할 학습목표가 없습니다. "
+                    "학습목표 DB migration 적용 상태를 확인해주세요."
+                )
+                return
+            objective_by_id = {
+                str(objective.id): objective
+                for objective in plan_objectives
+            }
+            if st.session_state.get(OBJECTIVE_KEY) not in objective_by_id:
+                st.session_state[OBJECTIVE_KEY] = next(iter(objective_by_id))
             source_type = st.segmented_control(
                 "원본 유형",
                 options=["text", "pdf"],
@@ -416,14 +470,16 @@ def render_source_review_material(supabase, user) -> None:
             )
 
             with st.form("source_review_material_form"):
-                selected_plan_id = st.selectbox(
-                    "학습계획",
-                    options=plan_ids,
-                    format_func=lambda plan_id: (
-                        f"{plan_by_id[plan_id]['title']} · "
-                        f"{plan_by_id[plan_id]['course_name']}"
+                selected_objective_id = st.selectbox(
+                    "연결할 세부 학습목표",
+                    options=list(objective_by_id),
+                    format_func=lambda objective_id: (
+                        objective_by_id[objective_id].title
                     ),
-                    key=PLAN_KEY,
+                    key=OBJECTIVE_KEY,
+                    help=(
+                        "원본을 어떤 학습목표의 자료로 사용할지 선택합니다."
+                    ),
                 )
                 source_title = st.text_input(
                     "원본 제목",
@@ -536,6 +592,7 @@ def render_source_review_material(supabase, user) -> None:
                 request_fingerprint = _build_request_fingerprint(
                     user_id=user_id,
                     plan_id=selected_plan_id,
+                    learning_objective_id=selected_objective_id,
                     source_title=cleaned_title,
                     material_type=source_type,
                     source_text=fingerprint_source,
@@ -552,6 +609,9 @@ def render_source_review_material(supabase, user) -> None:
                     )
                 else:
                     selected_plan = plan_by_id[selected_plan_id]
+                    selected_objective = objective_by_id[
+                        selected_objective_id
+                    ]
                     st.session_state[RUNNING_STATE_KEY] = True
 
                     with st.spinner(
@@ -615,6 +675,7 @@ def render_source_review_material(supabase, user) -> None:
                             current_level=selected_plan["current_level"],
                             source_text=source_text,
                             learner_context=learner_context,
+                            learning_objective=selected_objective,
                         )
                         saved_bundle = save_source_review_material_bundle(
                             supabase=supabase,
@@ -624,11 +685,14 @@ def render_source_review_material(supabase, user) -> None:
                             material_type=source_type,
                             source_text=source_text,
                             material=generated_material,
+                            learning_objective_id=selected_objective_id,
                         )
 
                     st.session_state[RESULT_STATE_KEY] = {
                         "user_id": user_id,
                         "plan_id": selected_plan_id,
+                        "learning_objective_id": selected_objective_id,
+                        "learning_objective_title": selected_objective.title,
                         "source_title": cleaned_title,
                         "material_type": source_type,
                         "pdf_reading_mode": (
@@ -667,6 +731,8 @@ def render_source_review_material(supabase, user) -> None:
             result is None
             or result.get("user_id") != user_id
             or result.get("plan_id") != selected_plan_id
+            or result.get("learning_objective_id")
+            != selected_objective_id
         ):
             render_empty_state(
                 "생성 결과가 여기에 표시됩니다",
@@ -680,6 +746,10 @@ def render_source_review_material(supabase, user) -> None:
             st.caption(
                 f"원본 · {result['source_title']} · "
                 f"{'PDF' if result['material_type'] == 'pdf' else '텍스트'}"
+            )
+            st.caption(
+                "연결 목표 · "
+                f"{result.get('learning_objective_title', '제목 없음')}"
             )
             st.success(
                 "복습자료의 핵심 내용과 회상 문제에 사용된 원문 근거를 "

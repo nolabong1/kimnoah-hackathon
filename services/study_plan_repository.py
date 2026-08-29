@@ -6,13 +6,17 @@ from models.study_plan import WeeklyStudyPlan
 from services.gamification_repository import (
     validate_gamification_sync_result,
 )
+from services.learning_objective_service import (
+    calculate_learning_objective_hash,
+    validate_new_plan_objective_links,
+)
 
 
 STUDY_TASK_SELECT_FIELDS = (
     "id, scheduled_date, title, description, "
     "task_type, estimated_minutes, status, "
     "source_type, concept_id, review_stage, "
-    "review_interval_days"
+    "review_interval_days, learning_objective_id"
 )
 
 
@@ -28,6 +32,23 @@ def save_weekly_study_plan(
 ) -> dict:
     """학습계획과 상세 과제를 Supabase에 저장합니다."""
 
+    objective_by_key = validate_new_plan_objective_links(
+        plan.learning_objectives,
+        [
+            task.objective_key
+            for day in plan.days
+            for task in day.tasks
+        ],
+    )
+
+    learning_objectives = [
+        {
+            **objective.model_dump(mode="json"),
+            "contract_hash": calculate_learning_objective_hash(objective),
+        }
+        for objective in plan.learning_objectives
+    ]
+
     weekly_overview = [
         {
             "day_offset": day.day_offset,
@@ -42,6 +63,7 @@ def save_weekly_study_plan(
     tasks = [
         {
             "day_offset": day.day_offset,
+            "objective_key": task.objective_key,
             "title": task.title[:200],
             "description": task.description,
             "task_type": task.task_type,
@@ -62,6 +84,7 @@ def save_weekly_study_plan(
                 "p_start_date": start_date.isoformat(),
                 "p_available_schedule": available_schedule,
                 "p_weekly_overview": weekly_overview,
+                "p_learning_objectives": learning_objectives,
                 "p_tasks": tasks,
             },
         )
@@ -72,6 +95,8 @@ def save_weekly_study_plan(
         raise RuntimeError("학습계획 저장 결과가 비어 있습니다.")
     if response.data.get("user_id") != user_id:
         raise RuntimeError("저장된 학습계획의 사용자 정보가 올바르지 않습니다.")
+    if response.data.get("learning_objective_count") != len(objective_by_key):
+        raise RuntimeError("저장된 학습목표 개수가 생성 결과와 일치하지 않습니다.")
 
     return response.data
 

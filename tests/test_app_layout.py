@@ -224,9 +224,25 @@ class AppLayoutTests(unittest.TestCase):
         }
         user = SimpleNamespace(id=USER_ID)
 
-        with patch(
-            "views.source_review_material_view.get_user_study_plans",
-            return_value=[plan],
+        with (
+            patch(
+                "views.source_review_material_view.get_user_study_plans",
+                return_value=[plan],
+            ),
+            patch(
+                "views.source_review_material_view."
+                "get_learning_objectives_by_plan_ids",
+                return_value={
+                    PLAN_ID: [
+                        SimpleNamespace(
+                            id=(
+                                "44444444-4444-4444-8444-444444444444"
+                            ),
+                            title="반복문 실행 흐름",
+                        )
+                    ]
+                },
+            ),
         ):
             source_app = AppTest.from_function(
                 render_source_review_test_page,
@@ -675,6 +691,7 @@ class AppLayoutTests(unittest.TestCase):
     def test_create_plan_separates_inputs_preview_and_save(self):
         today = datetime.now(ZoneInfo("Asia/Seoul")).date()
         task = SimpleNamespace(
+            objective_key="loop_fundamentals",
             task_type="learn",
             title="반복문 개념 익히기",
             description="for문의 실행 순서를 정리합니다.",
@@ -690,6 +707,13 @@ class AppLayoutTests(unittest.TestCase):
             level_assessment="기본 문법을 복습하면 좋습니다.",
             weekly_goal="반복문을 활용한 프로그램 완성",
             strategy="개념 학습 후 짧은 문제를 풉니다.",
+            learning_objectives=[
+                SimpleNamespace(
+                    objective_key="loop_fundamentals",
+                    title="반복문 기본 원리",
+                    description="반복문의 실행 순서를 설명합니다.",
+                )
+            ],
             days=[day],
             motivation_message="작은 과제를 꾸준히 완료해보세요.",
         )

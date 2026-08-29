@@ -25,6 +25,33 @@ def _case(case_id: str):
     )
 
 
+def _plan_learning_objectives() -> list[dict]:
+    return [
+        {
+            "objective_key": "loop_fundamentals",
+            "title": "반복문 기본 원리",
+            "description": "반복문의 실행 흐름과 종료 조건을 설명합니다.",
+            "target_depth": "foundation",
+            "evidence_requirements": [
+                {"key": "explain", "description": "실행 흐름을 설명합니다."},
+                {"key": "apply", "description": "반복문을 작성합니다."},
+                {"key": "differentiate", "description": "조건 차이를 구분합니다."},
+            ],
+        },
+        {
+            "objective_key": "loop_application",
+            "title": "반복문 문제 적용",
+            "description": "문제 조건을 반복 구조로 변환해 적용합니다.",
+            "target_depth": "foundation",
+            "evidence_requirements": [
+                {"key": "explain", "description": "구조 선택을 설명합니다."},
+                {"key": "apply", "description": "문제를 해결합니다."},
+                {"key": "differentiate", "description": "오류를 구분합니다."},
+            ],
+        },
+    ]
+
+
 class AIQualityHarnessTests(unittest.TestCase):
     def test_representative_cases_are_unique_and_cover_core_features(self):
         cases = load_ai_quality_cases()
@@ -266,6 +293,7 @@ range(2)의 결과를 예상하고 정답과 해설을 확인하세요.
                 "level_assessment": "반복문을 처음 적용하는 단계입니다.",
                 "weekly_goal": "반복문으로 간단한 문제를 해결합니다.",
                 "strategy": "개념 학습 뒤 복습과 퀴즈를 진행합니다.",
+                "learning_objectives": _plan_learning_objectives(),
                 "motivation_message": "매일 정한 범위까지 진행해보세요.",
                 "days": [
                     {
@@ -273,6 +301,11 @@ range(2)의 결과를 예상하고 정답과 해설을 확인하세요.
                         "daily_focus": "반복문 적용",
                         "tasks": [
                             {
+                                "objective_key": (
+                                    "loop_fundamentals"
+                                    if day_offset < 4
+                                    else "loop_application"
+                                ),
                                 "title": "반복문 연습",
                                 "description": (
                                     "예제를 풀고 결과를 설명합니다."
@@ -311,6 +344,7 @@ range(2)의 결과를 예상하고 정답과 해설을 확인하세요.
                 "level_assessment": "반복문을 처음 배우는 단계입니다.",
                 "weekly_goal": "반복문의 실행 순서를 설명합니다.",
                 "strategy": "짧은 예제를 매일 직접 실행합니다.",
+                "learning_objectives": _plan_learning_objectives(),
                 "motivation_message": "정해진 범위에 집중해보세요.",
                 "days": [
                     {
@@ -318,6 +352,11 @@ range(2)의 결과를 예상하고 정답과 해설을 확인하세요.
                         "daily_focus": "반복문 기초",
                         "tasks": [
                             {
+                                "objective_key": (
+                                    "loop_fundamentals"
+                                    if day_offset < 4
+                                    else "loop_application"
+                                ),
                                 "title": "반복문 예제 실행",
                                 "description": "예제를 실행하고 결과를 설명합니다.",
                                 "task_type": "learn",

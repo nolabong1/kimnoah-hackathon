@@ -1,6 +1,9 @@
 import streamlit as st
 
 from services.learner_context_service import load_learner_context
+from services.learning_objective_repository import (
+    get_learning_objective_for_task,
+)
 from services.review_material_repository import (
     get_review_material_by_task,
     save_review_material,
@@ -64,6 +67,11 @@ def render_review_material_section(
                 "과제 정보를 바탕으로 새 자료를 "
                 "생성할 수 있습니다."
             )
+        elif isinstance(material.get("objective_snapshot"), dict):
+            st.caption(
+                "연결 목표 · "
+                f"{material['objective_snapshot'].get('title', '제목 없음')}"
+            )
 
         generate_button_label = (
             "AI 학습자료 다시 생성하기"
@@ -89,6 +97,7 @@ def render_review_material_section(
                     "생성하고 저장하고 있습니다..."
                 ):
                     learner_context = None
+                    learning_objective = None
                     try:
                         learner_context = load_learner_context(
                             supabase=supabase,
@@ -104,6 +113,17 @@ def render_review_material_section(
                                 "과제 정보만으로 자료를 생성합니다."
                             ),
                         )
+                    learning_objective = get_learning_objective_for_task(
+                        supabase=supabase,
+                        user_id=user_id,
+                        plan_id=plan_id,
+                        task_id=str(task["id"]),
+                        learning_objective_id=(
+                            str(task["learning_objective_id"])
+                            if task.get("learning_objective_id")
+                            else None
+                        ),
+                    )
                     material_draft = (
                         generate_review_material(
                             course_name=course_name,
@@ -118,6 +138,7 @@ def render_review_material_section(
                                 "estimated_minutes"
                             ],
                             learner_context=learner_context,
+                            learning_objective=learning_objective,
                         )
                     )
 

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from models.quiz import QuizDraft
+from models.learning_objective import LearningObjectiveContract
 from models.review_material import ReviewMaterialDraft
 from services.learning_blueprint_service import (
     build_learning_blueprint,
@@ -101,6 +102,55 @@ def _valid_quiz() -> QuizDraft:
 
 
 class LearningBlueprintTests(unittest.TestCase):
+    @patch("services.review_material_service.get_openai_model")
+    @patch("services.review_material_service.get_openai_client")
+    def test_review_request_includes_selected_learning_objective(
+        self,
+        get_review_client,
+        get_review_model,
+    ):
+        fake_client = FakeOpenAIClient(_valid_review_material())
+        get_review_client.return_value = fake_client
+        get_review_model.return_value = "test-model"
+        objective = LearningObjectiveContract.model_validate(
+            {
+                "objective_key": "python_range",
+                "title": "range 경계값 적용",
+                "description": "종료값 제외 규칙을 설명하고 적용한다.",
+                "target_depth": "foundation",
+                "evidence_requirements": [
+                    {"key": "explain", "description": "규칙을 설명한다."},
+                    {"key": "apply", "description": "결과를 예측한다."},
+                    {
+                        "key": "differentiate",
+                        "description": "포함과 제외를 구분한다.",
+                    },
+                ],
+            }
+        )
+
+        generate_review_material(
+            course_name="Python",
+            goal="range를 이해한다.",
+            current_level=3,
+            task_title="range 경계값 익히기",
+            task_description="range 결과를 예측한다.",
+            task_type="review",
+            estimated_minutes=20,
+            learning_objective=objective,
+        )
+
+        request = fake_client.responses.calls[0]
+        payload = json.loads(request["input"][1]["content"])
+        self.assertEqual(
+            payload["learning_objective"]["objective_key"],
+            "python_range",
+        )
+        self.assertIn(
+            "learning_objective는 같은 계획의 과제",
+            request["input"][0]["content"],
+        )
+
     def test_level_scale_maps_to_stable_depth_bands(self):
         self.assertEqual(get_target_depth(1), "foundation")
         self.assertEqual(get_target_depth(3), "foundation")
