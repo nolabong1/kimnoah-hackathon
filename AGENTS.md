@@ -100,6 +100,8 @@ DB 구조, 보상 규칙, 제품 동작, 아키텍처를 바꾸는 작업은 구
   자동 복습 요약, 적응형 분석 응답 모델
 - `models/dashboard.py`: 선택 계획의 과제·숙련도·게임화 데이터를 묶는
   오늘 학습 읽기 전용 RPC 응답 모델
+- `models/learning_performance.py`: 한 계획의 과제 실행, 퀴즈 첫·최근 점수,
+  계획 문항 숙련도 변화와 세부 학습목표별 성과를 묶는 읽기 전용 모델
 - `models/tutor.py`: 세 단계 힌트, 최종 풀이, 수정 풀이 피드백 모델
 - `models/weekly_review.py`: 주간 통계 스냅샷과 구조화 AI 회고 모델
 - `models/gamification.py`: 업적·배지·도전과제 카탈로그와 저장/RPC 응답 모델
@@ -155,6 +157,10 @@ AI Structured Output과 RPC 응답은 가능한 한 Pydantic 모델로 검증한
   저장된 응시의 적응형 분석 조회
 - `dashboard_repository.py`: 선택 계획 소유권이 검증된 과제·숙련도·게임화
   스냅샷을 단일 읽기 RPC로 조회하고 응답 소유권을 재검증
+- `learning_performance_repository.py`: 본인 계획의 과제·퀴즈·응시·숙련도
+  이벤트와 현재값을 최소 필드의 계획별 일괄 조회로 구성
+- `learning_performance_service.py`: 완료율, 퀴즈 첫·최근 점수 변화, 계획의
+  문항별 숙련도 증감과 세부 학습목표 성과를 AI 없이 결정론적으로 계산
 - `tutor_service.py`: 튜터 입력·참고자료 길이 검증과 단계별 안내·
   수정 풀이 피드백 OpenAI 호출
 - `weekly_review_service.py`: 회고 자격·통계 계산, 답변 검증, AI 회고,
@@ -208,6 +214,9 @@ AI 호출과 DB 저장 책임도 분리한다.
   선택 과제 상세, 학습 진단·게임화 요약을 3영역으로 배치하고 취약 개념은
   우선순위 3개만 요약. 계획 목록 조회 후 선택 계획의 과제·숙련도·게임화
   데이터는 `get_dashboard_snapshot` 읽기 RPC 한 번으로 조회
+- `learning_performance_view.py`: 저장된 계획 하나의 과제 완료, 퀴즈 재응시,
+  개념별 숙련도 변화와 저장된 주간 회고를 성과 요약·목표별 성과·성장 근거
+  탭으로 표시. 예상시간과 실제 학습시간을 구분하고 인과관계를 단정하지 않음
 - `mastery_dashboard_view.py`: 전체 과목 비교와 선택 과목 개념 상세를
   탭으로 분리하고 개념 숙련도·취약 상태를 2열 카드로 표시. 전체 지표,
   유효한 과목 선택 상태, 선택 과목 상세 렌더링을 각각 분리

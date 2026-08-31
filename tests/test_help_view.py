@@ -29,6 +29,7 @@ def test_help_dialog_explains_the_core_learning_flow() -> None:
     assert any("1. 계획 만들기" in value for value in markdown_values)
     assert any("4. 완료하기" in value for value in markdown_values)
     assert any("과목별 숙련도" in value for value in markdown_values)
+    assert any("학습 성과 리포트" in value for value in markdown_values)
     assert any("PDF" in value for value in markdown_values)
     for purpose_label in (
         "학습하기",

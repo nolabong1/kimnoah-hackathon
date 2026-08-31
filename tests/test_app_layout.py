@@ -166,6 +166,11 @@ class AppLayoutTests(unittest.TestCase):
             app_source.index("saved_plans_page", positions[0]),
             app_source.index("create_plan_page", positions[0]),
         )
+        growth_group_start = positions[2]
+        self.assertLess(
+            app_source.index("learning_performance_page", growth_group_start),
+            app_source.index("mastery_dashboard_page", growth_group_start),
+        )
 
     def test_customization_features_are_direct_navigation_pages(self):
         app_source = (PROJECT_ROOT / "app.py").read_text(encoding="utf-8")

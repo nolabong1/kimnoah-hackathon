@@ -30,6 +30,7 @@ from views.gamification_view import (
 )
 from views.help_view import render_help_dialog
 from views.mastery_dashboard_view import render_mastery_dashboard
+from views.learning_performance_view import render_learning_performance
 from views.learning_context_state import (
     PENDING_NAVIGATION_KEY as LEARNING_CONTEXT_PENDING_NAVIGATION_KEY,
     clear_learning_context,
@@ -260,6 +261,16 @@ def show_mastery_dashboard() -> None:
         )
 
 
+def show_learning_performance() -> None:
+    """계획별 학습 성과 리포트 화면을 표시합니다."""
+
+    with content_frame(DASHBOARD_CONTENT_WIDTH):
+        render_learning_performance(
+            supabase=supabase,
+            user=user,
+        )
+
+
 def show_gamification() -> None:
     """업적·도전과제 화면을 표시합니다."""
 
@@ -341,6 +352,12 @@ mastery_dashboard_page = st.Page(
     icon=":material/monitoring:",
     url_path="mastery",
 )
+learning_performance_page = st.Page(
+    show_learning_performance,
+    title="학습 성과 리포트",
+    icon=":material/insights:",
+    url_path="learning-performance",
+)
 gamification_page = st.Page(
     show_gamification,
     title="업적·도전과제",
@@ -379,6 +396,7 @@ pages_by_title = {
     "AI 복습 자료 만들기": source_review_page,
     "단계별 힌트 AI 튜터": tutor_page,
     "과목별 숙련도": mastery_dashboard_page,
+    "학습 성과 리포트": learning_performance_page,
     "업적·도전과제": gamification_page,
     "주간 학습 회고": weekly_review_page,
     "상점": shop_page,
@@ -396,6 +414,7 @@ selected_page = st.navigation(
         ],
         "AI로 도움받기": [tutor_page, source_review_page],
         "성장 확인하기": [
+            learning_performance_page,
             mastery_dashboard_page,
             weekly_review_page,
             gamification_page,
