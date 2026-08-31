@@ -59,7 +59,7 @@ def render_help_dialog() -> None:
     feature_rows = (
         (
             (
-                ":material/calendar_month: 계획과 학습",
+                ":material/calendar_month: 학습하기",
                 (
                     "**계획 만들기**: 나에게 맞는 7일 계획 생성",
                     "**저장된 계획**: 날짜별 과제 확인·관리",
@@ -67,7 +67,7 @@ def render_help_dialog() -> None:
                 ),
             ),
             (
-                ":material/psychology: AI 도구",
+                ":material/psychology: AI로 도움받기",
                 (
                     "**AI 복습 자료**: 붙여넣은 글·PDF 내용 정리",
                     "**단계별 힌트 튜터**: 정답 전 세 단계 힌트 제공",
@@ -77,7 +77,7 @@ def render_help_dialog() -> None:
         ),
         (
             (
-                ":material/trending_up: 성장",
+                ":material/trending_up: 성장 확인하기",
                 (
                     "**과목별 숙련도**: 개념 이해도와 취약 개념 확인",
                     "**자동 복습**: 반복 오답 개념의 다음 복습 예약",
@@ -85,7 +85,7 @@ def render_help_dialog() -> None:
                 ),
             ),
             (
-                ":material/chair: 꾸미기",
+                ":material/chair: 학습방 꾸미기",
                 (
                     "**상점·내 아이템**: 보유 코인과 아이템 관리",
                     "**학습방**: 가구를 직접 배치하고 저장",

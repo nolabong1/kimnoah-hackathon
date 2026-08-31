@@ -15,6 +15,7 @@ from views.error_feedback import (
     render_unexpected_error,
     render_unexpected_warning,
 )
+from views.operation_feedback import operation_status
 
 
 def render_review_material_section(
@@ -26,16 +27,23 @@ def render_review_material_section(
     current_level,
     task,
     widget_scope,
+    *,
+    display_mode="toggle",
 ):
     """과제의 AI 학습자료 생성·저장·조회 UI를 표시합니다."""
 
-    material_section_open = st.toggle(
-        "AI 학습자료 열기",
-        key=(
-            f"{widget_scope}_review_material_section_"
-            f"{task['id']}"
-        ),
-    )
+    if display_mode not in {"toggle", "open"}:
+        raise ValueError("지원하지 않는 AI 학습자료 표시 방식입니다.")
+
+    material_section_open = display_mode == "open"
+    if display_mode == "toggle":
+        material_section_open = st.toggle(
+            "AI 학습자료 열기",
+            key=(
+                f"{widget_scope}_review_material_section_"
+                f"{task['id']}"
+            ),
+        )
 
     if not material_section_open:
         return
@@ -92,12 +100,14 @@ def render_review_material_section(
             ),
         ):
             try:
-                with st.spinner(
-                    "과제에 맞는 AI 학습자료를 "
-                    "생성하고 저장하고 있습니다..."
-                ):
+                with operation_status(
+                    "과제 문맥을 확인하고 있습니다...",
+                    "AI 학습자료 생성과 저장을 완료했습니다",
+                    "AI 학습자료 처리 중 오류가 발생했습니다",
+                ) as status:
                     learner_context = None
                     learning_objective = None
+                    status.write("현재 숙련도와 연결된 학습목표를 확인합니다.")
                     try:
                         learner_context = load_learner_context(
                             supabase=supabase,
@@ -142,23 +152,13 @@ def render_review_material_section(
                         )
                     )
 
+                    status.write("생성 결과를 검증하고 과제에 저장합니다.")
                     material = save_review_material(
                         supabase=supabase,
                         user_id=user_id,
                         plan_id=plan_id,
                         task_id=task["id"],
                         material=material_draft,
-                    )
-
-                if is_regeneration:
-                    st.success(
-                        "AI 학습자료를 새 내용으로 "
-                        "갱신했습니다."
-                    )
-                else:
-                    st.success(
-                        "AI 학습자료를 생성하고 "
-                        "저장했습니다."
                     )
 
             except Exception as error:

@@ -35,6 +35,7 @@ from views.error_feedback import (
     render_unexpected_error,
     render_unexpected_warning,
 )
+from views.operation_feedback import operation_status
 from views.ui_components import render_empty_state, render_page_header
 
 
@@ -614,11 +615,16 @@ def render_source_review_material(supabase, user) -> None:
                     ]
                     st.session_state[RUNNING_STATE_KEY] = True
 
-                    with st.spinner(
-                        "원본을 분석하고 AI 복습 자료를 생성·저장하고 있습니다..."
-                    ):
+                    with operation_status(
+                        "원본과 학습목표를 분석하고 있습니다...",
+                        "AI 복습 자료 생성과 저장을 완료했습니다",
+                        "AI 복습 자료 처리 중 오류가 발생했습니다",
+                    ) as status:
                         visual_extraction_calls = 0
                         if visual_pdf_bytes is not None:
+                            status.write(
+                                "PDF의 텍스트·표·도표를 AI 정밀 읽기로 추출합니다."
+                            )
                             st.info(
                                 "선택한 PDF를 OpenAI에 전송해 텍스트와 "
                                 "페이지 이미지를 정밀 분석합니다. 원본 파일은 "
@@ -639,6 +645,7 @@ def render_source_review_material(supabase, user) -> None:
                             raise RuntimeError(
                                 "PDF에서 복습자료용 텍스트를 준비하지 못했습니다."
                             )
+                        status.write("원본 텍스트와 선택한 학습목표를 확인했습니다.")
 
                         estimated_ai_calls = (
                             estimate_source_review_ai_calls(source_text)
@@ -651,6 +658,7 @@ def render_source_review_material(supabase, user) -> None:
                                 "필요하면 추가 요청이 발생할 수 있습니다."
                             )
                         learner_context = None
+                        status.write("현재 숙련도와 학습계획 문맥을 준비합니다.")
                         try:
                             learner_context = load_learner_context(
                                 supabase=supabase,
@@ -668,6 +676,7 @@ def render_source_review_material(supabase, user) -> None:
                                     "원본 내용만으로 복습자료를 생성합니다."
                                 ),
                             )
+                        status.write("원문 근거를 유지하며 AI 복습 자료를 생성합니다.")
                         generated_material = generate_source_review_material(
                             source_title=cleaned_title,
                             course_name=selected_plan["course_name"],
@@ -677,6 +686,7 @@ def render_source_review_material(supabase, user) -> None:
                             learner_context=learner_context,
                             learning_objective=selected_objective,
                         )
+                        status.write("생성 결과와 추출 원문을 연결해 저장합니다.")
                         saved_bundle = save_source_review_material_bundle(
                             supabase=supabase,
                             user_id=user_id,
@@ -709,7 +719,6 @@ def render_source_review_material(supabase, user) -> None:
                     st.session_state[
                         FINGERPRINT_STATE_KEY
                     ] = request_fingerprint
-                    st.success("AI 복습 자료를 생성하고 저장했습니다.")
 
             except SourceMaterialValidationError as error:
                 st.warning(str(error))

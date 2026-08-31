@@ -39,6 +39,7 @@ from views.error_feedback import (
     render_unexpected_error,
     render_unexpected_warning,
 )
+from views.operation_feedback import operation_status
 from views.spaced_review_ui import (
     get_spaced_review_label,
 )
@@ -627,9 +628,12 @@ def _submit_quiz_answers(
     st.session_state[request_state_key] = submission_request
 
     try:
-        with st.spinner(
-            "답안을 채점하고 응시 기록을 저장하고 있습니다..."
-        ):
+        with operation_status(
+            "답안을 채점하고 있습니다...",
+            "퀴즈 제출과 학습 진단을 완료했습니다",
+            "퀴즈 제출 중 오류가 발생했습니다",
+        ) as status:
+            status.write("답안과 현재 퀴즈 버전을 확인합니다.")
             attempt = submit_quiz_attempt(
                 supabase=supabase,
                 quiz_id=quiz["id"],
@@ -637,6 +641,7 @@ def _submit_quiz_answers(
                 answers=answers,
                 submission_key=submission_request["submission_key"],
             )
+            status.write("응시 기록·숙련도·자동 복습 결과를 저장했습니다.")
 
         queue_gamification_notifications(
             st.session_state,
@@ -963,9 +968,12 @@ def _render_quiz_generation_control(
         return quiz, completion_unlocked
 
     try:
-        with st.spinner(
-            "과제에 맞는 AI 퀴즈를 생성하고 저장하고 있습니다..."
-        ):
+        with operation_status(
+            "학습목표와 참고자료를 확인하고 있습니다...",
+            "AI 퀴즈 생성과 저장을 완료했습니다",
+            "AI 퀴즈 처리 중 오류가 발생했습니다",
+        ) as status:
+            status.write("출제 범위와 취약 개념 우선순위를 구성합니다.")
             quiz = _generate_quiz_for_task(
                 supabase=supabase,
                 user_id=user_id,
@@ -977,6 +985,7 @@ def _render_quiz_generation_control(
                 learning_objective=learning_objective,
                 reference_material=reference_material,
             )
+            status.write("문항·정답·개념 연결을 검증해 저장했습니다.")
 
         completion_unlocked = False
         if task.get("status") != "completed":
@@ -993,11 +1002,6 @@ def _render_quiz_generation_control(
             question_count=quiz["question_count"],
         )
         st.session_state[f"{state_prefix}_retake"] = True
-        st.success(
-            "AI 퀴즈를 새 문제로 갱신했습니다."
-            if is_regeneration
-            else "AI 퀴즈를 생성하고 저장했습니다."
-        )
     except Exception as error:
         render_unexpected_error(
             error,
@@ -1157,17 +1161,12 @@ def _render_quiz_attempt_content(
     return completion_unlocked
 
 
-def render_quiz_section(
+def _load_quiz_completion_state(
     supabase,
     user_id,
-    plan_id,
-    course_name,
-    goal,
-    current_level,
     task,
-    widget_scope,
-):
-    """퀴즈 UI를 표시하고 현재 버전의 완료 가능 여부를 반환합니다."""
+) -> tuple[dict | None, bool] | None:
+    """저장된 퀴즈와 현재 버전의 완료 가능 상태를 불러옵니다."""
 
     try:
         quiz = get_quiz_by_task(
@@ -1184,38 +1183,73 @@ def render_quiz_section(
                 "시도해주세요."
             ),
         )
-        return False
+        return None
 
-    completion_unlocked = False
-    if quiz is not None:
-        try:
-            completion_unlocked = has_perfect_current_quiz_attempt(
-                supabase=supabase,
-                user_id=user_id,
-                quiz_id=quiz["id"],
-                quiz_updated_at=quiz["updated_at"],
-                question_count=quiz["question_count"],
-            )
-        except Exception as error:
-            render_unexpected_error(
-                error,
-                operation="quiz.check_completion",
-                user_message=(
-                    "퀴즈 완료 가능 여부를 불러오지 못했습니다. 잠시 "
-                    "후 다시 시도해주세요."
-                ),
-            )
-            return False
+    if quiz is None:
+        return None, False
 
-    quiz_section_open = st.toggle(
-        "AI 퀴즈 열기",
-        key=f"{widget_scope}_quiz_section_{task['id']}",
+    try:
+        completion_unlocked = has_perfect_current_quiz_attempt(
+            supabase=supabase,
+            user_id=user_id,
+            quiz_id=quiz["id"],
+            quiz_updated_at=quiz["updated_at"],
+            question_count=quiz["question_count"],
+        )
+    except Exception as error:
+        render_unexpected_error(
+            error,
+            operation="quiz.check_completion",
+            user_message=(
+                "퀴즈 완료 가능 여부를 불러오지 못했습니다. 잠시 후 "
+                "다시 시도해주세요."
+            ),
+        )
+        return None
+    return quiz, completion_unlocked
+
+
+def render_quiz_section(
+    supabase,
+    user_id,
+    plan_id,
+    course_name,
+    goal,
+    current_level,
+    task,
+    widget_scope,
+    *,
+    display_mode="toggle",
+):
+    """퀴즈 UI를 표시하고 현재 버전의 완료 가능 여부를 반환합니다."""
+
+    if display_mode not in {"toggle", "open", "status_only"}:
+        raise ValueError("지원하지 않는 AI 퀴즈 표시 방식입니다.")
+
+    loaded_state = _load_quiz_completion_state(
+        supabase=supabase,
+        user_id=user_id,
+        task=task,
     )
+    if loaded_state is None:
+        return False
+    quiz, completion_unlocked = loaded_state
+
     completion_status = _render_quiz_completion_status(
         task=task,
         quiz=quiz,
         completion_unlocked=completion_unlocked,
     )
+
+    if display_mode == "status_only":
+        return completion_unlocked
+
+    quiz_section_open = display_mode == "open"
+    if display_mode == "toggle":
+        quiz_section_open = st.toggle(
+            "AI 퀴즈 열기",
+            key=f"{widget_scope}_quiz_section_{task['id']}",
+        )
 
     if not quiz_section_open:
         return completion_unlocked

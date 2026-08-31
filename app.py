@@ -30,6 +30,10 @@ from views.gamification_view import (
 )
 from views.help_view import render_help_dialog
 from views.mastery_dashboard_view import render_mastery_dashboard
+from views.learning_context_state import (
+    PENDING_NAVIGATION_KEY as LEARNING_CONTEXT_PENDING_NAVIGATION_KEY,
+    clear_learning_context,
+)
 from views.shop_pages_view import (
     render_collection_page,
     render_inventory_page,
@@ -385,18 +389,21 @@ pages_by_title = {
 
 selected_page = st.navigation(
     {
-        "": [dashboard_page],
-        "계획": [create_plan_page, saved_plans_page],
-        "AI 도구": [source_review_page, tutor_page],
-        "성장": [
-            mastery_dashboard_page,
-            gamification_page,
-            weekly_review_page,
+        "학습하기": [
+            dashboard_page,
+            saved_plans_page,
+            create_plan_page,
         ],
-        "꾸미기": [
+        "AI로 도움받기": [tutor_page, source_review_page],
+        "성장 확인하기": [
+            mastery_dashboard_page,
+            weekly_review_page,
+            gamification_page,
+        ],
+        "학습방 꾸미기": [
+            study_room_page,
             shop_page,
             inventory_page,
-            study_room_page,
             collection_page,
         ],
     },
@@ -405,9 +412,14 @@ selected_page = st.navigation(
 )
 
 pending_navigation = st.session_state.pop(
-    WEEKLY_REVIEW_PENDING_NAVIGATION_KEY,
+    LEARNING_CONTEXT_PENDING_NAVIGATION_KEY,
     None,
 )
+if pending_navigation is None:
+    pending_navigation = st.session_state.pop(
+        WEEKLY_REVIEW_PENDING_NAVIGATION_KEY,
+        None,
+    )
 if pending_navigation is None:
     pending_navigation = st.session_state.pop(
         GAMIFICATION_PENDING_NAVIGATION_KEY,
@@ -465,6 +477,7 @@ with st.sidebar:
             st.session_state.pop(key, None)
 
         clear_tutor_state(st.session_state)
+        clear_learning_context(st.session_state)
         clear_weekly_review_state(st.session_state)
         clear_gamification_state(st.session_state)
         clear_shop_state(st.session_state)

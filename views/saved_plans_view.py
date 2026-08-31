@@ -17,6 +17,7 @@ from views.gamification_state import queue_gamification_notifications
 from views.learning_objective_connections_ui import (
     render_learning_objective_connections,
 )
+from views.learning_context_state import request_tutor_learning_context
 from views.quiz_ui import render_quiz_section
 from views.review_material_ui import (
     render_review_material_section,
@@ -263,6 +264,20 @@ def _render_saved_task_card(
         review_label = get_spaced_review_label(task)
         if review_label:
             st.caption(review_label)
+
+        if st.button(
+            "이 과제로 AI 튜터에게 질문하기",
+            key=f"saved_plan_open_tutor_{task['id']}",
+            icon=":material/psychology:",
+            help="이 계획과 과제를 유지한 채 단계별 힌트 튜터로 이동합니다.",
+        ):
+            request_tutor_learning_context(
+                st.session_state,
+                plan_id=str(selected_plan["id"]),
+                task_id=str(task["id"]),
+                source="saved_plan",
+            )
+            st.rerun()
 
         if task["task_type"] in {"learn", "review"}:
             render_review_material_section(

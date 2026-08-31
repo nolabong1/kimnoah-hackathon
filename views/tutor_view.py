@@ -32,6 +32,12 @@ from views.error_feedback import (
     render_unexpected_error,
     render_unexpected_warning,
 )
+from views.learning_context_state import (
+    clear_learning_context,
+    get_learning_context,
+    has_learning_context,
+)
+from views.operation_feedback import operation_status
 from views.tutor_state import (
     ACTIVE_SESSION_ID_KEY,
     ACTIVE_USER_ID_KEY,
@@ -73,6 +79,22 @@ def _clear_current_tutor() -> None:
     """콜백에서 현재 튜터 관련 상태만 안전하게 제거합니다."""
 
     clear_tutor_state(st.session_state)
+
+
+def _start_pending_tutor_context() -> None:
+    """전달받은 과제 문맥은 보존하고 기존 튜터 세션만 종료합니다."""
+
+    clear_tutor_state(st.session_state)
+
+
+def _get_context_source_label(source: str | None) -> str:
+    """페이지 간 문맥 출처를 사용자용 짧은 이름으로 변환합니다."""
+
+    if source == "today":
+        return "오늘 학습"
+    if source == "saved_plan":
+        return "저장된 계획"
+    return "이전 화면"
 
 
 def _ensure_valid_widget_value(
@@ -169,6 +191,23 @@ def _render_active_tutor_session(user_id: str) -> None:
         clear_tutor_state(st.session_state)
         st.warning("현재 사용자와 다른 튜터 세션을 정리했습니다.")
         st.rerun()
+
+    if has_learning_context(st.session_state):
+        _plan_id, _task_id, context_source = get_learning_context(
+            st.session_state
+        )
+        with st.container(border=True):
+            st.info(
+                f"{_get_context_source_label(context_source)}에서 다른 과제를 "
+                "가져왔습니다. 현재 질문은 사용자가 전환하기 전까지 유지됩니다."
+            )
+            st.button(
+                "가져온 과제로 새 질문 시작하기",
+                key="tutor_start_pending_context_button",
+                type="primary",
+                icon=":material/swap_horiz:",
+                on_click=_start_pending_tutor_context,
+            )
 
     try:
         guidance = TutorGuidance.model_validate(
@@ -328,7 +367,12 @@ def _render_active_tutor_session(user_id: str) -> None:
                 st.info("같은 풀이의 최근 점검 결과를 표시합니다.")
             else:
                 st.session_state[FEEDBACK_IN_PROGRESS_KEY] = True
-                with st.spinner("수정한 풀이를 점검하고 있습니다..."):
+                with operation_status(
+                    "수정한 풀이를 점검하고 있습니다...",
+                    "풀이 점검을 완료했습니다",
+                    "풀이 점검 중 오류가 발생했습니다",
+                ) as status:
+                    status.write("현재까지 공개된 힌트와 풀이를 비교합니다.")
                     feedback = generate_tutor_attempt_feedback(
                         course_name=st.session_state[COURSE_NAME_KEY],
                         task_title=st.session_state.get(TASK_TITLE_KEY),
@@ -346,9 +390,9 @@ def _render_active_tutor_session(user_id: str) -> None:
                         guidance=guidance,
                         revealed_hint_level=visible_hint_level,
                     )
+                    status.write("잘한 점과 다음에 시도할 단계를 정리했습니다.")
                 st.session_state[LATEST_FEEDBACK_KEY] = feedback.model_dump()
                 st.session_state[FEEDBACK_FINGERPRINT_KEY] = fingerprint
-                st.success("수정한 풀이를 점검했습니다.")
         except TutorInputValidationError as error:
             st.warning(str(error))
         except Exception as error:
@@ -393,11 +437,26 @@ def _render_tutor_setup(supabase, user_id: str) -> None:
         )
         return
     if not study_plans:
+        clear_learning_context(st.session_state)
         st.info("AI 튜터를 사용하려면 먼저 학습계획을 저장해주세요.")
         return
 
     plan_by_id = {str(plan["id"]): plan for plan in study_plans}
     plan_ids = list(plan_by_id)
+    context_plan_id, context_task_id, context_source = get_learning_context(
+        st.session_state
+    )
+    if context_plan_id is not None:
+        if context_plan_id in plan_by_id:
+            st.session_state[SETUP_PLAN_KEY] = context_plan_id
+        else:
+            clear_learning_context(st.session_state)
+            context_plan_id = None
+            context_task_id = None
+            st.warning(
+                "이전 화면에서 가져온 학습계획을 찾을 수 없습니다. "
+                "본인의 저장된 계획을 다시 선택해주세요."
+            )
     if _ensure_valid_widget_value(SETUP_PLAN_KEY, plan_ids):
         st.warning(
             "이전에 선택한 계획을 찾을 수 없어 다른 저장 계획을 표시합니다."
@@ -459,6 +518,21 @@ def _render_tutor_setup(supabase, user_id: str) -> None:
         learning_materials,
         review_materials,
     )
+    applied_context_task: dict | None = None
+    if context_plan_id is not None:
+        if (
+            context_plan_id == selected_plan_id
+            and context_task_id in task_by_id
+        ):
+            st.session_state[SETUP_TASK_KEY] = context_task_id
+            applied_context_task = task_by_id[context_task_id]
+        else:
+            st.warning(
+                "이전 화면에서 가져온 과제를 찾을 수 없습니다. "
+                "연결할 과제를 다시 선택해주세요."
+            )
+        clear_learning_context(st.session_state)
+
     task_options: list[str | None] = [None, *task_by_id]
     material_options: list[str | None] = [None, *material_by_key]
     task_selection_reset = _ensure_valid_widget_value(
@@ -477,6 +551,13 @@ def _render_tutor_setup(supabase, user_id: str) -> None:
         st.info(
             "계획이 바뀌었거나 선택한 자료가 없어 참고자료 선택을 "
             "초기화했습니다."
+        )
+
+    if applied_context_task is not None:
+        st.success(
+            f"{_get_context_source_label(context_source)}에서 선택한 "
+            f"‘{applied_context_task['title']}’ 과제를 연결했습니다.",
+            icon=":material/link:",
         )
 
     if not tasks:
@@ -579,7 +660,12 @@ def _render_tutor_setup(supabase, user_id: str) -> None:
         )
 
         st.session_state[REQUEST_IN_PROGRESS_KEY] = True
-        with st.spinner("세 단계 힌트와 풀이 구조를 준비하고 있습니다..."):
+        with operation_status(
+            "문제와 학습 문맥을 분석하고 있습니다...",
+            "세 단계 힌트 준비를 완료했습니다",
+            "AI 튜터 준비 중 오류가 발생했습니다",
+        ) as status:
+            status.write("선택한 과제·참고자료와 현재 풀이를 확인합니다.")
             generation_result = generate_tutor_guidance(
                 course_name=selected_plan["course_name"],
                 goal=selected_plan["goal"],
@@ -603,6 +689,7 @@ def _render_tutor_setup(supabase, user_id: str) -> None:
                 question=cleaned_question,
                 user_attempt=cleaned_attempt,
             )
+            status.write("힌트 1~3과 최종 풀이 구조를 검증했습니다.")
 
         st.session_state.update(
             create_tutor_session_state(

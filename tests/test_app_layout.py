@@ -147,13 +147,33 @@ class AppLayoutTests(unittest.TestCase):
         self.assertEqual(navigation["position"], "sidebar")
         self.assertTrue(navigation["expanded"])
 
+    def test_navigation_groups_follow_user_goals(self):
+        app_source = (PROJECT_ROOT / "app.py").read_text(encoding="utf-8")
+        group_markers = (
+            '"학습하기": [',
+            '"AI로 도움받기": [',
+            '"성장 확인하기": [',
+            '"학습방 꾸미기": [',
+        )
+
+        positions = [app_source.index(marker) for marker in group_markers]
+        self.assertEqual(positions, sorted(positions))
+        self.assertLess(
+            app_source.index("dashboard_page", positions[0]),
+            app_source.index("saved_plans_page", positions[0]),
+        )
+        self.assertLess(
+            app_source.index("saved_plans_page", positions[0]),
+            app_source.index("create_plan_page", positions[0]),
+        )
+
     def test_customization_features_are_direct_navigation_pages(self):
         app_source = (PROJECT_ROOT / "app.py").read_text(encoding="utf-8")
         gamification_source = (
             PROJECT_ROOT / "views" / "gamification_view.py"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('"꾸미기": [', app_source)
+        self.assertIn('"학습방 꾸미기": [', app_source)
         for page_name in (
             "shop_page",
             "inventory_page",
@@ -295,6 +315,64 @@ class AppLayoutTests(unittest.TestCase):
             "질문과 현재 풀이",
             [item.value for item in tutor_app.subheader],
         )
+
+    def test_tutor_applies_owned_context_from_another_page(self):
+        from views.learning_context_state import (
+            PLAN_ID_KEY,
+            SOURCE_KEY,
+            TASK_ID_KEY,
+        )
+
+        plan = {
+            "id": PLAN_ID,
+            "title": "파이썬 7일 계획",
+            "course_name": "파이썬",
+            "goal": "반복문 익히기",
+            "current_level": 3,
+        }
+        task = {
+            "id": "task-1",
+            "scheduled_date": "2026-08-31",
+            "title": "반복문 실행 흐름",
+            "description": "for문의 실행 순서를 설명합니다.",
+        }
+        app = AppTest.from_function(
+            render_tutor_test_page,
+            args=(object(), SimpleNamespace(id=USER_ID)),
+        )
+        app.session_state[PLAN_ID_KEY] = PLAN_ID
+        app.session_state[TASK_ID_KEY] = "task-1"
+        app.session_state[SOURCE_KEY] = "today"
+
+        with (
+            patch(
+                "views.tutor_view.get_user_study_plans",
+                return_value=[plan],
+            ),
+            patch(
+                "views.tutor_view.get_study_plan_tasks",
+                return_value=[task],
+            ),
+            patch(
+                "views.tutor_view.get_learning_materials_by_plan",
+                return_value=[],
+            ),
+            patch(
+                "views.tutor_view.get_review_materials_by_plan",
+                return_value=[],
+            ),
+        ):
+            app.run()
+
+        self.assertEqual(list(app.exception), [])
+        self.assertEqual(app.selectbox[0].value, PLAN_ID)
+        self.assertEqual(app.selectbox[1].value, "task-1")
+        self.assertIn(
+            "오늘 학습에서 선택한 ‘반복문 실행 흐름’ 과제를 연결했습니다.",
+            [item.value for item in app.success],
+        )
+        self.assertNotIn(PLAN_ID_KEY, app.session_state)
+        self.assertNotIn(TASK_ID_KEY, app.session_state)
 
     def test_source_review_archive_reopens_saved_markdown(self):
         plan = {
@@ -551,7 +629,15 @@ class AppLayoutTests(unittest.TestCase):
 
     def test_tutor_final_answer_uses_explicit_confirmation_dialog(self):
         from models.tutor import TutorGuidance
-        from views.tutor_state import create_tutor_session_state
+        from views.learning_context_state import (
+            PLAN_ID_KEY,
+            SOURCE_KEY,
+            TASK_ID_KEY,
+        )
+        from views.tutor_state import (
+            ACTIVE_SESSION_ID_KEY,
+            create_tutor_session_state,
+        )
 
         guidance = TutorGuidance.model_validate(
             {
@@ -595,9 +681,20 @@ class AppLayoutTests(unittest.TestCase):
             guidance=guidance,
         ).items():
             app.session_state[key] = value
+        app.session_state[PLAN_ID_KEY] = PLAN_ID
+        app.session_state[TASK_ID_KEY] = "task-new"
+        app.session_state[SOURCE_KEY] = "today"
 
         app.run()
         self.assertEqual(list(app.exception), [])
+        self.assertEqual(
+            app.session_state[ACTIVE_SESSION_ID_KEY],
+            "session-1",
+        )
+        self.assertIn(
+            "가져온 과제로 새 질문 시작하기",
+            [button.label for button in app.button],
+        )
         show_answer = next(
             button
             for button in app.button
@@ -676,6 +773,9 @@ class AppLayoutTests(unittest.TestCase):
                 args=(object(), SimpleNamespace(id=USER_ID)),
             ).run()
 
+            self.assertEqual(material_section.call_count, 0)
+            app = app.segmented_control[0].set_value("content").run()
+
         self.assertEqual(list(app.exception), [])
         self.assertIn("오늘 학습", [item.value for item in app.title])
         self.assertIn("오늘 할 일", [item.value for item in app.subheader])
@@ -686,7 +786,13 @@ class AppLayoutTests(unittest.TestCase):
         self.assertEqual(len(app.radio), 1)
         self.assertEqual(len(app.radio[0].options), 2)
         material_section.assert_called_once()
-        gamification_summary.assert_called_once()
+        material_call = material_section.call_args.kwargs
+        self.assertEqual(material_call["user_id"], USER_ID)
+        self.assertEqual(material_call["plan_id"], PLAN_ID)
+        self.assertEqual(material_call["task"]["id"], "task-1")
+        self.assertEqual(material_call["widget_scope"], "dashboard")
+        self.assertEqual(material_call["display_mode"], "open")
+        self.assertEqual(gamification_summary.call_count, 2)
 
     def test_create_plan_separates_inputs_preview_and_save(self):
         today = datetime.now(ZoneInfo("Asia/Seoul")).date()

@@ -34,6 +34,7 @@ from services.weekly_review_service import (
 )
 from views.create_plan_view import CURRENT_LEVEL_OPTIONS
 from views.error_feedback import render_unexpected_error
+from views.operation_feedback import operation_status
 from views.ui_components import (
     MetricItem,
     READING_CONTENT_WIDTH,
@@ -227,9 +228,18 @@ def _generate_and_save_review(
 
     st.session_state[REQUEST_RUNNING_KEY] = True
     try:
-        with st.spinner("이번 주 기록을 분석하고 AI 회고를 만들고 있습니다..."):
+        with operation_status(
+            "이번 주 학습 기록을 분석하고 있습니다...",
+            "AI 주간 회고 생성과 저장을 완료했습니다",
+            "AI 주간 회고 처리 중 오류가 발생했습니다",
+        ) as status:
+            status.write("과제 완료 통계와 작성한 회고 답변을 확인합니다.")
             analysis = generate_weekly_review(statistics, answers)
+            status.write("분석 결과를 고정된 회고 문서 형식으로 변환합니다.")
             markdown = convert_weekly_review_to_markdown(analysis)
+            status.write(
+                "통계 스냅샷과 회고 내용을 기존 계획에 연결해 저장합니다."
+            )
             if existing_review is None:
                 create_weekly_review(
                     supabase=supabase,
@@ -453,7 +463,12 @@ def _render_next_plan_section(
                     reflection_answers,
                 )
                 st.session_state[NEXT_PLAN_RUNNING_KEY] = True
-                with st.spinner("주간 회고를 반영해 다음 7일 계획을 만들고 있습니다..."):
+                with operation_status(
+                    "주간 회고를 다음 계획 조건에 반영하고 있습니다...",
+                    "다음 주 계획 미리보기를 만들었습니다",
+                    "다음 주 계획 생성 중 오류가 발생했습니다",
+                ) as status:
+                    status.write("추천 목표와 학습량 조정 의견을 확인합니다.")
                     generated_plan = generate_weekly_study_plan(
                         course_name=course_name,
                         goal=next_goal,
@@ -462,6 +477,7 @@ def _render_next_plan_section(
                         weekly_review_context=weekly_review_context,
                         recent_score=recent_score,
                     )
+                    status.write("7일 일정과 하루별 가능 시간을 검증했습니다.")
                 metadata = {
                     "course_name": course_name.strip(),
                     "goal": next_goal.strip(),
@@ -473,9 +489,7 @@ def _render_next_plan_section(
                 st.session_state.update(
                     create_next_plan_draft_state(generated_plan, metadata)
                 )
-                st.success(
-                    "다음 주 계획 미리보기를 만들었습니다. 아직 저장되지 않았습니다."
-                )
+                st.info("미리보기 상태이며 저장 버튼을 누르기 전에는 저장되지 않습니다.")
             except ValueError as error:
                 st.warning(str(error))
             except Exception as error:
@@ -531,7 +545,12 @@ def _render_next_plan_section(
             else:
                 st.session_state[SAVE_RUNNING_KEY] = True
                 try:
-                    with st.spinner("다음 주 계획과 과제를 저장하고 있습니다..."):
+                    with operation_status(
+                        "다음 주 계획과 과제를 저장하고 있습니다...",
+                        "다음 주 계획 저장을 완료했습니다",
+                        "다음 주 계획 저장 중 오류가 발생했습니다",
+                    ) as status:
+                        status.write("계획·학습목표·과제 연결을 확인합니다.")
                         saved_plan = save_weekly_study_plan(
                             supabase=supabase,
                             user_id=user_id,
@@ -542,6 +561,7 @@ def _render_next_plan_section(
                             start_date=metadata["start_date"],
                             available_schedule=metadata["available_schedule"],
                         )
+                        status.write("새 7일 계획을 원자적으로 저장했습니다.")
                     st.session_state[NEXT_PLAN_SAVED_KEY] = True
                     st.session_state[NEXT_PLAN_SAVED_ID_KEY] = saved_plan["id"]
                     st.rerun()

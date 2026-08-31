@@ -30,6 +30,13 @@ def test_help_dialog_explains_the_core_learning_flow() -> None:
     assert any("4. 완료하기" in value for value in markdown_values)
     assert any("과목별 숙련도" in value for value in markdown_values)
     assert any("PDF" in value for value in markdown_values)
+    for purpose_label in (
+        "학습하기",
+        "AI로 도움받기",
+        "성장 확인하기",
+        "학습방 꾸미기",
+    ):
+        assert any(purpose_label in value for value in markdown_values)
 
 
 def test_sidebar_uses_a_prominent_help_button() -> None:

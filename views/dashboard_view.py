@@ -15,6 +15,18 @@ from views.gamification_state import queue_gamification_notifications
 from views.gamification_view import (
     render_gamification_dashboard_summary_from_data,
 )
+from views.learning_flow_state import (
+    DASHBOARD_PENDING_TASK_KEY,
+    TASK_FLOW_STAGES,
+    TASK_STAGE_COMPLETE,
+    TASK_STAGE_CONTENT,
+    TASK_STAGE_OVERVIEW,
+    get_default_task_stage,
+    get_next_pending_task_id,
+    get_task_stage_key,
+    get_task_stage_label,
+)
+from views.learning_context_state import request_tutor_learning_context
 from views.quiz_ui import render_quiz_section
 from views.review_material_ui import (
     render_review_material_section,
@@ -207,12 +219,13 @@ def _build_today_tasks(
     return today_tasks
 
 
-def _render_today_task_cards(
+def _render_today_task_card(
     supabase,
     user,
+    task: dict,
     today_tasks: list[dict],
 ) -> None:
-    """오늘 과제를 카드로 표시하고 기존 완료 흐름을 유지합니다."""
+    """선택한 오늘 과제를 안내·콘텐츠·완료 단계로 표시합니다."""
 
     task_type_names = {
         "learn": ":material/menu_book: 학습",
@@ -220,26 +233,66 @@ def _render_today_task_cards(
         "quiz": ":material/quiz: 퀴즈",
     }
 
-    for task in today_tasks:
-        task_type = task_type_names.get(
-            task["task_type"],
-            "📌 과제",
+    task_type = task_type_names.get(
+        task["task_type"],
+        ":material/assignment: 과제",
+    )
+    stage_key = get_task_stage_key("dashboard", str(task["id"]))
+    if st.session_state.get(stage_key) not in TASK_FLOW_STAGES:
+        st.session_state[stage_key] = get_default_task_stage(task)
+
+    with st.container(border=True):
+        st.caption(
+            f"{task['course_name']} · {task['plan_title']} · "
+            f"예상 {task['estimated_minutes']}분"
+        )
+        st.markdown(f"### {task_type} · {task['title']}")
+        if st.button(
+            "이 과제로 AI 튜터에게 질문하기",
+            key=f"dashboard_open_tutor_{task['id']}",
+            icon=":material/psychology:",
+            width="stretch",
+            help="선택한 계획과 과제를 유지한 채 단계별 힌트 튜터로 이동합니다.",
+        ):
+            request_tutor_learning_context(
+                st.session_state,
+                plan_id=str(task["plan_id"]),
+                task_id=str(task["id"]),
+                source="today",
+            )
+            st.rerun()
+
+        selected_stage = st.segmented_control(
+            "학습 단계",
+            options=TASK_FLOW_STAGES,
+            format_func=lambda stage: get_task_stage_label(
+                stage,
+                task["task_type"],
+            ),
+            key=stage_key,
+            required=True,
+            width="stretch",
+            persist_state="session",
         )
 
-        with st.container(border=True):
-            quiz_completion_unlocked = True
-
-            st.caption(
-                f"{task['course_name']} · {task['plan_title']} · "
-                f"예상 {task['estimated_minutes']}분"
-            )
-            st.markdown(f"### {task_type} · {task['title']}")
+        if selected_stage == TASK_STAGE_OVERVIEW:
             st.write(task["description"])
-
             review_label = get_spaced_review_label(task)
             if review_label:
                 st.caption(review_label)
+            if task["status"] == "completed":
+                st.success(
+                    "이미 완료한 과제입니다. 학습자료를 다시 확인할 수 있습니다.",
+                    icon=":material/check_circle:",
+                )
+            else:
+                st.info(
+                    "과제 내용을 확인했다면 다음 단계에서 학습을 시작하세요.",
+                    icon=":material/arrow_forward:",
+                )
+            return
 
+        if selected_stage == TASK_STAGE_CONTENT:
             if task["task_type"] in {"learn", "review"}:
                 render_review_material_section(
                     supabase=supabase,
@@ -250,9 +303,10 @@ def _render_today_task_cards(
                     current_level=task["current_level"],
                     task=task,
                     widget_scope="dashboard",
+                    display_mode="open",
                 )
             elif task["task_type"] == "quiz":
-                quiz_completion_unlocked = render_quiz_section(
+                render_quiz_section(
                     supabase=supabase,
                     user_id=user.id,
                     plan_id=task["plan_id"],
@@ -261,72 +315,124 @@ def _render_today_task_cards(
                     current_level=task["current_level"],
                     task=task,
                     widget_scope="dashboard",
+                    display_mode="open",
                 )
+            return
 
-            if task["status"] == "completed":
-                st.success(
-                    "완료된 과제입니다.",
-                    icon=":material/check_circle:",
-                )
-                continue
+        if selected_stage != TASK_STAGE_COMPLETE:
+            return
 
-            quiz_completion_locked = (
-                task["task_type"] == "quiz"
-                and not quiz_completion_unlocked
+        quiz_completion_unlocked = True
+        if task["task_type"] == "quiz":
+            quiz_completion_unlocked = render_quiz_section(
+                supabase=supabase,
+                user_id=user.id,
+                plan_id=task["plan_id"],
+                course_name=task["course_name"],
+                goal=task["goal"],
+                current_level=task["current_level"],
+                task=task,
+                widget_scope="dashboard",
+                display_mode="status_only",
             )
 
-            if st.button(
-                "과제 완료하기",
-                key=f"dashboard_complete_{task['id']}",
-                type="primary",
-                width="stretch",
-                disabled=quiz_completion_locked,
-                help=(
-                    "현재 퀴즈의 모든 문항을 맞히면 완료할 수 있습니다."
-                    if quiz_completion_locked
+        if task["status"] == "completed":
+            st.success(
+                "완료된 과제입니다.",
+                icon=":material/check_circle:",
+            )
+            return
+
+        quiz_completion_locked = (
+            task["task_type"] == "quiz"
+            and not quiz_completion_unlocked
+        )
+        if not quiz_completion_locked:
+            st.caption(
+                "학습을 마쳤다면 완료를 기록하고 EXP를 받아보세요."
+            )
+
+        if not st.button(
+            "과제 완료하기",
+            key=f"dashboard_complete_{task['id']}",
+            type="primary",
+            icon=":material/task_alt:",
+            width="stretch",
+            disabled=quiz_completion_locked,
+            help=(
+                "현재 퀴즈의 모든 문항을 맞히면 완료할 수 있습니다."
+                if quiz_completion_locked
+                else None
+            ),
+        ):
+            return
+
+        try:
+            with st.spinner("과제 완료를 기록하고 있습니다..."):
+                result = complete_study_task(
+                    supabase=supabase,
+                    task_id=task["id"],
+                )
+
+            queue_gamification_notifications(
+                st.session_state,
+                result.get("gamification"),
+            )
+
+            if result["already_completed"]:
+                message = "이미 완료된 과제입니다."
+            else:
+                message = f"과제 완료! +{result['task_exp']} EXP"
+                if result["daily_bonus_exp"] > 0:
+                    message += (
+                        " · 오늘의 계획 완료 보너스 "
+                        f"+{result['daily_bonus_exp']} EXP"
+                    )
+                message += f" · 총 EXP {result['total_exp']}"
+
+            next_task_id = get_next_pending_task_id(
+                today_tasks,
+                str(task["id"]),
+            )
+            next_task = next(
+                (
+                    candidate
+                    for candidate in today_tasks
+                    if candidate.get("id") == next_task_id
+                ),
+                None,
+            )
+            if next_task_id is not None:
+                st.session_state[DASHBOARD_PENDING_TASK_KEY] = next_task_id
+                next_stage_key = get_task_stage_key(
+                    "dashboard",
+                    next_task_id,
+                )
+                st.session_state[next_stage_key] = TASK_STAGE_OVERVIEW
+
+            st.session_state.task_completion_feedback = {
+                "message": message,
+                "daily_bonus_exp": result.get(
+                    "daily_bonus_exp",
+                    0,
+                ),
+                "guided_flow": True,
+                "next_task_title": (
+                    next_task.get("title")
+                    if isinstance(next_task, dict)
                     else None
                 ),
-            ):
-                try:
-                    with st.spinner("과제 완료를 기록하고 있습니다..."):
-                        result = complete_study_task(
-                            supabase=supabase,
-                            task_id=task["id"],
-                        )
-
-                    queue_gamification_notifications(
-                        st.session_state,
-                        result.get("gamification"),
-                    )
-
-                    if result["already_completed"]:
-                        message = "이미 완료된 과제입니다."
-                    else:
-                        message = f"과제 완료! +{result['task_exp']} EXP"
-                        if result["daily_bonus_exp"] > 0:
-                            message += (
-                                " · 오늘의 계획 완료 보너스 "
-                                f"+{result['daily_bonus_exp']} EXP"
-                            )
-                        message += f" · 총 EXP {result['total_exp']}"
-
-                    st.session_state.task_completion_feedback = {
-                        "message": message,
-                        "daily_bonus_exp": result.get(
-                            "daily_bonus_exp",
-                            0,
-                        ),
-                    }
-                    st.rerun()
-                except Exception as error:
-                    render_unexpected_error(
-                        error,
-                        operation="dashboard.complete_task",
-                        user_message=(
-                            "과제 완료 처리에 실패했습니다. 잠시 후 다시 "
-                            "시도해주세요."
-                        ),
-                    )
+            }
+            st.rerun()
+        except Exception as error:
+            render_unexpected_error(
+                error,
+                operation="dashboard.complete_task",
+                user_message=(
+                    "과제 완료 처리에 실패했습니다. 잠시 후 다시 "
+                    "시도해주세요."
+                ),
+            )
 
 
 def render_dashboard(supabase, user):
@@ -523,7 +629,16 @@ def render_dashboard(supabase, user):
         for task in today_tasks
     }
     task_ids = list(task_by_id)
-    if st.session_state.get(DASHBOARD_TASK_SELECT_KEY) not in task_by_id:
+    pending_task_id = st.session_state.pop(
+        DASHBOARD_PENDING_TASK_KEY,
+        None,
+    )
+    if (
+        pending_task_id in task_by_id
+        and task_by_id[pending_task_id]["status"] != "completed"
+    ):
+        st.session_state[DASHBOARD_TASK_SELECT_KEY] = pending_task_id
+    elif st.session_state.get(DASHBOARD_TASK_SELECT_KEY) not in task_by_id:
         first_pending_task = next(
             (
                 task
@@ -553,10 +668,11 @@ def render_dashboard(supabase, user):
 
     with task_detail_column:
         st.subheader("선택한 과제")
-        _render_today_task_cards(
+        _render_today_task_card(
             supabase=supabase,
             user=user,
-            today_tasks=[task_by_id[selected_task_id]],
+            task=task_by_id[selected_task_id],
+            today_tasks=today_tasks,
         )
 
     with insight_column:

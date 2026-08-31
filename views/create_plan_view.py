@@ -6,6 +6,7 @@ import streamlit as st
 from services.study_plan_repository import save_weekly_study_plan
 from services.study_plan_service import generate_weekly_study_plan
 from views.error_feedback import render_unexpected_error
+from views.operation_feedback import operation_status
 from views.ui_components import render_page_header
 
 
@@ -133,10 +134,12 @@ def render_create_plan(supabase, user):
 
         else:
             try:
-                with st.spinner(
-                    "현재 수준을 분석하고 "
-                    "7일 계획을 만들고 있습니다..."
-                ):
+                with operation_status(
+                    "현재 수준과 학습 가능 시간을 분석하고 있습니다...",
+                    "7일 학습계획을 만들었습니다",
+                    "학습계획 생성 중 오류가 발생했습니다",
+                ) as status:
+                    status.write("입력한 목표와 하루별 가능 시간을 확인합니다.")
                     generated_plan = (
                         generate_weekly_study_plan(
                             course_name=course_name.strip(),
@@ -147,6 +150,7 @@ def render_create_plan(supabase, user):
                             ),
                         )
                     )
+                    status.write("7일 과제 구성과 시간 제한을 검증했습니다.")
 
                 st.session_state.generated_plan = (
                     generated_plan
@@ -167,10 +171,6 @@ def render_create_plan(supabase, user):
                 st.session_state.pop(
                     "saved_plan_id",
                     None,
-                )
-
-                st.success(
-                    "7일 학습계획이 생성되었습니다!"
                 )
 
             except Exception as error:
@@ -282,9 +282,12 @@ def render_create_plan(supabase, user):
             )
 
             try:
-                with st.spinner(
-                    "학습계획과 과제를 저장하고 있습니다..."
-                ):
+                with operation_status(
+                    "학습계획과 과제를 저장하고 있습니다...",
+                    "학습계획 저장을 완료했습니다",
+                    "학습계획 저장 중 오류가 발생했습니다",
+                ) as status:
+                    status.write("계획·학습목표·과제 소유권을 확인합니다.")
                     saved_plan = save_weekly_study_plan(
                         supabase=supabase,
                         user_id=user.id,
@@ -302,6 +305,9 @@ def render_create_plan(supabase, user):
                         available_schedule=metadata[
                             "available_schedule"
                         ],
+                    )
+                    status.write(
+                        "7일 계획과 연결 과제를 원자적으로 저장했습니다."
                     )
 
                 st.session_state.generated_plan_saved = True

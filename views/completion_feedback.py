@@ -5,6 +5,8 @@ import streamlit as st
 def show_completion_dialog(
     message,
     daily_bonus_exp,
+    next_task_title=None,
+    guided_flow=False,
 ):
     st.success(message, icon=":material/task_alt:")
 
@@ -14,11 +16,28 @@ def show_completion_dialog(
             st.metric("일일 완료 보너스", f"+{daily_bonus_exp} EXP")
             st.write("오늘 예정된 과제를 모두 완료했습니다.")
     else:
-        st.caption("다음 과제도 이어서 완료해보세요.")
+        if next_task_title:
+            st.caption(f"다음 과제 · {next_task_title}")
+        else:
+            st.caption("학습 기록이 저장되었습니다.")
+
+    if next_task_title:
+        button_label = "다음 과제 이어하기"
+        button_icon = ":material/arrow_forward:"
+    elif guided_flow and daily_bonus_exp > 0:
+        button_label = "오늘 학습 마치기"
+        button_icon = ":material/done_all:"
+    elif guided_flow:
+        button_label = "학습 화면으로 돌아가기"
+        button_icon = ":material/arrow_back:"
+    else:
+        button_label = "확인"
+        button_icon = ":material/check:"
 
     if st.button(
-        "확인",
+        button_label,
         type="primary",
+        icon=button_icon,
         width="stretch",
     ):
         st.rerun()
@@ -50,4 +69,6 @@ def render_completion_feedback():
     show_completion_dialog(
         message=message,
         daily_bonus_exp=daily_bonus_exp,
+        next_task_title=feedback.get("next_task_title"),
+        guided_flow=feedback.get("guided_flow", False),
     )

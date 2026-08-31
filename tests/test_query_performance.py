@@ -176,6 +176,40 @@ class QuizAttemptQueryTests(unittest.TestCase):
         self.assertTrue(completion_unlocked)
         mock_get_attempts.assert_not_called()
 
+    @patch("views.quiz_ui.get_quiz_attempts")
+    @patch("views.quiz_ui.has_perfect_current_quiz_attempt", return_value=True)
+    @patch("views.quiz_ui.get_quiz_by_task")
+    @patch("views.quiz_ui.st")
+    def test_quiz_status_mode_skips_toggle_and_detailed_attempts(
+        self,
+        mock_streamlit,
+        mock_get_quiz,
+        _mock_completion_status,
+        mock_get_attempts,
+    ):
+        mock_get_quiz.return_value = {
+            "id": QUIZ_ID,
+            "updated_at": QUIZ_UPDATED_AT,
+            "question_count": 5,
+        }
+        mock_streamlit.empty.return_value = MagicMock()
+
+        completion_unlocked = render_quiz_section(
+            supabase=object(),
+            user_id=USER_ID,
+            plan_id=PLAN_A_ID,
+            course_name="파이썬",
+            goal="반복문 익히기",
+            current_level=3,
+            task={"id": "task-1", "status": "pending"},
+            widget_scope="performance_test",
+            display_mode="status_only",
+        )
+
+        self.assertTrue(completion_unlocked)
+        mock_streamlit.toggle.assert_not_called()
+        mock_get_attempts.assert_not_called()
+
 
 class WeeklyReviewBulkQueryTests(unittest.TestCase):
     def test_tasks_for_multiple_plans_use_one_table_query(self):
