@@ -10,6 +10,10 @@ from services.concept_mastery_service import (
     summarize_course_masteries,
 )
 from views.error_feedback import render_unexpected_error
+from views.mastery_skill_tree_component import (
+    build_mastery_skill_tree_nodes,
+    render_mastery_skill_tree,
+)
 from views.ui_components import (
     MetricItem,
     render_empty_state,
@@ -20,6 +24,7 @@ from views.ui_components import (
 
 MASTERY_COURSE_SELECT_KEY = "mastery_dashboard_course_key"
 MASTERY_FILTER_KEY = "mastery_dashboard_concept_filter"
+MASTERY_DETAIL_VIEW_KEY = "mastery_dashboard_detail_view"
 SEOUL_TIMEZONE = ZoneInfo("Asia/Seoul")
 
 
@@ -197,6 +202,23 @@ def _render_selected_course_detail(
             selected_summary.get("last_assessed_at")
         )
     )
+
+    detail_view = st.segmented_control(
+        "개념 보기 방식",
+        options=["스킬트리", "개념 카드"],
+        default="스킬트리",
+        key=MASTERY_DETAIL_VIEW_KEY,
+    )
+    if detail_view == "스킬트리":
+        skill_tree_nodes = build_mastery_skill_tree_nodes(
+            selected_masteries
+        )
+        render_mastery_skill_tree(
+            skill_tree_nodes,
+            total_count=len(selected_masteries),
+            key=f"mastery_skill_tree_{selected_course_key}",
+        )
+        return
 
     selected_filter = st.segmented_control(
         "개념 보기",

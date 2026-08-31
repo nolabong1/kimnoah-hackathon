@@ -4,12 +4,15 @@ from unittest.mock import ANY, patch
 
 from streamlit.testing.v1 import AppTest
 
+from models.learning_objective import StoredLearningObjective
 from services.learning_performance_repository import (
     get_learning_performance_data,
 )
 from services.learning_performance_service import (
+    build_learning_performance_html,
     build_learning_performance_report,
     build_performance_highlights,
+    summarize_before_after_evidence,
 )
 
 
@@ -194,6 +197,108 @@ class LearningPerformanceServiceTests(unittest.TestCase):
         self.assertEqual(report.quizzes[0].score_history, [40, 80])
         self.assertEqual(report.quizzes[0].score_change, 40)
 
+    def test_stored_objective_uuid_is_normalized_for_report_links(self):
+        data = _performance_data()
+        data["objectives"] = [
+            StoredLearningObjective(
+                id=OBJECTIVE_A_ID,
+                user_id=USER_ID,
+                plan_id=PLAN_ID,
+                objective_key="explain_condition",
+                title="조건식 설명",
+                description="조건식의 평가 결과를 설명합니다.",
+                target_depth="foundation",
+                evidence_requirements=[
+                    {"key": "explain", "description": "개념을 설명합니다."},
+                    {"key": "apply", "description": "예제에 적용합니다."},
+                    {
+                        "key": "differentiate",
+                        "description": "비슷한 개념을 구분합니다.",
+                    },
+                ],
+                contract_hash="a" * 64,
+                sort_order=1,
+                origin="generated",
+            )
+        ]
+
+        report = build_learning_performance_report(data)
+
+        self.assertEqual(
+            report.objectives[0].learning_objective_id,
+            OBJECTIVE_A_ID,
+        )
+        self.assertEqual(report.objectives[0].task_count, 2)
+
+    def test_before_after_summary_counts_only_direct_score_changes(self):
+        report = build_learning_performance_report(_performance_data())
+
+        summary = summarize_before_after_evidence(report)
+
+        self.assertEqual(summary["evaluated_concept_count"], 2)
+        self.assertEqual(summary["improved_concept_count"], 1)
+        self.assertEqual(summary["score_threshold_reached_count"], 1)
+
+    def test_html_report_contains_objective_and_student_evidence(self):
+        report = build_learning_performance_report(_performance_data())
+
+        html = build_learning_performance_html(
+            report,
+            reflection_answers={
+                "went_well": "조건식 예제를 끝까지 풀었다.",
+                "difficulty": "중첩 조건문이 어려웠다.",
+            },
+            ai_review_markdown="### AI 분석\n조건식 연습이 확인됐습니다.",
+        )
+
+        self.assertTrue(html.startswith("<!doctype html>"))
+        self.assertIn('<meta charset="utf-8">', html)
+        self.assertIn("완료 과제 기준 예상 학습량", html)
+        self.assertIn("45분", html)
+        self.assertIn("학습목표별 근거", html)
+        self.assertIn("조건식 설명", html)
+        self.assertIn("첫 평가 직전", html)
+        self.assertIn("조건식 예제를 끝까지 풀었다.", html)
+        self.assertIn("AI 주간 회고 분석", html)
+        self.assertIn("인과관계를 단정하지 않습니다", html)
+        self.assertIn("@media print", html)
+
+    def test_html_report_handles_empty_assessment_and_review(self):
+        data = _performance_data()
+        data.update(
+            {
+                "objectives": [],
+                "quizzes": [],
+                "attempts": [],
+                "mastery_events": [],
+                "concepts": [],
+                "current_masteries": [],
+            }
+        )
+        report = build_learning_performance_report(data)
+
+        html = build_learning_performance_html(report)
+
+        self.assertIn("퀴즈 응시 기록이 없습니다", html)
+        self.assertIn("개념 숙련도 평가 기록이 없습니다", html)
+        self.assertIn("저장된 직접 회고 답변이 없습니다", html)
+
+    def test_html_report_escapes_user_and_ai_content(self):
+        report = build_learning_performance_report(_performance_data()).model_copy(
+            update={"plan_title": "<script>alert('plan')</script>"}
+        )
+
+        html = build_learning_performance_html(
+            report,
+            reflection_answers={"went_well": '<img src=x onerror="alert(1)">'},
+            ai_review_markdown="## 분석\n<script>alert('ai')</script>",
+        )
+
+        self.assertNotIn("<script>alert", html)
+        self.assertNotIn("<img src=x", html)
+        self.assertIn("&lt;script&gt;alert", html)
+        self.assertIn("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;", html)
+
 
 class _Query:
     def __init__(self, supabase, table_name):
@@ -319,6 +424,58 @@ class LearningPerformanceViewTests(unittest.TestCase):
             plan_id=PLAN_ID,
         )
         load_review.assert_called_once()
+
+    def test_report_view_separates_student_reflection_from_ai_review(self):
+        data = _performance_data()
+        plan = {
+            **data["plan"],
+            "current_level": 3,
+            "goal": "조건문 이해",
+            "available_schedule": {},
+            "weekly_overview": [],
+            "status": "active",
+            "created_at": "2026-08-01T00:00:00+00:00",
+        }
+        review = {
+            "week_start": "2026-08-01",
+            "week_end": "2026-08-07",
+            "reflection_answers": {
+                "went_well": "조건식 예제를 끝까지 풀었다.",
+                "difficulty": "중첩 조건문이 어려웠다.",
+            },
+            "ai_review_markdown": "### AI 분석\n조건식 연습이 확인됐습니다.",
+        }
+        app = AppTest.from_function(
+            _render_performance_test_page,
+            args=(object(), SimpleNamespace(id=USER_ID)),
+        )
+
+        with (
+            patch(
+                "views.learning_performance_view.get_user_study_plans",
+                return_value=[plan],
+            ),
+            patch(
+                "views.learning_performance_view.get_learning_performance_data",
+                return_value=data,
+            ),
+            patch(
+                "views.learning_performance_view.get_weekly_review_by_plan",
+                return_value=review,
+            ),
+        ):
+            app.run()
+
+        self.assertEqual(list(app.exception), [])
+        rendered_text = "\n".join(item.value for item in app.markdown)
+        self.assertIn("학생이 직접 작성한 회고", rendered_text)
+        self.assertIn("조건식 예제를 끝까지 풀었다.", rendered_text)
+        self.assertIn("AI 회고 분석", rendered_text)
+        self.assertEqual(len(app.download_button), 1)
+        self.assertEqual(
+            app.download_button[0].label,
+            "읽기 쉬운 HTML 리포트 내려받기",
+        )
 
 
 if __name__ == "__main__":

@@ -35,6 +35,7 @@ from services.quiz_service import (
     prepare_quiz_reference,
 )
 from views.gamification_state import queue_gamification_notifications
+from views.interaction_state import queue_quiz_result_interaction
 from views.error_feedback import (
     render_unexpected_error,
     render_unexpected_warning,
@@ -646,6 +647,10 @@ def _submit_quiz_answers(
         queue_gamification_notifications(
             st.session_state,
             attempt.get("gamification"),
+        )
+        queue_quiz_result_interaction(
+            st.session_state,
+            attempt,
         )
 
         st.session_state.pop(request_state_key, None)

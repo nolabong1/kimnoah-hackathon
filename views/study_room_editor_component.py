@@ -4,11 +4,55 @@ from typing import Any
 import streamlit as st
 
 
+def build_study_room_mood(
+    profile: Mapping[str, Any],
+) -> dict[str, Any]:
+    """프로필의 레벨·연속 학습일을 읽기 전용 학습방 분위기로 변환합니다."""
+
+    level = profile.get("level")
+    current_streak = profile.get("current_streak")
+    if isinstance(level, bool) or not isinstance(level, int) or level < 1:
+        raise ValueError("학습방 레벨 정보가 올바르지 않습니다.")
+    if (
+        isinstance(current_streak, bool)
+        or not isinstance(current_streak, int)
+        or current_streak < 0
+    ):
+        raise ValueError("학습방 연속 학습일 정보가 올바르지 않습니다.")
+
+    if current_streak >= 7:
+        tier = "strong"
+        title = f"{current_streak}일 연속 집중 중"
+        message = "꾸준한 리듬이 이어지고 있어요. 오늘도 한 과제씩 완성해보세요."
+    elif current_streak >= 3:
+        tier = "growing"
+        title = f"{current_streak}일째 학습 불꽃"
+        message = "학습 흐름이 자라고 있어요. 지금의 속도를 안정적으로 이어가세요."
+    elif current_streak >= 1:
+        tier = "spark"
+        title = f"{current_streak}일 연속 학습"
+        message = "학습 불씨가 켜졌어요. 오늘의 작은 진전을 이어가보세요."
+    else:
+        tier = "ready"
+        title = "오늘의 학습 준비 완료"
+        message = "첫 과제를 완료하면 학습 불씨와 연속 기록이 시작됩니다."
+
+    return {
+        "level": level,
+        "current_streak": current_streak,
+        "tier": tier,
+        "title": title,
+        "message": message,
+    }
+
+
 _EDITOR_HTML = """
 <div class="room-editor">
   <div class="room-toolbar">
     <span class="room-selection">가구를 클릭해 선택하세요.</span>
     <div class="room-actions">
+      <span class="room-mood" aria-label="학습방 현재 분위기"></span>
+      <button type="button" data-action="encourage">응원 받기</button>
       <button type="button" data-action="flip" disabled>좌우 반전</button>
       <button type="button" data-action="reset" disabled>배치 초기화</button>
     </div>
@@ -40,8 +84,20 @@ _EDITOR_CSS = """
 }
 
 .room-actions {
+  align-items: center;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
+}
+
+.room-mood {
+  background: color-mix(in srgb, var(--st-primary-color) 11%, transparent);
+  border-radius: 999px;
+  color: var(--st-primary-color);
+  font-size: 0.72rem;
+  font-weight: 750;
+  padding: 6px 9px;
 }
 
 .room-actions button {
@@ -77,6 +133,68 @@ _EDITOR_CSS = """
   touch-action: none;
   user-select: none;
   width: 100%;
+}
+
+.room-stage::after {
+  background: radial-gradient(
+    circle at 50% 20%,
+    color-mix(in srgb, var(--room-mood-color, var(--st-primary-color)) 18%, transparent),
+    transparent 55%
+  );
+  content: "";
+  inset: 0;
+  opacity: 0.55;
+  pointer-events: none;
+  position: absolute;
+  transition: opacity 280ms ease;
+  z-index: 80;
+}
+
+.room-stage[data-mood="ready"] { --room-mood-color: #a7afc2; }
+.room-stage[data-mood="spark"] { --room-mood-color: #ff9f43; }
+.room-stage[data-mood="growing"] { --room-mood-color: #ff7438; }
+.room-stage[data-mood="strong"] { --room-mood-color: #f44771; }
+.room-stage.is-celebrating::after { opacity: 1; }
+
+.room-reaction {
+  background: color-mix(in srgb, var(--st-background-color) 92%, transparent);
+  border: 1px solid color-mix(in srgb, var(--room-mood-color) 35%, transparent);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(20, 26, 44, 0.15);
+  box-sizing: border-box;
+  color: var(--st-text-color);
+  left: 50%;
+  max-width: min(76%, 520px);
+  opacity: 0;
+  padding: 10px 14px;
+  pointer-events: none;
+  position: absolute;
+  text-align: center;
+  top: 8%;
+  transform: translate(-50%, -8px);
+  transition: opacity 180ms ease, transform 220ms ease;
+  z-index: 100;
+}
+
+.room-reaction strong { display: block; font-size: 0.82rem; }
+.room-reaction span { display: block; font-size: 0.69rem; margin-top: 3px; opacity: 0.72; }
+.room-reaction.is-visible { opacity: 1; transform: translate(-50%, 0); }
+
+.room-spark {
+  animation: room-spark 1.15s ease-out forwards;
+  background: var(--room-mood-color);
+  border-radius: 50%;
+  height: 7px;
+  left: var(--spark-x);
+  pointer-events: none;
+  position: absolute;
+  top: var(--spark-y);
+  width: 7px;
+  z-index: 95;
+}
+
+.room-stage.is-celebrating .room-object > img {
+  animation: room-object-glow 900ms ease-in-out 2 alternate;
 }
 
 .room-base {
@@ -147,6 +265,29 @@ _EDITOR_CSS = """
   font-size: 0.78rem;
   margin: 8px 2px 0;
 }
+
+@keyframes room-spark {
+  from { opacity: 0; transform: translateY(10px) scale(0.4); }
+  35% { opacity: 0.95; }
+  to { opacity: 0; transform: translateY(-32px) scale(1.15); }
+}
+
+@keyframes room-object-glow {
+  from { filter: drop-shadow(0 0 0 transparent); }
+  to { filter: drop-shadow(0 7px 9px color-mix(in srgb, var(--room-mood-color) 38%, transparent)); }
+}
+
+@media (max-width: 720px) {
+  .room-toolbar { align-items: flex-start; flex-direction: column; }
+  .room-actions { justify-content: flex-start; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .room-stage::after,
+  .room-reaction { transition: none; }
+  .room-spark,
+  .room-stage.is-celebrating .room-object > img { animation: none; }
+}
 """
 
 _EDITOR_JS = """
@@ -204,16 +345,23 @@ export default function (component) {
   const editor = parentElement.querySelector(".room-editor")
   const stage = parentElement.querySelector(".room-stage")
   const selectionLabel = parentElement.querySelector(".room-selection")
+  const moodLabel = parentElement.querySelector(".room-mood")
+  const encourageButton = parentElement.querySelector('[data-action="encourage"]')
   const flipButton = parentElement.querySelector('[data-action="flip"]')
   const resetButton = parentElement.querySelector('[data-action="reset"]')
-  if (!editor || !stage || !selectionLabel || !flipButton || !resetButton) return
+  if (!editor || !stage || !selectionLabel || !moodLabel || !encourageButton || !flipButton || !resetButton) return
 
   const canvasWidth = Number(data?.canvas_width) || 1600
   const canvasHeight = Number(data?.canvas_height) || 900
   const layers = Array.isArray(data?.layers) ? data.layers : []
   let state = instances.get(parentElement)
   if (!state) {
-    state = { selectedSlot: null, cleanupPointer: null, transforms: {} }
+    state = {
+      selectedSlot: null,
+      cleanupPointer: null,
+      transforms: {},
+      reactionTimer: null,
+    }
     instances.set(parentElement, state)
   }
   if (state.cleanupPointer) state.cleanupPointer()
@@ -223,11 +371,32 @@ export default function (component) {
   }
 
   stage.replaceChildren()
+  const mood = data?.mood && typeof data.mood === "object"
+    ? data.mood
+    : {
+        tier: "ready",
+        title: "오늘의 학습 준비 완료",
+        message: "학습을 시작할 준비가 됐어요.",
+        level: 1,
+        current_streak: 0,
+      }
+  stage.dataset.mood = String(mood.tier || "ready")
+  moodLabel.textContent = `Lv.${Number(mood.level) || 1} · ${Number(mood.current_streak) || 0}일 연속`
+
   const baseImage = document.createElement("img")
   baseImage.className = "room-base"
   baseImage.alt = "학습방 배경"
   baseImage.src = String(data?.base_image ?? "")
   stage.appendChild(baseImage)
+
+  const reaction = document.createElement("div")
+  reaction.className = "room-reaction"
+  reaction.setAttribute("role", "status")
+  reaction.append(
+    Object.assign(document.createElement("strong"), { textContent: String(mood.title || "학습 응원") }),
+    Object.assign(document.createElement("span"), { textContent: String(mood.message || "오늘도 한 단계씩 진행해보세요.") }),
+  )
+  stage.appendChild(reaction)
 
   const layerElements = new Map()
 
@@ -413,10 +582,39 @@ export default function (component) {
     emitTransforms()
   }
 
+  encourageButton.onclick = () => {
+    if (state.reactionTimer) window.clearTimeout(state.reactionTimer)
+    stage.querySelectorAll(".room-spark").forEach(spark => spark.remove())
+    stage.classList.remove("is-celebrating")
+    void stage.offsetWidth
+    stage.classList.add("is-celebrating")
+    reaction.classList.add("is-visible")
+
+    for (let index = 0; index < 12; index += 1) {
+      const spark = document.createElement("span")
+      spark.className = "room-spark"
+      spark.style.setProperty("--spark-x", `${12 + (index * 37) % 76}%`)
+      spark.style.setProperty("--spark-y", `${24 + (index * 23) % 58}%`)
+      spark.style.animationDelay = `${(index % 4) * 80}ms`
+      stage.appendChild(spark)
+    }
+
+    state.reactionTimer = window.setTimeout(() => {
+      reaction.classList.remove("is-visible")
+      stage.classList.remove("is-celebrating")
+      stage.querySelectorAll(".room-spark").forEach(spark => spark.remove())
+      state.reactionTimer = null
+    }, 3200)
+  }
+
   renderAll()
 
   return () => {
     if (state.cleanupPointer) state.cleanupPointer()
+    if (state.reactionTimer) window.clearTimeout(state.reactionTimer)
+    encourageButton.onclick = null
+    flipButton.onclick = null
+    resetButton.onclick = null
   }
 }
 """
@@ -434,13 +632,14 @@ def render_study_room_editor(
     scene: Mapping[str, Any],
     *,
     key: str,
+    mood: Mapping[str, Any] | None = None,
     on_transforms_change: Callable[[], None] | None = None,
 ) -> Any:
     """직접 조작 가능한 학습방 캔버스를 안정된 Python API로 표시합니다."""
 
     return _STUDY_ROOM_EDITOR(
         key=key,
-        data=dict(scene),
+        data={**dict(scene), "mood": dict(mood or {})},
         height="content",
         on_transforms_change=on_transforms_change,
     )

@@ -27,7 +27,10 @@ from views.shop_state import (
     ROOM_SUCCESS_MESSAGE_KEY,
     ROOM_TRANSFORMS_DRAFT_KEY,
 )
-from views.study_room_editor_component import render_study_room_editor
+from views.study_room_editor_component import (
+    build_study_room_mood,
+    render_study_room_editor,
+)
 
 
 SLOT_LABELS = {
@@ -51,6 +54,8 @@ def render_study_room(
     supabase,
     shop_data: dict[str, Any],
     saved_room: dict | None,
+    *,
+    profile: Mapping[str, Any] | None = None,
 ) -> None:
     """보유 아이템으로 방을 미리 보고 명시적으로 저장하게 합니다."""
 
@@ -188,7 +193,8 @@ def render_study_room(
     with preview_column:
         st.subheader("내 학습방")
         st.caption(
-            "가구를 직접 움직인 결과는 저장 버튼을 눌러야 보존됩니다."
+            "가구 배치는 저장 버튼을 눌러야 보존되며, 응원 연출은 기록을 "
+            "변경하지 않습니다."
         )
         with st.container(border=True):
             if validation_error is None:
@@ -201,6 +207,11 @@ def render_study_room(
                     render_study_room_editor(
                         scene,
                         key=ROOM_EDITOR_COMPONENT_KEY,
+                        mood=(
+                            build_study_room_mood(profile)
+                            if profile is not None
+                            else None
+                        ),
                         on_transforms_change=(
                             _capture_study_room_editor_transforms
                         ),

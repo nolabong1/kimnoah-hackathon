@@ -11,10 +11,12 @@ from services.study_plan_repository import (
 )
 from views.completion_feedback import render_completion_feedback
 from views.error_feedback import render_unexpected_error
+from views.focus_sprint_component import render_focus_sprint
 from views.gamification_state import queue_gamification_notifications
 from views.gamification_view import (
     render_gamification_dashboard_summary_from_data,
 )
+from views.interaction_state import queue_task_completion_interactions
 from views.learning_flow_state import (
     DASHBOARD_PENDING_TASK_KEY,
     TASK_FLOW_STAGES,
@@ -27,6 +29,15 @@ from views.learning_flow_state import (
     get_task_stage_label,
 )
 from views.learning_context_state import request_tutor_learning_context
+from views.learning_momentum_component import (
+    build_learning_momentum,
+    render_learning_momentum,
+)
+from views.learning_quest_map_component import (
+    apply_quest_map_selection,
+    build_learning_quest_nodes,
+    render_learning_quest_map,
+)
 from views.quiz_ui import render_quiz_section
 from views.review_material_ui import (
     render_review_material_section,
@@ -44,6 +55,7 @@ from views.ui_components import (
 
 DASHBOARD_PLAN_SELECT_KEY = "dashboard_selected_plan_id"
 DASHBOARD_TASK_SELECT_KEY = "dashboard_selected_task_id"
+DASHBOARD_QUEST_MAP_KEY_PREFIX = "dashboard_learning_quest_map"
 
 
 def get_dashboard_plan_label(plan: dict) -> str:
@@ -293,6 +305,10 @@ def _render_today_task_card(
             return
 
         if selected_stage == TASK_STAGE_CONTENT:
+            render_focus_sprint(
+                task,
+                key=f"dashboard_focus_sprint_{task['id']}",
+            )
             if task["task_type"] in {"learn", "review"}:
                 render_review_material_section(
                     supabase=supabase,
@@ -378,6 +394,11 @@ def _render_today_task_card(
                 st.session_state,
                 result.get("gamification"),
             )
+            queue_task_completion_interactions(
+                st.session_state,
+                task_id=task["id"],
+                result=result,
+            )
 
             if result["already_completed"]:
                 message = "이미 완료된 과제입니다."
@@ -435,7 +456,7 @@ def _render_today_task_card(
             )
 
 
-def render_dashboard(supabase, user):
+def render_dashboard(supabase, user, profile: dict | None = None):
     render_page_header(
         "오늘 학습",
         "오늘 할 일과 학습 상태를 한 화면에서 확인하세요.",
@@ -618,11 +639,16 @@ def render_dashboard(supabase, user):
             f"오늘 완료까지 **{remaining_count}개** 남았습니다."
         )
 
-    task_list_column, task_detail_column, insight_column = st.columns(
-        [1.05, 2.15, 1.15],
-        gap="large",
-        vertical_alignment="top",
-    )
+    if profile is not None:
+        momentum = build_learning_momentum(
+            profile,
+            completed_tasks=completed_count,
+            total_tasks=total_count,
+        )
+        render_learning_momentum(
+            momentum,
+            key=f"dashboard_learning_momentum_{user.id}",
+        )
 
     task_by_id = {
         task["id"]: task
@@ -648,6 +674,34 @@ def render_dashboard(supabase, user):
             today_tasks[0],
         )
         st.session_state[DASHBOARD_TASK_SELECT_KEY] = first_pending_task["id"]
+
+    selected_task_id = st.session_state[DASHBOARD_TASK_SELECT_KEY]
+    quest_map_key = (
+        f"{DASHBOARD_QUEST_MAP_KEY_PREFIX}_{selected_plan_id}_{today}"
+    )
+    quest_nodes = build_learning_quest_nodes(
+        today_tasks,
+        selected_task_id,
+    )
+    render_learning_quest_map(
+        quest_nodes,
+        key=quest_map_key,
+        on_selected_task_id_change=lambda: apply_quest_map_selection(
+            st.session_state,
+            component_key=quest_map_key,
+            selection_key=DASHBOARD_TASK_SELECT_KEY,
+            allowed_task_ids=task_ids,
+        ),
+    )
+    st.caption(
+        "퀘스트 노드를 누르면 아래의 선택 과제와 상세 내용이 함께 바뀝니다."
+    )
+
+    task_list_column, task_detail_column, insight_column = st.columns(
+        [1.05, 2.15, 1.15],
+        gap="large",
+        vertical_alignment="top",
+    )
 
     with task_list_column:
         with st.container(border=True):

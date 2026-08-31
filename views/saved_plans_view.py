@@ -14,6 +14,7 @@ from views.completion_feedback import (
 )
 from views.error_feedback import render_unexpected_error
 from views.gamification_state import queue_gamification_notifications
+from views.interaction_state import queue_task_completion_interactions
 from views.learning_objective_connections_ui import (
     render_learning_objective_connections,
 )
@@ -164,6 +165,11 @@ def complete_task_and_rerun(
         queue_gamification_notifications(
             st.session_state,
             result.get("gamification"),
+        )
+        queue_task_completion_interactions(
+            st.session_state,
+            task_id=task_id,
+            result=result,
         )
 
         if result["already_completed"]:

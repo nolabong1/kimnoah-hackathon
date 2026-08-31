@@ -1,5 +1,8 @@
 import streamlit as st
 
+from views.interaction_feedback import render_interaction_event_batch
+from views.interaction_state import pop_completion_interaction_events
+
 
 @st.dialog("과제 완료")
 def show_completion_dialog(
@@ -7,7 +10,12 @@ def show_completion_dialog(
     daily_bonus_exp,
     next_task_title=None,
     guided_flow=False,
+    interaction_events=None,
 ):
+    render_interaction_event_batch(
+        interaction_events,
+        placement="inline",
+    )
     st.success(message, icon=":material/task_alt:")
 
     if daily_bonus_exp > 0:
@@ -57,18 +65,19 @@ def render_completion_feedback():
         "daily_bonus_exp",
         0,
     )
+    interaction_events = pop_completion_interaction_events(
+        st.session_state
+    )
 
     st.toast(
         message,
         icon="🎉",
     )
 
-    if daily_bonus_exp > 0:
-        st.balloons()
-
     show_completion_dialog(
         message=message,
         daily_bonus_exp=daily_bonus_exp,
         next_task_title=feedback.get("next_task_title"),
         guided_flow=feedback.get("guided_flow", False),
+        interaction_events=interaction_events,
     )

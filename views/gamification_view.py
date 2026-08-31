@@ -71,8 +71,8 @@ RARITY_LABELS = {
 }
 
 
-def render_gamification_notifications() -> None:
-    """학습 행동 뒤 큐에 저장된 업적 해금을 한 번만 알립니다."""
+def render_gamification_notifications() -> list[dict]:
+    """게임화 알림을 toast로 표시하고 공통 연출에도 전달합니다."""
 
     notifications = pop_gamification_notifications(st.session_state)
     for notification in notifications:
@@ -97,6 +97,7 @@ def render_gamification_notifications() -> None:
                 f"도전과제 완료: {template.name_ko} · 보상을 받아보세요.",
                 icon="🎯",
             )
+    return notifications
 
 
 def render_gamification_page(supabase, user) -> None:

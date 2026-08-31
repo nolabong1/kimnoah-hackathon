@@ -29,6 +29,8 @@ from views.gamification_view import (
     render_gamification_page,
 )
 from views.help_view import render_help_dialog
+from views.interaction_feedback import render_interaction_feedback
+from views.interaction_state import clear_interaction_state
 from views.mastery_dashboard_view import render_mastery_dashboard
 from views.learning_performance_view import render_learning_performance
 from views.learning_context_state import (
@@ -198,6 +200,7 @@ def show_dashboard() -> None:
         render_dashboard(
             supabase=supabase,
             user=user,
+            profile=profile,
         )
 
 
@@ -299,7 +302,11 @@ def show_study_room() -> None:
     """내 학습방 화면을 표시합니다."""
 
     with content_frame(DASHBOARD_CONTENT_WIDTH):
-        render_study_room_page(supabase=supabase, user=user)
+        render_study_room_page(
+            supabase=supabase,
+            user=user,
+            profile=profile,
+        )
 
 
 def show_collection() -> None:
@@ -453,7 +460,8 @@ if pending_navigation in pages_by_title:
     st.switch_page(pages_by_title[pending_navigation])
 
 
-render_gamification_notifications()
+gamification_notifications = render_gamification_notifications()
+render_interaction_feedback(gamification_notifications)
 
 
 with st.sidebar:
@@ -499,6 +507,7 @@ with st.sidebar:
         clear_learning_context(st.session_state)
         clear_weekly_review_state(st.session_state)
         clear_gamification_state(st.session_state)
+        clear_interaction_state(st.session_state)
         clear_shop_state(st.session_state)
         clear_test_tools_state(st.session_state)
 

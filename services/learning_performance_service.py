@@ -1,6 +1,9 @@
 from collections import defaultdict
+from html import escape
+import re
 from statistics import mean
 from typing import Any
+from uuid import UUID
 
 from models.learning_performance import (
     ConceptPerformance,
@@ -9,10 +12,16 @@ from models.learning_performance import (
     QuizPerformance,
     TaskTypePerformance,
 )
+from services.weekly_review_service import REFLECTION_QUESTIONS
 
 
 TASK_TYPES = ("learn", "review", "quiz")
 TASK_STATUSES = ("pending", "completed", "skipped")
+TASK_TYPE_LABELS = {
+    "learn": "학습",
+    "review": "복습",
+    "quiz": "퀴즈",
+}
 
 
 def _required_text(value: object, field_name: str) -> str:
@@ -21,6 +30,14 @@ def _required_text(value: object, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} 정보가 올바르지 않습니다.")
     return value.strip()
+
+
+def _required_identifier(value: object, field_name: str) -> str:
+    """문자열 또는 Pydantic이 변환한 UUID를 문자열 ID로 정규화합니다."""
+
+    if isinstance(value, UUID):
+        return str(value)
+    return _required_text(value, field_name)
 
 
 def _required_int(
@@ -249,7 +266,7 @@ def _build_objective_performance(
     objective_rows = []
     objective_ids = set()
     for objective in objectives:
-        objective_id = _required_text(
+        objective_id = _required_identifier(
             _objective_value(objective, "id"),
             "학습목표 ID",
         )
@@ -474,3 +491,319 @@ def build_performance_highlights(
     else:
         highlights.append("개념 숙련도 변화를 확인할 퀴즈 기록이 아직 없습니다.")
     return highlights
+
+
+def summarize_before_after_evidence(
+    report: LearningPerformanceReport,
+) -> dict[str, int]:
+    """계획 안에서 확인된 개념 숙련도 전후 비교 수를 계산합니다."""
+
+    return {
+        "evaluated_concept_count": len(report.concepts),
+        "improved_concept_count": sum(
+            concept.last_score_after > concept.first_score_before
+            for concept in report.concepts
+        ),
+        "score_threshold_reached_count": sum(
+            concept.first_score_before < 60 <= concept.last_score_after
+            for concept in report.concepts
+        ),
+    }
+
+
+def _html_text(value: object) -> str:
+    """동적 값을 실행되지 않는 HTML 텍스트로 바꿉니다."""
+
+    return escape(str(value), quote=True)
+
+
+def _html_multiline(value: object) -> str:
+    """동적 여러 줄 텍스트를 안전한 줄바꿈과 함께 표시합니다."""
+
+    normalized = str(value).replace("\r\n", "\n").replace("\r", "\n")
+    return _html_text(normalized).replace("\n", "<br>")
+
+
+def _html_inline_markdown(value: object) -> str:
+    """이스케이프 후 저장된 회고의 굵은 글씨만 제한적으로 변환합니다."""
+
+    safe_text = _html_text(value)
+    return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", safe_text)
+
+
+def _score_text(value: float | int | None) -> str:
+    """선택적인 점수를 보고서용 문자열로 바꿉니다."""
+
+    return "기록 없음" if value is None else f"{value:g}점"
+
+
+def _score_delta_text(value: float | int | None) -> str:
+    """선택적인 점수 변화를 부호가 있는 문자열로 바꿉니다."""
+
+    return "기록 없음" if value is None else f"{value:+g}점"
+
+
+def _build_html_table(headers: list[str], rows: list[list[object]]) -> str:
+    """읽기 전용 데이터를 반응형 HTML 표로 변환합니다."""
+
+    header_html = "".join(f"<th>{_html_text(header)}</th>" for header in headers)
+    row_html = "".join(
+        "<tr>" + "".join(f"<td>{_html_text(cell)}</td>" for cell in row) + "</tr>"
+        for row in rows
+    )
+    return (
+        '<div class="table-wrap"><table><thead><tr>'
+        f"{header_html}</tr></thead><tbody>{row_html}</tbody></table></div>"
+    )
+
+
+def _saved_markdown_to_safe_html(markdown: str | None) -> str:
+    """저장된 고정 회고 Markdown의 제목·목록·문단만 안전하게 표시합니다."""
+
+    if not isinstance(markdown, str) or not markdown.strip():
+        return '<p class="empty">저장된 AI 주간 회고가 없습니다.</p>'
+
+    parts: list[str] = []
+    list_items: list[str] = []
+
+    def flush_list() -> None:
+        if not list_items:
+            return
+        parts.append(
+            "<ul>" + "".join(f"<li>{item}</li>" for item in list_items) + "</ul>"
+        )
+        list_items.clear()
+
+    for raw_line in markdown.strip().splitlines():
+        line = raw_line.strip()
+        if not line:
+            flush_list()
+            continue
+        if line.startswith("### "):
+            flush_list()
+            parts.append(f"<h3>{_html_inline_markdown(line[4:])}</h3>")
+        elif line.startswith("## "):
+            flush_list()
+            parts.append(f"<h3>{_html_inline_markdown(line[3:])}</h3>")
+        elif line.startswith("- "):
+            list_items.append(_html_inline_markdown(line[2:]))
+        else:
+            flush_list()
+            parts.append(f"<p>{_html_inline_markdown(line)}</p>")
+    flush_list()
+    return "".join(parts)
+
+
+def build_learning_performance_html(
+    report: LearningPerformanceReport,
+    *,
+    reflection_answers: dict[str, object] | None = None,
+    ai_review_markdown: str | None = None,
+) -> str:
+    """저장된 성과와 회고를 재호출 없이 독립 HTML 문서로 변환합니다."""
+
+    task_table = _build_html_table(
+        ["과제 유형", "계획", "완료"],
+        [
+            [
+                TASK_TYPE_LABELS[item.task_type],
+                f"{item.total_tasks}개",
+                f"{item.completed_tasks}개",
+            ]
+            for item in report.task_type_performance
+        ],
+    )
+
+    attempted_quizzes = [
+        quiz for quiz in report.quizzes if quiz.attempt_count > 0
+    ]
+    if attempted_quizzes:
+        quiz_section = _build_html_table(
+            ["퀴즈", "응시", "첫 점수", "최근 점수", "최고 점수", "변화"],
+            [
+                [
+                    quiz.title,
+                    f"{quiz.attempt_count}회",
+                    _score_text(quiz.first_score),
+                    _score_text(quiz.latest_score),
+                    _score_text(quiz.best_score),
+                    _score_delta_text(quiz.score_change),
+                ]
+                for quiz in attempted_quizzes
+            ],
+        )
+    else:
+        quiz_section = '<p class="empty">퀴즈 응시 기록이 없습니다.</p>'
+
+    if report.concepts:
+        concept_section = _build_html_table(
+            [
+                "개념",
+                "평가 문항",
+                "정답",
+                "오답",
+                "첫 평가 직전",
+                "마지막 평가 직후",
+                "계획 문항 증감",
+                "현재 숙련도",
+            ],
+            [
+                [
+                    concept.concept_name,
+                    f"{concept.assessed_question_count}개",
+                    f"{concept.correct_count}개",
+                    f"{concept.incorrect_count}개",
+                    _score_text(concept.first_score_before),
+                    _score_text(concept.last_score_after),
+                    _score_delta_text(concept.plan_score_delta),
+                    _score_text(concept.current_score),
+                ]
+                for concept in report.concepts
+            ],
+        )
+    else:
+        concept_section = '<p class="empty">개념 숙련도 평가 기록이 없습니다.</p>'
+
+    if report.objectives:
+        objective_parts = []
+        for index, objective in enumerate(report.objectives, start=1):
+            objective_parts.append(
+                '<article class="objective-card">'
+                f"<h3>{index}. {_html_text(objective.title)}</h3>"
+                "<ul>"
+                f"<li>과제 완료: {objective.completed_task_count}/"
+                f"{objective.task_count}개 ({objective.completion_rate:g}%)</li>"
+                f"<li>퀴즈 응시: {objective.attempted_quiz_count}/"
+                f"{objective.quiz_count}개</li>"
+                f"<li>최근 퀴즈 평균: {_score_text(objective.latest_quiz_average)}</li>"
+                "</ul></article>"
+            )
+        objective_section = '<div class="objective-grid">' + "".join(
+            objective_parts
+        ) + "</div>"
+    else:
+        objective_section = '<p class="empty">연결된 세부 학습목표가 없습니다.</p>'
+
+    cleaned_reflections = []
+    reflection_answers = reflection_answers or {}
+    for key, question in REFLECTION_QUESTIONS.items():
+        answer = str(reflection_answers.get(key, "")).strip()
+        if not answer:
+            continue
+        cleaned_reflections.append(
+            '<article class="reflection-card">'
+            f"<h3>{_html_text(question)}</h3>"
+            f"<p>{_html_multiline(answer)}</p>"
+            "</article>"
+        )
+    reflection_section = (
+        "".join(cleaned_reflections)
+        if cleaned_reflections
+        else '<p class="empty">저장된 직접 회고 답변이 없습니다.</p>'
+    )
+
+    highlights = "".join(
+        f"<li>{_html_text(highlight)}</li>"
+        for highlight in build_performance_highlights(report)
+    )
+    summary = summarize_before_after_evidence(report)
+    document_head = """<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>학습 성과 리포트</title>
+  <style>
+    :root { --primary:#5B4FE5; --ink:#172033; --muted:#687086;
+      --line:#E3E6EF; --surface:#FFFFFF; --soft:#F5F6FC; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:#EEF0F7; color:var(--ink);
+      font-family:Pretendard,"Noto Sans KR","Malgun Gothic",sans-serif;
+      line-height:1.65; }
+    .report { max-width:1040px; margin:32px auto; padding:48px;
+      background:var(--surface); border-radius:20px;
+      box-shadow:0 16px 48px rgba(35,42,78,.10); }
+    header { padding:28px; border-radius:16px;
+      background:linear-gradient(135deg,#F0EEFF,#F7F8FF); }
+    h1 { margin:0 0 8px; font-size:32px; letter-spacing:-.04em; }
+    h2 { margin:40px 0 16px; font-size:22px; letter-spacing:-.025em; }
+    h3 { margin:0 0 10px; font-size:16px; }
+    p { margin:8px 0; }
+    .meta { color:var(--muted); margin:4px 0; }
+    .metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr));
+      gap:12px; margin-top:20px; }
+    .metric { padding:18px; border:1px solid var(--line); border-radius:14px;
+      background:var(--surface); }
+    .metric span { display:block; color:var(--muted); font-size:13px; }
+    .metric strong { display:block; margin-top:6px; font-size:24px; }
+    .evidence { padding:18px 22px; border-left:4px solid var(--primary);
+      border-radius:0 12px 12px 0; background:var(--soft); }
+    .evidence ul, .objective-card ul { margin:0; padding-left:20px; }
+    .table-wrap { overflow-x:auto; border:1px solid var(--line);
+      border-radius:12px; }
+    table { width:100%; border-collapse:collapse; font-size:14px; }
+    th, td { padding:12px 14px; text-align:left; border-bottom:1px solid var(--line);
+      white-space:nowrap; }
+    th { background:var(--soft); color:#4E5670; font-weight:700; }
+    tbody tr:last-child td { border-bottom:0; }
+    .objective-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:12px; }
+    .objective-card, .reflection-card, .ai-review { padding:20px;
+      border:1px solid var(--line); border-radius:14px; break-inside:avoid; }
+    .reflection-card { margin-bottom:12px; }
+    .reflection-card p { color:#3E465D; }
+    .ai-review h3 { margin-top:24px; color:var(--primary); }
+    .ai-review h3:first-child { margin-top:0; }
+    .empty { padding:18px; color:var(--muted); border:1px dashed var(--line);
+      border-radius:12px; background:var(--soft); }
+    footer { margin-top:40px; padding-top:18px; border-top:1px solid var(--line);
+      color:var(--muted); font-size:13px; }
+    @media (max-width:760px) { .report { margin:0; padding:24px; border-radius:0; }
+      .metrics, .objective-grid { grid-template-columns:1fr 1fr; } }
+    @media print { @page { size:A4; margin:14mm; } body { background:#fff; }
+      .report { max-width:none; margin:0; padding:0; box-shadow:none; }
+      header { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+      h2, .metric, .objective-card, .reflection-card { break-inside:avoid; }
+      table { font-size:10px; } th, td { padding:7px; } }
+  </style>
+</head>
+<body>
+"""
+    document_body = f"""
+<main class="report">
+  <header>
+    <h1>학습 성과 리포트</h1>
+    <p class="meta"><strong>계획</strong> · {_html_text(report.plan_title)}</p>
+    <p class="meta"><strong>과목</strong> · {_html_text(report.course_name)}</p>
+    <p class="meta"><strong>기간</strong> · {report.plan_start_date.isoformat()} ~ {report.plan_target_date.isoformat()}</p>
+    <div class="metrics">
+      <div class="metric"><span>과제 완료율</span><strong>{report.completion_rate:g}%</strong></div>
+      <div class="metric"><span>완료 과제 기준 예상 학습량</span><strong>{report.completed_estimated_minutes}분</strong></div>
+      <div class="metric"><span>첫 퀴즈 응시 평균</span><strong>{_score_text(report.average_first_score)}</strong></div>
+      <div class="metric"><span>최근 퀴즈 응시 평균</span><strong>{_score_text(report.average_latest_score)}</strong></div>
+    </div>
+  </header>
+  <h2>핵심 성과</h2>
+  <div class="evidence"><ul>{highlights}</ul></div>
+  <div class="metrics">
+    <div class="metric"><span>숙련도 상승 개념</span><strong>{summary['improved_concept_count']}/{summary['evaluated_concept_count']}개</strong></div>
+    <div class="metric"><span>60점 기준 신규 도달</span><strong>{summary['score_threshold_reached_count']}개</strong></div>
+    <div class="metric"><span>퀴즈 총 응시</span><strong>{report.total_quiz_attempts}회</strong></div>
+    <div class="metric"><span>첫 응시 대비 평균 변화</span><strong>{_score_delta_text(report.average_score_change)}</strong></div>
+  </div>
+  <h2>과제 유형별 실행</h2>{task_table}
+  <h2>학습목표별 근거</h2>{objective_section}
+  <h2>퀴즈 점수 변화</h2>{quiz_section}
+  <h2>개념별 숙련도 근거</h2>{concept_section}
+  <h2>학생이 직접 작성한 회고</h2>{reflection_section}
+  <h2>AI 주간 회고 분석</h2>
+  <div class="ai-review">{_saved_markdown_to_safe_html(ai_review_markdown)}</div>
+  <footer>이 보고서는 저장된 과제·퀴즈·숙련도·주간 회고 기록을 요약합니다.
+    완료 과제 기준 예상 학습량은 실제 측정 시간이 아니며, 점수 변화만으로
+    학습 효과의 인과관계를 단정하지 않습니다. 브라우저의 인쇄 기능을 사용하면
+    PDF로 저장할 수 있습니다.</footer>
+</main>
+</body>
+</html>
+"""
+    return document_head + document_body

@@ -5,11 +5,14 @@ from services.learning_performance_repository import (
     get_learning_performance_data,
 )
 from services.learning_performance_service import (
+    build_learning_performance_html,
     build_learning_performance_report,
     build_performance_highlights,
+    summarize_before_after_evidence,
 )
 from services.study_plan_repository import get_user_study_plans
 from services.weekly_review_repository import get_weekly_review_by_plan
+from services.weekly_review_service import REFLECTION_QUESTIONS
 from views.error_feedback import render_unexpected_error
 from views.ui_components import (
     MetricItem,
@@ -175,6 +178,49 @@ def _render_quiz_evidence(report: LearningPerformanceReport) -> None:
                 )
 
 
+def _render_before_after_evidence(report: LearningPerformanceReport) -> None:
+    """첫 평가와 마지막 평가 시점의 직접 비교를 표시합니다."""
+
+    st.subheader("학습 전후 비교")
+    summary = summarize_before_after_evidence(report)
+    render_metric_row(
+        [
+            MetricItem(
+                "첫 퀴즈 응시 평균",
+                _format_number(report.average_first_score, "점"),
+                icon=":material/flag:",
+            ),
+            MetricItem(
+                "최근 퀴즈 응시 평균",
+                _format_number(report.average_latest_score, "점"),
+                icon=":material/trending_up:",
+            ),
+            MetricItem(
+                "숙련도 상승 개념",
+                (
+                    f"{summary['improved_concept_count']}/"
+                    f"{summary['evaluated_concept_count']}개"
+                ),
+                icon=":material/psychology:",
+            ),
+            MetricItem(
+                "60점 기준 신규 도달",
+                f"{summary['score_threshold_reached_count']}개",
+                icon=":material/ads_click:",
+                help=(
+                    "첫 평가 직전에는 60점 미만이었고 마지막 평가 직후에는 "
+                    "60점 이상인 개념 수입니다. 취약 판정 해제를 의미하지는 않습니다."
+                ),
+            ),
+        ]
+    )
+    st.caption(
+        "퀴즈 평균은 각 퀴즈의 첫 응시와 최근 응시를 비교합니다. 개념 숙련도는 "
+        "이 계획 문항의 첫 평가 직전과 마지막 평가 직후를 비교하며, 변화와 "
+        "학습의 인과관계를 단정하지 않습니다."
+    )
+
+
 def _render_concept_evidence(report: LearningPerformanceReport) -> None:
     """선택 계획의 문항에서 발생한 개념별 숙련도 변화를 표시합니다."""
 
@@ -193,6 +239,8 @@ def _render_concept_evidence(report: LearningPerformanceReport) -> None:
             "평가 문항": concept.assessed_question_count,
             "정답": concept.correct_count,
             "오답": concept.incorrect_count,
+            "첫 평가 직전": concept.first_score_before,
+            "마지막 평가 직후": concept.last_score_after,
             "계획 문항 증감": f"{concept.plan_score_delta:+d}점",
             "현재 숙련도": concept.current_score,
             "현재 상태": (
@@ -212,6 +260,16 @@ def _render_concept_evidence(report: LearningPerformanceReport) -> None:
             "평가 문항": st.column_config.NumberColumn(format="%d개"),
             "정답": st.column_config.NumberColumn(format="%d개"),
             "오답": st.column_config.NumberColumn(format="%d개"),
+            "첫 평가 직전": st.column_config.ProgressColumn(
+                min_value=0,
+                max_value=100,
+                format="%d점",
+            ),
+            "마지막 평가 직후": st.column_config.ProgressColumn(
+                min_value=0,
+                max_value=100,
+                format="%d점",
+            ),
             "현재 숙련도": st.column_config.ProgressColumn(
                 min_value=0,
                 max_value=100,
@@ -237,12 +295,63 @@ def _render_weekly_review_evidence(existing_review: dict | None) -> None:
         )
         return
 
+    reflection_answers = existing_review.get("reflection_answers")
+    if not isinstance(reflection_answers, dict):
+        reflection_answers = {}
+    meaningful_answers = [
+        (question, str(reflection_answers.get(key, "")).strip())
+        for key, question in REFLECTION_QUESTIONS.items()
+        if str(reflection_answers.get(key, "")).strip()
+    ]
+
+    st.markdown("#### 학생이 직접 작성한 회고")
+    if meaningful_answers:
+        for question, answer in meaningful_answers:
+            with st.container(border=True):
+                st.markdown(f"**{question}**")
+                st.write(answer)
+    else:
+        st.caption("저장된 직접 회고 답변이 없습니다.")
+
+    st.markdown("#### AI 회고 분석")
     with st.container(border=True):
         st.caption(
             f"저장된 회고 · {existing_review.get('week_start')} ~ "
             f"{existing_review.get('week_end')}"
         )
         st.markdown(existing_review.get("ai_review_markdown") or "회고 내용이 없습니다.")
+
+
+def _render_report_download(
+    report: LearningPerformanceReport,
+    existing_review: dict | None,
+) -> None:
+    """현재 리포트를 추가 조회 없이 독립 HTML 파일로 제공합니다."""
+
+    review = existing_review or {}
+    reflection_answers = review.get("reflection_answers")
+    if not isinstance(reflection_answers, dict):
+        reflection_answers = {}
+    report_html = build_learning_performance_html(
+        report,
+        reflection_answers=reflection_answers,
+        ai_review_markdown=review.get("ai_review_markdown"),
+    )
+    st.download_button(
+        "읽기 쉬운 HTML 리포트 내려받기",
+        data=report_html.encode("utf-8-sig"),
+        file_name=(
+            "학습성과_리포트_"
+            f"{report.plan_start_date.isoformat()}_"
+            f"{report.plan_target_date.isoformat()}_"
+            f"{report.plan_id[:8]}.html"
+        ),
+        mime="text/html; charset=utf-8",
+        key=f"learning_performance_download_{report.plan_id}",
+        help="브라우저에서 바로 읽고 인쇄하거나 PDF로 저장할 수 있습니다.",
+        icon=":material/download:",
+        on_click="ignore",
+    )
 
 
 def render_learning_performance(supabase, user) -> None:
@@ -323,6 +432,7 @@ def render_learning_performance(supabase, user) -> None:
         f"{report.plan_target_date.isoformat()}"
     )
     st.subheader(report.plan_title)
+    _render_report_download(report, existing_review)
 
     overview_tab, objective_tab, evidence_tab = st.tabs(
         ["성과 요약", "학습목표별 성과", "성장 근거"]
@@ -332,6 +442,7 @@ def render_learning_performance(supabase, user) -> None:
     with objective_tab:
         _render_objectives(report)
     with evidence_tab:
+        _render_before_after_evidence(report)
         _render_quiz_evidence(report)
         _render_concept_evidence(report)
         _render_weekly_review_evidence(existing_review)

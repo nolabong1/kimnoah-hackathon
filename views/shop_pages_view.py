@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from typing import Any
 
 import streamlit as st
@@ -41,7 +42,11 @@ def render_inventory_page(supabase, user) -> None:
         render_shop_inventory(loaded)
 
 
-def render_study_room_page(supabase, user) -> None:
+def render_study_room_page(
+    supabase,
+    user,
+    profile: Mapping[str, Any] | None = None,
+) -> None:
     """직접 편집할 수 있는 학습방을 독립 페이지로 표시합니다."""
 
     render_page_header(
@@ -60,7 +65,12 @@ def render_study_room_page(supabase, user) -> None:
     except Exception as error:
         render_study_room_load_error(error)
         return
-    render_study_room(supabase, loaded, saved_room)
+    render_study_room(
+        supabase,
+        loaded,
+        saved_room,
+        profile=profile,
+    )
 
 
 def render_collection_page(supabase, user) -> None:

@@ -534,6 +534,7 @@ class AppLayoutTests(unittest.TestCase):
 
     def test_mastery_page_separates_overview_and_concept_detail(self):
         mastery = {
+            "concept_id": "362abea5-3143-4572-93c7-dcbf1dbf8e0c",
             "course_key": "python",
             "course_name": "파이썬",
             "concept_name": "반복문",
