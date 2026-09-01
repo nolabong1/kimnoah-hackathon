@@ -3,6 +3,8 @@ from types import SimpleNamespace
 
 from streamlit.testing.v1 import AppTest
 
+from views.gamification_state import ACTIVE_TAB_KEY
+
 
 USER_ID = "00000000-0000-0000-0000-000000000001"
 
@@ -34,8 +36,10 @@ class FakeSupabase:
     def __init__(self, *, rpc_results=None):
         self.rpc_results = rpc_results or {}
         self.rpc_calls = []
+        self.table_calls = []
 
-    def table(self, _table_name):
+    def table(self, table_name):
+        self.table_calls.append(table_name)
         return FakeRequest([])
 
     def rpc(self, function_name, params):
@@ -77,10 +81,29 @@ class GamificationViewTests(unittest.TestCase):
                 "배지 보관함",
             ],
         )
+        self.assertEqual(app.session_state[ACTIVE_TAB_KEY], "도전과제")
         self.assertIn(
             "학습 기록 새로 반영하기",
             [button.label for button in app.button],
         )
+        self.assertEqual(
+            supabase.table_calls,
+            [
+                "user_achievements",
+                "user_challenges",
+                "user_badge_showcase",
+            ],
+        )
+
+        achievement_filter = next(
+            selectbox
+            for selectbox in app.selectbox
+            if selectbox.label == "업적 카테고리"
+        )
+        app = achievement_filter.select("과제").run()
+
+        self.assertEqual(list(app.exception), [])
+        self.assertEqual(len(supabase.table_calls), 3)
 
     def test_explicit_sync_button_calls_rpc_once(self):
         supabase = FakeSupabase(
@@ -117,6 +140,24 @@ class GamificationViewTests(unittest.TestCase):
             "현재 학습 기록을 업적과 도전과제에 반영했습니다.",
             [message.value for message in app.success],
         )
+
+    def test_active_badge_tab_is_preserved_across_rerun(self):
+        supabase = FakeSupabase()
+        user = SimpleNamespace(id=USER_ID)
+        app = AppTest.from_function(
+            render_gamification_test_page,
+            args=(supabase, user),
+        ).run()
+
+        app.session_state[ACTIVE_TAB_KEY] = "배지 보관함"
+        app = app.run()
+
+        self.assertEqual(list(app.exception), [])
+        self.assertEqual(
+            app.session_state[ACTIVE_TAB_KEY],
+            "배지 보관함",
+        )
+        self.assertEqual(len(supabase.table_calls), 3)
 
     def test_dashboard_summary_is_read_only(self):
         supabase = FakeSupabase()

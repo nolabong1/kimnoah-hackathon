@@ -147,6 +147,56 @@ class AppLayoutTests(unittest.TestCase):
         self.assertEqual(navigation["position"], "sidebar")
         self.assertTrue(navigation["expanded"])
 
+    def test_logout_clears_auth_state_in_button_callback(self):
+        app_source = (PROJECT_ROOT / "app.py").read_text(encoding="utf-8")
+
+        logout_button_start = app_source.index(
+            'st.button(\n        "로그아웃",'
+        )
+        logout_button_end = app_source.index(
+            "\n    )",
+            logout_button_start,
+        )
+        logout_button_source = app_source[
+            logout_button_start:logout_button_end
+        ]
+
+        self.assertIn(
+            "on_click=_logout_current_user",
+            logout_button_source,
+        )
+        self.assertNotIn(
+            'if st.button(\n        "로그아웃",',
+            app_source,
+        )
+        self.assertLess(
+            app_source.index("def _logout_current_user"),
+            app_source.index("selected_page = st.navigation"),
+        )
+
+    def test_unauthenticated_navigation_is_hidden_before_auth_sync(self):
+        app_source = (PROJECT_ROOT / "app.py").read_text(encoding="utf-8")
+        hidden_navigation = (
+            'if st.session_state.get("auth_user") is None:\n'
+            "    st.navigation(\n"
+        )
+
+        self.assertIn(hidden_navigation, app_source)
+        hidden_navigation_start = app_source.index(hidden_navigation)
+        auth_sync_start = app_source.index(
+            "initialize_auth_session(supabase)"
+        )
+        authenticated_navigation_start = app_source.index(
+            "selected_page = st.navigation"
+        )
+        hidden_navigation_source = app_source[
+            hidden_navigation_start:auth_sync_start
+        ]
+
+        self.assertIn('position="hidden"', hidden_navigation_source)
+        self.assertLess(hidden_navigation_start, auth_sync_start)
+        self.assertLess(auth_sync_start, authenticated_navigation_start)
+
     def test_navigation_groups_follow_user_goals(self):
         app_source = (PROJECT_ROOT / "app.py").read_text(encoding="utf-8")
         group_markers = (

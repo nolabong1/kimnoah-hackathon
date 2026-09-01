@@ -5,7 +5,6 @@ from services.auth_service import (
     sign_out,
     sign_up,
 )
-from services.profile_service import get_profile
 from services.supabase_client import get_supabase_client
 
 from views.auth_session_storage import (
@@ -45,6 +44,7 @@ from views.shop_pages_view import (
     render_study_room_page,
 )
 from views.shop_state import clear_shop_state
+from views.profile_state import clear_profile_state, get_profile_snapshot
 from views.source_review_material_view import (
     SOURCE_REVIEW_SESSION_KEYS,
     render_source_review_material,
@@ -68,6 +68,37 @@ from views.weekly_review_state import (
 )
 from views.weekly_review_view import render_weekly_review
 
+
+def _logout_current_user(supabase) -> None:
+    """로그아웃과 사용자별 화면 상태 정리를 다음 rerun 전에 수행합니다."""
+
+    sign_out(supabase)
+
+    for key in [
+        "generated_plan",
+        "generated_plan_start_date",
+        "generated_plan_metadata",
+        "generated_plan_saved",
+        "saved_plan_id",
+        *SOURCE_REVIEW_SESSION_KEYS,
+    ]:
+        st.session_state.pop(key, None)
+
+    clear_tutor_state(st.session_state)
+    clear_learning_context(st.session_state)
+    clear_weekly_review_state(st.session_state)
+    clear_gamification_state(st.session_state)
+    clear_interaction_state(st.session_state)
+    clear_shop_state(st.session_state)
+    clear_test_tools_state(st.session_state)
+    clear_profile_state(st.session_state)
+    clear_auth_session_state()
+
+
+def _empty_auth_page() -> None:
+    """비인증 상태에서 숨김 내비게이션이 사용할 빈 페이지입니다."""
+
+
 st.set_page_config(
     page_title="AI 학습 코치",
     page_icon="🎓",
@@ -76,6 +107,12 @@ st.set_page_config(
 )
 
 supabase = get_supabase_client()
+
+if st.session_state.get("auth_user") is None:
+    st.navigation(
+        [st.Page(_empty_auth_page, title="로그인")],
+        position="hidden",
+    )
 
 initialize_auth_session(supabase)
 
@@ -183,7 +220,11 @@ if st.session_state.auth_user is None:
 user = st.session_state.auth_user
 
 try:
-    stored_profile = get_profile(supabase, user.id)
+    stored_profile = get_profile_snapshot(
+        client=supabase,
+        user_id=str(user.id),
+        state=st.session_state,
+    )
 except Exception as error:
     render_unexpected_error(
         error,
@@ -505,34 +546,14 @@ with st.sidebar:
             f"연속 학습 {profile['current_streak']}일"
         )
 
-    if st.button(
+    st.button(
         "로그아웃",
         key="logout_button",
         icon=":material/logout:",
         width="stretch",
-    ):
-        sign_out(supabase)
-
-        for key in [
-            "generated_plan",
-            "generated_plan_start_date",
-            "generated_plan_metadata",
-            "generated_plan_saved",
-            "saved_plan_id",
-            *SOURCE_REVIEW_SESSION_KEYS,
-        ]:
-            st.session_state.pop(key, None)
-
-        clear_tutor_state(st.session_state)
-        clear_learning_context(st.session_state)
-        clear_weekly_review_state(st.session_state)
-        clear_gamification_state(st.session_state)
-        clear_interaction_state(st.session_state)
-        clear_shop_state(st.session_state)
-        clear_test_tools_state(st.session_state)
-
-        clear_auth_session_state()
-        st.rerun()
+        on_click=_logout_current_user,
+        args=(supabase,),
+    )
 
 render_sidebar_test_tools(
     supabase=supabase,

@@ -17,6 +17,8 @@ from services.study_plan_repository import (
 )
 from services.test_tools_repository import can_use_test_tools
 from views.error_feedback import render_unexpected_error
+from views.profile_state import update_profile_snapshot
+from views.shop_state import invalidate_shop_snapshots
 from views.streak_presentation import (
     get_streak_tier_label,
     resolve_streak_tier,
@@ -133,6 +135,7 @@ def _render_reset_tool(supabase) -> None:
                         reset_result = reset_today_test_progress(
                             supabase=supabase,
                         )
+                    update_profile_snapshot(st.session_state, reset_result)
 
                     st.session_state.pop(RESET_CONFIRM_KEY, None)
                     st.session_state.pop("pending_future_task_id", None)
@@ -317,6 +320,7 @@ def _render_plan_completion_tool(
                             supabase=supabase,
                             plan_id=selected_plan_id,
                         )
+                    update_profile_snapshot(st.session_state, result)
 
                     if result["already_completed"]:
                         message = "선택한 계획은 이미 모두 완료되어 있습니다."
@@ -482,6 +486,7 @@ def _render_shop_test_tool(
                 try:
                     with st.spinner("상점 테스트 상태를 준비하고 있습니다..."):
                         result = start_shop_test_session(supabase)
+                    invalidate_shop_snapshots(st.session_state)
                     if result["already_active"]:
                         message = "이미 진행 중인 상점 테스트 세션을 불러왔습니다."
                     else:
@@ -560,6 +565,7 @@ def _render_shop_test_tool(
                         supabase=supabase,
                         session_id=str(active_session["id"]),
                     )
+                invalidate_shop_snapshots(st.session_state)
                 st.session_state[SHOP_TEST_MESSAGE_KEY] = (
                     f"테스트 구매 {result['removed_inventory_count']}개와 "
                     f"{result['refunded_coin_amount']} 코인을 정리했습니다. "

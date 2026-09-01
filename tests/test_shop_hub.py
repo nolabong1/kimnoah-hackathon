@@ -59,6 +59,10 @@ class ShopHubTests(unittest.TestCase):
                         return_value=SHOP_DATA,
                     ) as load_shop,
                     patch(
+                        "views.shop_pages_view.get_room_data_snapshot",
+                        side_effect=lambda _state, _user_id, loader: loader(),
+                    ),
+                    patch(
                         "views.shop_pages_view.load_study_room_data",
                         return_value=saved_room,
                     ) as load_room,

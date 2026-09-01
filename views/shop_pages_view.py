@@ -14,6 +14,7 @@ from views.study_room_view import (
     render_study_room,
     render_study_room_load_error,
 )
+from views.shop_state import get_room_data_snapshot, get_shop_data_snapshot
 from views.ui_components import render_page_header
 
 
@@ -62,7 +63,11 @@ def render_study_room_page(
     if user_id is None:
         return
     try:
-        saved_room = load_study_room_data(supabase, user_id)
+        saved_room = get_room_data_snapshot(
+            st.session_state,
+            user_id,
+            lambda: load_study_room_data(supabase, user_id),
+        )
     except Exception as error:
         render_study_room_load_error(error)
         return
@@ -120,7 +125,11 @@ def _load_shop_data(supabase, user) -> dict[str, Any] | None:
     if user_id is None:
         return None
     try:
-        return load_shop_page_data(supabase, user_id)
+        return get_shop_data_snapshot(
+            st.session_state,
+            user_id,
+            lambda: load_shop_page_data(supabase, user_id),
+        )
     except Exception as error:
         render_shop_load_error(error)
         return None

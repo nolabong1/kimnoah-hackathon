@@ -1,5 +1,8 @@
-from collections.abc import MutableMapping
+from collections.abc import Callable, Mapping, MutableMapping
+from time import monotonic
 from typing import Any
+
+from views.profile_state import update_profile_snapshot
 
 
 GAMIFICATION_STATE_PREFIX = "gamification_"
@@ -9,6 +12,72 @@ SYNC_IN_PROGRESS_KEY = "gamification_sync_in_progress"
 CLAIM_IN_PROGRESS_KEY = "gamification_claim_in_progress"
 BADGE_IN_PROGRESS_KEY = "gamification_badge_in_progress"
 PENDING_NAVIGATION_KEY = "gamification_pending_navigation"
+ACTIVE_TAB_KEY = "gamification_active_tab"
+DATA_SNAPSHOT_KEY = "gamification_data_snapshot"
+DATA_USER_ID_KEY = "gamification_data_snapshot_user_id"
+DATA_LOADED_AT_KEY = "gamification_data_snapshot_loaded_at"
+DATA_CACHE_TTL_SECONDS = 30.0
+
+
+def _copy_gamification_snapshot(
+    snapshot: Mapping[str, Any],
+) -> dict[str, list[dict]]:
+    copied: dict[str, list[dict]] = {}
+    for key in ("achievements", "challenges", "showcase"):
+        value = snapshot.get(key)
+        if not isinstance(value, list) or any(
+            not isinstance(item, Mapping) for item in value
+        ):
+            raise RuntimeError("게임화 조회 결과가 올바르지 않습니다.")
+        copied[key] = [dict(item) for item in value]
+    return copied
+
+
+def get_gamification_data_snapshot(
+    state: MutableMapping[str, Any],
+    user_id: str,
+    loader: Callable[[], Mapping[str, Any]],
+    *,
+    now: float | None = None,
+) -> dict[str, list[dict]]:
+    """게임화 화면의 세 조회 결과를 사용자별로 짧게 재사용합니다."""
+
+    normalized_user_id = str(user_id).strip()
+    if not normalized_user_id:
+        raise ValueError("사용자 ID가 필요합니다.")
+    current_time = monotonic() if now is None else float(now)
+    loaded_at = state.get(DATA_LOADED_AT_KEY)
+    cached = state.get(DATA_SNAPSHOT_KEY)
+    if (
+        isinstance(cached, Mapping)
+        and state.get(DATA_USER_ID_KEY) == normalized_user_id
+        and isinstance(loaded_at, (int, float))
+        and not isinstance(loaded_at, bool)
+        and 0 <= current_time - loaded_at < DATA_CACHE_TTL_SECONDS
+    ):
+        return _copy_gamification_snapshot(cached)
+
+    loaded = loader()
+    if not isinstance(loaded, Mapping):
+        raise RuntimeError("게임화 조회 결과가 올바르지 않습니다.")
+    snapshot = _copy_gamification_snapshot(loaded)
+    state[DATA_SNAPSHOT_KEY] = snapshot
+    state[DATA_USER_ID_KEY] = normalized_user_id
+    state[DATA_LOADED_AT_KEY] = current_time
+    return _copy_gamification_snapshot(snapshot)
+
+
+def invalidate_gamification_data_snapshot(
+    state: MutableMapping[str, Any],
+) -> None:
+    """게임화 쓰기 성공 뒤 다음 조회가 서버 상태를 반영하게 합니다."""
+
+    for key in (
+        DATA_SNAPSHOT_KEY,
+        DATA_USER_ID_KEY,
+        DATA_LOADED_AT_KEY,
+    ):
+        state.pop(key, None)
 
 
 def clear_gamification_state(state: MutableMapping[str, Any]) -> None:
@@ -27,6 +96,9 @@ def queue_gamification_notifications(
 
     if not isinstance(sync_result, dict):
         return
+
+    update_profile_snapshot(state, sync_result)
+    invalidate_gamification_data_snapshot(state)
 
     raw_unlocks = sync_result.get("newly_unlocked", [])
     if not isinstance(raw_unlocks, list):

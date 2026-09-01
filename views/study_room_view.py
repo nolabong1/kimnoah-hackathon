@@ -28,6 +28,7 @@ from views.shop_state import (
     ROOM_TRANSFORMS_DRAFT_KEY,
     pop_room_save_reveal,
     queue_room_save_reveal,
+    update_room_data_snapshot,
 )
 from views.study_room_editor_component import (
     build_study_room_mood,
@@ -187,6 +188,7 @@ def render_study_room(
                         saved_transforms,
                     ),
                 )
+                update_room_data_snapshot(st.session_state, saved_result)
                 st.session_state[ROOM_SUCCESS_MESSAGE_KEY] = (
                     "학습방 구성을 저장했습니다."
                 )

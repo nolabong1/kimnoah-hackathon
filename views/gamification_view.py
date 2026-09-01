@@ -31,16 +31,20 @@ from services.gamification_service import (
     mask_achievement_definition,
 )
 from views.gamification_state import (
+    ACTIVE_TAB_KEY,
     BADGE_IN_PROGRESS_KEY,
     CLAIM_IN_PROGRESS_KEY,
     PENDING_NAVIGATION_KEY,
     SUCCESS_MESSAGE_KEY,
     SYNC_IN_PROGRESS_KEY,
+    get_gamification_data_snapshot,
+    invalidate_gamification_data_snapshot,
     pop_gamification_notifications,
     queue_gamification_notifications,
 )
 from views.error_feedback import render_unexpected_error
 from views.interaction_state import queue_challenge_reward_interaction
+from views.profile_state import update_profile_snapshot
 from views.ui_components import (
     MetricItem,
     render_metric_row,
@@ -72,6 +76,19 @@ RARITY_LABELS = {
     "epic": "영웅",
     "legendary": "전설",
 }
+
+
+def load_gamification_page_data(
+    supabase,
+    user_id: str,
+) -> dict[str, list[dict]]:
+    """게임화 화면에 필요한 읽기 데이터를 한 묶음으로 조회합니다."""
+
+    return {
+        "achievements": get_user_achievements(supabase, user_id),
+        "challenges": get_user_challenges(supabase, user_id),
+        "showcase": get_badge_showcase(supabase, user_id),
+    }
 
 
 def render_gamification_notifications() -> list[dict]:
@@ -158,43 +175,27 @@ def render_gamification_page(supabase, user) -> None:
             st.session_state[SYNC_IN_PROGRESS_KEY] = False
 
     try:
-        achievements = get_user_achievements(supabase, str(user_id))
+        page_data = get_gamification_data_snapshot(
+            st.session_state,
+            str(user_id),
+            lambda: load_gamification_page_data(
+                supabase,
+                str(user_id),
+            ),
+        )
     except Exception as error:
         render_unexpected_error(
             error,
-            operation="gamification.load_achievements",
+            operation="gamification.load_page_data",
             user_message=(
-                "업적 데이터를 불러오지 못했습니다. "
+                "게임화 데이터를 불러오지 못했습니다. "
                 + _friendly_gamification_error(error)
             ),
         )
         return
-
-    try:
-        challenges = get_user_challenges(supabase, str(user_id))
-    except Exception as error:
-        render_unexpected_error(
-            error,
-            operation="gamification.load_challenges",
-            user_message=(
-                "도전과제 데이터를 불러오지 못했습니다. "
-                + _friendly_gamification_error(error)
-            ),
-        )
-        return
-
-    try:
-        showcase = get_badge_showcase(supabase, str(user_id))
-    except Exception as error:
-        render_unexpected_error(
-            error,
-            operation="gamification.load_showcase",
-            user_message=(
-                "대표 배지 데이터를 불러오지 못했습니다. "
-                + _friendly_gamification_error(error)
-            ),
-        )
-        return
+    achievements = page_data["achievements"]
+    challenges = page_data["challenges"]
+    showcase = page_data["showcase"]
 
     unlocked_count = sum(
         achievement.get("unlocked_at") is not None
@@ -217,12 +218,20 @@ def render_gamification_page(supabase, user) -> None:
         ]
     )
 
+    tab_labels = [
+        "도전과제",
+        "업적",
+        "배지 보관함",
+    ]
+    if st.session_state.get(ACTIVE_TAB_KEY) not in {
+        None,
+        *tab_labels,
+    }:
+        st.session_state.pop(ACTIVE_TAB_KEY, None)
     challenge_tab, achievement_tab, badge_tab = st.tabs(
-        [
-            "도전과제",
-            "업적",
-            "배지 보관함",
-        ]
+        tab_labels,
+        key=ACTIVE_TAB_KEY,
+        on_change="rerun",
     )
 
     with challenge_tab:
@@ -476,6 +485,8 @@ def execute_challenge_reward_claim(
     """보상 수령 RPC를 한 번 호출하고 신규 지급 연출만 예약합니다."""
 
     result = claim_challenge_reward(supabase, challenge_id)
+    update_profile_snapshot(state, result)
+    invalidate_gamification_data_snapshot(state)
     queue_challenge_reward_interaction(state, result)
     return result
 
@@ -691,6 +702,7 @@ def _apply_badge_selection(
                     f"{definition.badge.icon} {definition.badge.name_ko}를 "
                     f"대표 배지 {slot}번에 설정했습니다."
                 )
+        invalidate_gamification_data_snapshot(st.session_state)
         st.session_state[SUCCESS_MESSAGE_KEY] = message
         st.rerun()
     except Exception as error:

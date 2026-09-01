@@ -20,6 +20,7 @@ from views.shop_state import (
     CATEGORY_FILTER_KEY,
     PURCHASE_IN_PROGRESS_KEY,
     SUCCESS_MESSAGE_KEY,
+    invalidate_shop_data_snapshot,
     pop_purchase_reveal,
     queue_purchase_reveal,
 )
@@ -270,6 +271,7 @@ def _show_purchase_dialog(
                     )
                 st.session_state[SUCCESS_MESSAGE_KEY] = feedback["message"]
                 queue_purchase_reveal(st.session_state, feedback)
+                invalidate_shop_data_snapshot(st.session_state)
                 st.rerun()
             except Exception as error:
                 render_unexpected_error(
