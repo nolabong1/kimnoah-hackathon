@@ -3,6 +3,11 @@ from typing import Any
 
 import streamlit as st
 
+from views.streak_presentation import (
+    get_streak_tier_label,
+    resolve_streak_tier,
+)
+
 
 EXP_PER_LEVEL = 100
 
@@ -32,17 +37,18 @@ def build_learning_momentum(
         (level_progress_exp / EXP_PER_LEVEL) * 100
     )
 
-    if current_streak >= 7:
-        streak_tier = "strong"
+    streak_tier = resolve_streak_tier(current_streak)
+    if streak_tier == "legendary":
+        streak_message = "30일의 꾸준함이 쌓였어요. 무리하지 말고 리듬을 지켜가세요."
+    elif streak_tier == "blazing":
+        streak_message = "두 주의 학습 흐름을 만들었어요. 오늘도 같은 시간에 이어가세요."
+    elif streak_tier == "strong":
         streak_message = "꾸준한 학습 리듬이 단단하게 이어지고 있어요."
-    elif current_streak >= 3:
-        streak_tier = "growing"
+    elif streak_tier == "growing":
         streak_message = "좋은 흐름입니다. 오늘도 불꽃을 이어가세요."
-    elif current_streak >= 1:
-        streak_tier = "spark"
+    elif streak_tier == "spark":
         streak_message = "학습 불씨가 켜졌어요. 한 과제씩 이어가세요."
     else:
-        streak_tier = "ready"
         streak_message = "오늘 첫 과제를 완료하면 학습 불씨가 시작됩니다."
 
     if completed == total:
@@ -60,6 +66,7 @@ def build_learning_momentum(
         "exp_to_next_level": EXP_PER_LEVEL - level_progress_exp,
         "current_streak": current_streak,
         "streak_tier": streak_tier,
+        "streak_tier_label": get_streak_tier_label(streak_tier),
         "streak_message": streak_message,
         "completed_tasks": completed,
         "total_tasks": total,
@@ -90,6 +97,7 @@ _MOMENTUM_HTML = """
     </div>
     <div>
       <p class="momentum__eyebrow">학습 모멘텀</p>
+      <span class="momentum__tier-badge"></span>
       <p class="momentum__streak-value"></p>
       <p class="momentum__streak-message"></p>
     </div>
@@ -128,6 +136,10 @@ _MOMENTUM_CSS = """
 .momentum {
   --momentum-accent: var(--st-primary-color);
   --today-progress: 0deg;
+  --flame-scale: .78;
+  --flame-aura-opacity: 0;
+  --flame-speed: 1.35s;
+  --flame-aura-speed: 2.8s;
   display: grid;
   grid-template-columns: 1.25fr 1fr 1.15fr;
   gap: 18px;
@@ -143,9 +155,17 @@ _MOMENTUM_CSS = """
 }
 
 .momentum[data-tier="ready"] { --flame-main: #a7afc2; --flame-core: #d8dce7; }
-.momentum[data-tier="spark"] { --flame-main: #ff9f43; --flame-core: #ffd166; }
-.momentum[data-tier="growing"] { --flame-main: #ff7438; --flame-core: #ffd166; }
-.momentum[data-tier="strong"] { --flame-main: #f44771; --flame-core: #ffca5f; }
+.momentum[data-tier="spark"] { --flame-main: var(--st-orange-color, #ff9f43); --flame-core: #ffd166; --flame-scale: .9; }
+.momentum[data-tier="growing"] { --flame-main: #ff7438; --flame-core: #ffd166; --flame-scale: 1; --flame-aura-opacity: .18; --flame-speed: 1.12s; --flame-aura-speed: 2.3s; }
+.momentum[data-tier="strong"] { --flame-main: var(--st-red-color, #f44771); --flame-core: #ffca5f; --flame-scale: 1.08; --flame-aura-opacity: .32; --flame-speed: .9s; --flame-aura-speed: 1.9s; }
+.momentum[data-tier="blazing"] { --flame-main: #e63973; --flame-core: #ffe38a; --flame-scale: 1.18; --flame-aura-opacity: .5; --flame-speed: .72s; --flame-aura-speed: 1.5s; --momentum-accent: var(--st-red-color, #e63973); }
+.momentum[data-tier="legendary"] { --flame-main: var(--st-violet-color, #7b61ff); --flame-core: #fff0a8; --flame-scale: 1.28; --flame-aura-opacity: .72; --flame-speed: .58s; --flame-aura-speed: 1.2s; --momentum-accent: var(--st-violet-color, #7b61ff); }
+
+.momentum[data-tier="blazing"],
+.momentum[data-tier="legendary"] {
+  border-color: color-mix(in srgb, var(--momentum-accent) 38%, var(--st-border-color));
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--momentum-accent) 13%, transparent);
+}
 
 .momentum__identity,
 .momentum__today,
@@ -165,6 +185,23 @@ _MOMENTUM_CSS = """
   width: 56px;
   height: 66px;
   filter: drop-shadow(0 8px 12px color-mix(in srgb, var(--flame-main) 28%, transparent));
+  transform: scale(var(--flame-scale));
+  transition: filter 240ms ease, transform 240ms ease;
+}
+
+.momentum__flame::after {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 64px;
+  height: 64px;
+  border: 2px solid color-mix(in srgb, var(--flame-main) 62%, transparent);
+  border-radius: 50%;
+  box-shadow: 0 0 24px color-mix(in srgb, var(--flame-main) 40%, transparent);
+  content: "";
+  opacity: var(--flame-aura-opacity);
+  transform: translateX(-50%) scale(.82);
+  animation: flame-aura var(--flame-aura-speed) ease-in-out infinite;
 }
 
 .momentum__flame::before,
@@ -183,7 +220,7 @@ _MOMENTUM_CSS = """
   width: 43px;
   height: 43px;
   background: var(--flame-main);
-  animation: flame-breathe 1.35s ease-in-out infinite alternate;
+  animation: flame-breathe var(--flame-speed) ease-in-out infinite alternate;
 }
 
 .momentum__flame-core {
@@ -195,15 +232,14 @@ _MOMENTUM_CSS = """
 }
 
 .momentum[data-tier="ready"] .momentum__flame::before,
-.momentum[data-tier="ready"] .momentum__flame-core {
+.momentum[data-tier="ready"] .momentum__flame-core,
+.momentum[data-tier="ready"] .momentum__flame::after,
+.momentum[data-tier="spark"] .momentum__flame::after {
   animation: none;
 }
 
-.momentum[data-tier="strong"] .momentum__flame::before {
-  animation-duration: 0.82s;
-}
-
 .momentum__eyebrow,
+.momentum__tier-badge,
 .momentum__streak-value,
 .momentum__streak-message,
 .momentum__pace-message,
@@ -217,6 +253,18 @@ _MOMENTUM_CSS = """
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0.04em;
+}
+
+.momentum__tier-badge {
+  display: inline-block;
+  margin: 1px 0 4px;
+  padding: 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--flame-main) 34%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--flame-main) 12%, transparent);
+  color: var(--flame-main);
+  font-size: .64rem;
+  font-weight: 800;
 }
 
 .momentum__streak-value {
@@ -335,6 +383,11 @@ _MOMENTUM_CSS = """
   to { transform: translateX(-50%) rotate(47deg) scale(1.02); }
 }
 
+@keyframes flame-aura {
+  0%, 100% { opacity: 0; transform: translateX(-50%) scale(.78); }
+  50% { opacity: var(--flame-aura-opacity); transform: translateX(-50%) scale(1.08); }
+}
+
 @media (max-width: 760px) {
   .momentum {
     grid-template-columns: 1fr;
@@ -350,6 +403,7 @@ _MOMENTUM_CSS = """
 @media (prefers-reduced-motion: reduce) {
   .momentum__flame::before,
   .momentum__flame-core,
+  .momentum__flame::after,
   .momentum__ring,
   .momentum__level-fill {
     animation: none;
@@ -376,6 +430,7 @@ export default function (component) {
   root.style.setProperty("--today-progress", `${todayPercent * 3.6}deg`)
 
   text(".momentum__streak-value", `${data.current_streak}일 연속 학습`)
+  text(".momentum__tier-badge", data.streak_tier_label)
   text(".momentum__streak-message", data.streak_message)
   text(".momentum__today-count", `${data.completed_tasks}/${data.total_tasks}`)
   text(".momentum__pace-message", data.pace_message)

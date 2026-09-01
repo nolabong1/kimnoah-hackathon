@@ -11,6 +11,8 @@ class StudyRoomMoodTests(unittest.TestCase):
             (1, "spark"),
             (3, "growing"),
             (7, "strong"),
+            (14, "blazing"),
+            (30, "legendary"),
         ]
 
         for streak, expected_tier in cases:
@@ -21,6 +23,7 @@ class StudyRoomMoodTests(unittest.TestCase):
                 self.assertEqual(mood["tier"], expected_tier)
                 self.assertEqual(mood["level"], 4)
                 self.assertEqual(mood["current_streak"], streak)
+                self.assertTrue(mood["tier_label"])
 
     def test_invalid_profile_values_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "레벨"):

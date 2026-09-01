@@ -172,20 +172,30 @@ class AppLayoutTests(unittest.TestCase):
             app_source.index("mastery_dashboard_page", growth_group_start),
         )
 
-    def test_customization_features_are_direct_navigation_pages(self):
+    def test_customization_navigation_uses_shop_and_combined_room_page(self):
         app_source = (PROJECT_ROOT / "app.py").read_text(encoding="utf-8")
         gamification_source = (
             PROJECT_ROOT / "views" / "gamification_view.py"
         ).read_text(encoding="utf-8")
 
         self.assertIn('"학습방 꾸미기": [', app_source)
-        for page_name in (
-            "shop_page",
-            "inventory_page",
-            "study_room_page",
-            "collection_page",
-        ):
+        for page_name in ("shop_page", "study_room_page"):
             self.assertIn(page_name, app_source)
+        self.assertNotIn("\ninventory_page = st.Page", app_source)
+        self.assertNotIn("\ncollection_page = st.Page", app_source)
+        self.assertIn("legacy_inventory_page = st.Page", app_source)
+        self.assertIn("legacy_collection_page = st.Page", app_source)
+        self.assertGreaterEqual(app_source.count('visibility="hidden"'), 2)
+        self.assertIn(
+            '"내 아이템": SHOP_HUB_SECTION_COLLECTION',
+            app_source,
+        )
+        customization_group = app_source[
+            app_source.index('"학습방 꾸미기": [') :
+            app_source.index("],", app_source.index('"학습방 꾸미기": ['))
+        ]
+        self.assertIn("study_room_page", customization_group)
+        self.assertIn("shop_page", customization_group)
         for old_nested_tab in (
             '"상점",',
             '"내 아이템",',

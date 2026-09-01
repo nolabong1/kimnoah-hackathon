@@ -38,8 +38,9 @@ from views.learning_context_state import (
     clear_learning_context,
 )
 from views.shop_pages_view import (
-    render_collection_page,
-    render_inventory_page,
+    SHOP_HUB_SECTION_COLLECTION,
+    SHOP_HUB_SECTION_KEY,
+    SHOP_HUB_SECTION_ROOM,
     render_shop_page,
     render_study_room_page,
 )
@@ -51,6 +52,7 @@ from views.source_review_material_view import (
 from views.tutor_state import clear_tutor_state
 from views.tutor_view import render_tutor
 from views.test_tools_view import (
+    build_streak_preview_profile,
     clear_test_tools_state,
     render_sidebar_test_tools,
 )
@@ -181,7 +183,7 @@ if st.session_state.auth_user is None:
 user = st.session_state.auth_user
 
 try:
-    profile = get_profile(supabase, user.id)
+    stored_profile = get_profile(supabase, user.id)
 except Exception as error:
     render_unexpected_error(
         error,
@@ -191,6 +193,11 @@ except Exception as error:
         ),
     )
     st.stop()
+
+profile = build_streak_preview_profile(
+    stored_profile,
+    st.session_state,
+)
 
 
 def show_dashboard() -> None:
@@ -291,15 +298,8 @@ def show_shop() -> None:
         render_shop_page(supabase=supabase, user=user)
 
 
-def show_inventory() -> None:
-    """내 아이템 화면을 표시합니다."""
-
-    with content_frame(DASHBOARD_CONTENT_WIDTH):
-        render_inventory_page(supabase=supabase, user=user)
-
-
 def show_study_room() -> None:
-    """내 학습방 화면을 표시합니다."""
+    """학습방과 보유 현황이 포함된 컬렉션 통합 화면을 표시합니다."""
 
     with content_frame(DASHBOARD_CONTENT_WIDTH):
         render_study_room_page(
@@ -309,11 +309,18 @@ def show_study_room() -> None:
         )
 
 
-def show_collection() -> None:
-    """꾸미기 컬렉션 화면을 표시합니다."""
+def show_inventory_legacy() -> None:
+    """기존 내 아이템 주소를 통합 페이지의 컬렉션으로 연결합니다."""
 
-    with content_frame(DASHBOARD_CONTENT_WIDTH):
-        render_collection_page(supabase=supabase, user=user)
+    st.session_state[SHOP_HUB_SECTION_KEY] = SHOP_HUB_SECTION_COLLECTION
+    st.switch_page(study_room_page)
+
+
+def show_collection_legacy() -> None:
+    """기존 컬렉션 주소를 통합 페이지의 해당 영역으로 연결합니다."""
+
+    st.session_state[SHOP_HUB_SECTION_KEY] = SHOP_HUB_SECTION_COLLECTION
+    st.switch_page(study_room_page)
 
 
 dashboard_page = st.Page(
@@ -377,23 +384,25 @@ shop_page = st.Page(
     icon=":material/storefront:",
     url_path="shop",
 )
-inventory_page = st.Page(
-    show_inventory,
-    title="내 아이템",
-    icon=":material/inventory_2:",
-    url_path="inventory",
-)
 study_room_page = st.Page(
     show_study_room,
-    title="학습방",
+    title="내 학습방",
     icon=":material/chair:",
     url_path="study-room",
 )
-collection_page = st.Page(
-    show_collection,
+legacy_inventory_page = st.Page(
+    show_inventory_legacy,
+    title="내 아이템",
+    icon=":material/inventory_2:",
+    url_path="inventory",
+    visibility="hidden",
+)
+legacy_collection_page = st.Page(
+    show_collection_legacy,
     title="컬렉션",
     icon=":material/collections_bookmark:",
     url_path="collection",
+    visibility="hidden",
 )
 
 pages_by_title = {
@@ -407,9 +416,10 @@ pages_by_title = {
     "업적·도전과제": gamification_page,
     "주간 학습 회고": weekly_review_page,
     "상점": shop_page,
-    "내 아이템": inventory_page,
     "학습방": study_room_page,
-    "컬렉션": collection_page,
+    "내 학습방": study_room_page,
+    "내 아이템": study_room_page,
+    "컬렉션": study_room_page,
 }
 
 selected_page = st.navigation(
@@ -429,8 +439,8 @@ selected_page = st.navigation(
         "학습방 꾸미기": [
             study_room_page,
             shop_page,
-            inventory_page,
-            collection_page,
+            legacy_inventory_page,
+            legacy_collection_page,
         ],
     },
     position="sidebar",
@@ -455,6 +465,16 @@ if pending_navigation is None:
     pending_navigation = st.session_state.pop(
         SAVED_PLANS_PENDING_NAVIGATION_KEY,
         None,
+    )
+shop_hub_section_by_navigation = {
+    "학습방": SHOP_HUB_SECTION_ROOM,
+    "내 학습방": SHOP_HUB_SECTION_ROOM,
+    "내 아이템": SHOP_HUB_SECTION_COLLECTION,
+    "컬렉션": SHOP_HUB_SECTION_COLLECTION,
+}
+if pending_navigation in shop_hub_section_by_navigation:
+    st.session_state[SHOP_HUB_SECTION_KEY] = (
+        shop_hub_section_by_navigation[pending_navigation]
     )
 if pending_navigation in pages_by_title:
     st.switch_page(pages_by_title[pending_navigation])
@@ -517,6 +537,7 @@ with st.sidebar:
 render_sidebar_test_tools(
     supabase=supabase,
     user=user,
+    profile=stored_profile,
 )
 
 selected_page.run()

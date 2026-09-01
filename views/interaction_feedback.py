@@ -97,13 +97,41 @@ def render_interaction_event_batch(
     )
 
 
+def order_interaction_events(
+    interaction_events: object,
+    gamification_notifications: object,
+) -> list[dict]:
+    """행동·해금 원인을 먼저 보여주고 레벨업을 마지막에 배치합니다."""
+
+    normalized_events = []
+    if isinstance(interaction_events, list):
+        normalized_events = [
+            normalized
+            for event in interaction_events
+            if (normalized := normalize_interaction_event(event)) is not None
+        ]
+    level_up_events = [
+        event for event in normalized_events if event["kind"] == "level_up"
+    ]
+    primary_events = [
+        event for event in normalized_events if event["kind"] != "level_up"
+    ]
+    return [
+        *primary_events,
+        *_build_gamification_events(gamification_notifications),
+        *level_up_events,
+    ]
+
+
 def render_interaction_feedback(
     gamification_notifications: object = None,
 ) -> None:
     """이번 rerun의 학습·게임화 결과를 한 번 표시하거나 dialog로 넘깁니다."""
 
-    events = pop_interaction_events(st.session_state)
-    events.extend(_build_gamification_events(gamification_notifications))
+    events = order_interaction_events(
+        pop_interaction_events(st.session_state),
+        gamification_notifications,
+    )
     if not events:
         return
     if isinstance(st.session_state.get("task_completion_feedback"), dict):

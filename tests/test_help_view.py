@@ -26,11 +26,21 @@ def test_help_dialog_explains_the_core_learning_flow() -> None:
         for info in app.info
     )
     markdown_values = [markdown.value for markdown in app.markdown]
+    help_text_values = [
+        *markdown_values,
+        *(caption.value for caption in app.caption),
+        *(success.value for success in app.success),
+    ]
     assert any("1. 계획 만들기" in value for value in markdown_values)
     assert any("4. 완료하기" in value for value in markdown_values)
     assert any("과목별 숙련도" in value for value in markdown_values)
     assert any("학습 성과 리포트" in value for value in markdown_values)
     assert any("PDF" in value for value in markdown_values)
+    assert any("1·3·7일" in value for value in help_text_values)
+    assert any("집중 타이머" in value for value in help_text_values)
+    assert any("추천 스킬트리" in value for value in markdown_values)
+    assert any("내 학습방 > 컬렉션" in value for value in markdown_values)
+    assert any("오류 ID" in value for value in help_text_values)
     for purpose_label in (
         "학습하기",
         "AI로 도움받기",
@@ -38,6 +48,32 @@ def test_help_dialog_explains_the_core_learning_flow() -> None:
         "학습방 꾸미기",
     ):
         assert any(purpose_label in value for value in markdown_values)
+
+    assert [tab.label for tab in app.tabs] == [
+        ":material/rocket_launch: 3분 시작",
+        ":material/explore: 기능 찾기",
+        ":material/rewarded_ads: 성장·보상",
+        ":material/help_center: 막힐 때",
+    ]
+
+
+def test_help_dialog_preserves_reward_and_completion_rules() -> None:
+    app = AppTest.from_function(_render_help_test_page).run()
+
+    app.button(key="test_help_button").click().run()
+
+    assert not app.exception
+    visible_text = "\n".join(
+        [
+            *(item.value for item in app.markdown),
+            *(item.value for item in app.warning),
+        ]
+    )
+    assert "과제 완료: **10 EXP**" in visible_text
+    assert "**추가 20 EXP**" in visible_text
+    assert "모든 문항을 맞혀야" in visible_text
+    assert "EXP와 별개" in visible_text
+    assert "EXP가 지급되지 않습니다" in visible_text
 
 
 def test_sidebar_uses_a_prominent_help_button() -> None:

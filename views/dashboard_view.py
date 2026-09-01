@@ -11,7 +11,10 @@ from services.study_plan_repository import (
 )
 from views.completion_feedback import render_completion_feedback
 from views.error_feedback import render_unexpected_error
-from views.focus_sprint_component import render_focus_sprint
+from views.focus_sprint_component import (
+    apply_focus_completion_request,
+    render_focus_sprint,
+)
 from views.gamification_state import queue_gamification_notifications
 from views.gamification_view import (
     render_gamification_dashboard_summary_from_data,
@@ -305,9 +308,18 @@ def _render_today_task_card(
             return
 
         if selected_stage == TASK_STAGE_CONTENT:
+            focus_sprint_key = f"dashboard_focus_sprint_{task['id']}"
             render_focus_sprint(
                 task,
-                key=f"dashboard_focus_sprint_{task['id']}",
+                key=focus_sprint_key,
+                on_ready_to_complete_task_id_change=lambda: (
+                    apply_focus_completion_request(
+                        st.session_state,
+                        component_key=focus_sprint_key,
+                        stage_key=stage_key,
+                        expected_task_id=str(task["id"]),
+                    )
+                ),
             )
             if task["task_type"] in {"learn", "review"}:
                 render_review_material_section(

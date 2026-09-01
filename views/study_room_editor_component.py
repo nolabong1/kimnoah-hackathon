@@ -3,6 +3,11 @@ from typing import Any
 
 import streamlit as st
 
+from views.streak_presentation import (
+    get_streak_tier_label,
+    resolve_streak_tier,
+)
+
 
 def build_study_room_mood(
     profile: Mapping[str, Any],
@@ -20,20 +25,23 @@ def build_study_room_mood(
     ):
         raise ValueError("학습방 연속 학습일 정보가 올바르지 않습니다.")
 
-    if current_streak >= 7:
-        tier = "strong"
+    tier = resolve_streak_tier(current_streak)
+    if tier == "legendary":
+        title = f"{current_streak}일의 학습 리듬"
+        message = "한 달의 꾸준함이 공간을 채웠어요. 오늘도 무리 없이 이어가세요."
+    elif tier == "blazing":
+        title = f"{current_streak}일 연속 몰입 중"
+        message = "두 주의 리듬이 선명해졌어요. 익숙한 시간에 한 과제를 시작해보세요."
+    elif tier == "strong":
         title = f"{current_streak}일 연속 집중 중"
         message = "꾸준한 리듬이 이어지고 있어요. 오늘도 한 과제씩 완성해보세요."
-    elif current_streak >= 3:
-        tier = "growing"
+    elif tier == "growing":
         title = f"{current_streak}일째 학습 불꽃"
         message = "학습 흐름이 자라고 있어요. 지금의 속도를 안정적으로 이어가세요."
-    elif current_streak >= 1:
-        tier = "spark"
+    elif tier == "spark":
         title = f"{current_streak}일 연속 학습"
         message = "학습 불씨가 켜졌어요. 오늘의 작은 진전을 이어가보세요."
     else:
-        tier = "ready"
         title = "오늘의 학습 준비 완료"
         message = "첫 과제를 완료하면 학습 불씨와 연속 기록이 시작됩니다."
 
@@ -41,9 +49,53 @@ def build_study_room_mood(
         "level": level,
         "current_streak": current_streak,
         "tier": tier,
+        "tier_label": get_streak_tier_label(tier),
         "title": title,
         "message": message,
+        "character": {
+            "name": "공부 고양이",
+            "messages": _character_messages(tier, current_streak),
+            "save_message": "새 배치를 기억했어요. 이 공간에서 다시 힘내봐요!",
+        },
     }
+
+
+def _character_messages(tier: str, current_streak: int) -> list[str]:
+    """연속 학습 상태에 맞는 짧은 캐릭터 반응을 결정론적으로 만듭니다."""
+
+    messages_by_tier = {
+        "legendary": [
+            f"{current_streak}일의 선택이 큰 리듬이 됐어요. 오늘은 가볍게 이어가요!",
+            "오래 이어온 만큼 어려운 날에는 분량을 줄여도 괜찮아요.",
+            "한 달의 기록보다 중요한 건 오늘 다시 자리에 앉는 일이에요.",
+        ],
+        "blazing": [
+            f"{current_streak}일째예요. 두 주 동안 만든 리듬을 오늘도 지켜봐요!",
+            "집중이 흐려지면 가장 짧은 복습 과제부터 시작해봐요.",
+            "꾸준한 시간대와 시작 신호를 정해두면 내일도 더 쉬워져요.",
+        ],
+        "strong": [
+            f"{current_streak}일의 리듬이 단단해요. 오늘도 한 걸음만 이어가요!",
+            "어려운 과제는 작은 단계로 나누면 훨씬 가벼워져요.",
+            "꾸준함이 이미 실력이 되고 있어요. 지금 속도를 지켜봐요.",
+        ],
+        "growing": [
+            f"{current_streak}일째 불꽃이 자라고 있어요. 오늘도 같이 집중해요!",
+            "완벽하게 하려 하기보다, 오늘 할 한 과제부터 시작해봐요.",
+            "짧게 복습하고 새 내용을 배우면 기억이 더 오래가요.",
+        ],
+        "spark": [
+            "학습 불씨가 켜졌어요. 가장 쉬운 과제부터 시작해볼까요?",
+            "막히면 알고 있는 것과 모르는 것을 한 줄씩 나눠 적어봐요.",
+            "오늘의 작은 완료가 내일의 시작을 더 쉽게 만들어요.",
+        ],
+        "ready": [
+            "첫 과제를 시작하면 오늘의 학습 불씨가 켜져요!",
+            "5분만 해보자는 마음으로 가장 작은 단계부터 시작해봐요.",
+            "준비는 끝났어요. 오늘 배우고 싶은 한 가지를 골라봐요.",
+        ],
+    }
+    return messages_by_tier[tier]
 
 
 _EDITOR_HTML = """
@@ -58,7 +110,10 @@ _EDITOR_HTML = """
     </div>
   </div>
   <div class="room-stage" tabindex="0" aria-label="학습방 가구 배치 편집기"></div>
-  <p class="room-help">가구를 드래그해 이동하고, 모서리로 크기, 위쪽 원으로 각도를 조절하세요.</p>
+  <p class="room-help">
+    가구를 드래그해 이동하고, 모서리로 크기, 위쪽 원으로 각도를 조절하세요.
+    <span class="room-character-help" hidden>공부 고양이는 가볍게 클릭하면 반응합니다.</span>
+  </p>
 </div>
 """
 
@@ -123,6 +178,9 @@ _EDITOR_CSS = """
 }
 
 .room-stage {
+  --room-aura-opacity: .34;
+  --room-aura-size: 55%;
+  --room-spark-size: 7px;
   aspect-ratio: 16 / 9;
   background: var(--st-secondary-background-color);
   border: 1px solid color-mix(in srgb, var(--st-text-color) 14%, transparent);
@@ -139,21 +197,28 @@ _EDITOR_CSS = """
   background: radial-gradient(
     circle at 50% 20%,
     color-mix(in srgb, var(--room-mood-color, var(--st-primary-color)) 18%, transparent),
-    transparent 55%
+    transparent var(--room-aura-size)
   );
   content: "";
   inset: 0;
-  opacity: 0.55;
+  opacity: var(--room-aura-opacity);
   pointer-events: none;
   position: absolute;
   transition: opacity 280ms ease;
   z-index: 80;
 }
 
-.room-stage[data-mood="ready"] { --room-mood-color: #a7afc2; }
-.room-stage[data-mood="spark"] { --room-mood-color: #ff9f43; }
-.room-stage[data-mood="growing"] { --room-mood-color: #ff7438; }
-.room-stage[data-mood="strong"] { --room-mood-color: #f44771; }
+.room-stage[data-mood="ready"] { --room-mood-color: #a7afc2; --room-aura-opacity: .18; }
+.room-stage[data-mood="spark"] { --room-mood-color: var(--st-orange-color, #ff9f43); --room-aura-opacity: .3; }
+.room-stage[data-mood="growing"] { --room-mood-color: #ff7438; --room-aura-opacity: .44; }
+.room-stage[data-mood="strong"] { --room-mood-color: var(--st-red-color, #f44771); --room-aura-opacity: .58; --room-aura-size: 63%; --room-spark-size: 8px; }
+.room-stage[data-mood="blazing"] { --room-mood-color: #e63973; --room-aura-opacity: .74; --room-aura-size: 70%; --room-spark-size: 9px; }
+.room-stage[data-mood="legendary"] { --room-mood-color: var(--st-violet-color, #7b61ff); --room-aura-opacity: .9; --room-aura-size: 78%; --room-spark-size: 10px; }
+.room-stage[data-mood="blazing"],
+.room-stage[data-mood="legendary"] {
+  border-color: color-mix(in srgb, var(--room-mood-color) 46%, transparent);
+  box-shadow: 0 12px 34px color-mix(in srgb, var(--room-mood-color) 18%, transparent);
+}
 .room-stage.is-celebrating::after { opacity: 1; }
 
 .room-reaction {
@@ -180,16 +245,90 @@ _EDITOR_CSS = """
 .room-reaction span { display: block; font-size: 0.69rem; margin-top: 3px; opacity: 0.72; }
 .room-reaction.is-visible { opacity: 1; transform: translate(-50%, 0); }
 
+.room-character-reaction {
+  background: color-mix(in srgb, var(--st-background-color) 95%, transparent);
+  border: 1px solid color-mix(in srgb, var(--room-mood-color) 42%, transparent);
+  border-radius: 13px;
+  box-shadow: 0 9px 24px rgba(20, 26, 44, 0.16);
+  box-sizing: border-box;
+  color: var(--st-text-color);
+  max-width: min(43%, 300px);
+  opacity: 0;
+  padding: 8px 11px;
+  pointer-events: none;
+  position: absolute;
+  text-align: left;
+  transform: translate(-50%, 6px) scale(.96);
+  transition: opacity 160ms ease, transform 210ms ease;
+  z-index: 110;
+}
+
+.room-character-reaction::after {
+  background: inherit;
+  border-bottom: 1px solid color-mix(in srgb, var(--room-mood-color) 42%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--room-mood-color) 42%, transparent);
+  bottom: -6px;
+  content: "";
+  height: 10px;
+  left: calc(50% - 5px);
+  position: absolute;
+  transform: rotate(45deg);
+  width: 10px;
+}
+
+.room-character-reaction strong { display: block; font-size: .72rem; }
+.room-character-reaction span { display: block; font-size: .65rem; line-height: 1.45; margin-top: 2px; opacity: .78; }
+.room-character-reaction.is-visible { opacity: 1; transform: translate(-50%, 0) scale(1); }
+
+.room-save-feedback {
+  align-items: center;
+  background: color-mix(in srgb, var(--st-background-color) 94%, transparent);
+  border: 1px solid color-mix(in srgb, var(--st-primary-color) 45%, transparent);
+  border-radius: 999px;
+  bottom: 6%;
+  box-shadow: 0 10px 28px rgba(20, 26, 44, 0.18);
+  display: flex;
+  gap: 10px;
+  left: 50%;
+  max-width: 82%;
+  opacity: 0;
+  padding: 9px 14px;
+  pointer-events: none;
+  position: absolute;
+  transform: translate(-50%, 10px) scale(.96);
+  transition: opacity 180ms ease, transform 240ms ease;
+  z-index: 105;
+}
+
+.room-save-feedback__icon {
+  align-items: center;
+  background: var(--st-primary-color);
+  border-radius: 50%;
+  color: var(--st-button-primary-text-color, #fff);
+  display: inline-flex;
+  flex: 0 0 24px;
+  font-size: .78rem;
+  height: 24px;
+  justify-content: center;
+  width: 24px;
+}
+
+.room-save-feedback__copy { min-width: 0; }
+.room-save-feedback strong { display: block; font-size: .78rem; }
+.room-save-feedback span { display: block; font-size: .66rem; margin-top: 2px; opacity: .72; }
+.room-save-feedback.is-visible { opacity: 1; transform: translate(-50%, 0) scale(1); }
+.room-stage.is-saved { animation: room-save-pulse 780ms ease-out; }
+
 .room-spark {
   animation: room-spark 1.15s ease-out forwards;
   background: var(--room-mood-color);
   border-radius: 50%;
-  height: 7px;
+  height: var(--room-spark-size);
   left: var(--spark-x);
   pointer-events: none;
   position: absolute;
   top: var(--spark-y);
-  width: 7px;
+  width: var(--room-spark-size);
   z-index: 95;
 }
 
@@ -220,6 +359,18 @@ _EDITOR_CSS = """
   height: 100%;
   pointer-events: none;
   width: 100%;
+}
+
+.room-object.is-character:not(.is-selected) > img {
+  animation: room-character-breathe 2.8s ease-in-out infinite;
+}
+
+.room-stage[data-mood="strong"] .room-object.is-character:not(.is-selected) > img { animation-duration: 2.35s; }
+.room-stage[data-mood="blazing"] .room-object.is-character:not(.is-selected) > img { animation-duration: 1.85s; filter: drop-shadow(0 5px 8px color-mix(in srgb, var(--room-mood-color) 35%, transparent)); }
+.room-stage[data-mood="legendary"] .room-object.is-character:not(.is-selected) > img { animation-duration: 1.45s; filter: drop-shadow(0 7px 12px color-mix(in srgb, var(--room-mood-color) 48%, transparent)); }
+
+.room-object.is-character.is-reacting > img {
+  animation: room-character-hop 560ms ease-out;
 }
 
 .room-object.is-selected {
@@ -266,6 +417,8 @@ _EDITOR_CSS = """
   margin: 8px 2px 0;
 }
 
+.room-character-help { display: inline; margin-left: 4px; }
+
 @keyframes room-spark {
   from { opacity: 0; transform: translateY(10px) scale(0.4); }
   35% { opacity: 0.95; }
@@ -277,6 +430,22 @@ _EDITOR_CSS = """
   to { filter: drop-shadow(0 7px 9px color-mix(in srgb, var(--room-mood-color) 38%, transparent)); }
 }
 
+@keyframes room-save-pulse {
+  0% { border-color: var(--st-primary-color); box-shadow: 0 0 0 0 color-mix(in srgb, var(--st-primary-color) 38%, transparent); }
+  55% { box-shadow: 0 0 0 9px color-mix(in srgb, var(--st-primary-color) 0%, transparent); }
+  100% { border-color: color-mix(in srgb, var(--st-text-color) 14%, transparent); box-shadow: none; }
+}
+
+@keyframes room-character-breathe {
+  0%, 100% { transform: scaleX(var(--room-character-flip, 1)) translateY(0); }
+  50% { transform: scaleX(var(--room-character-flip, 1)) translateY(-3px); }
+}
+
+@keyframes room-character-hop {
+  0%, 100% { transform: scaleX(var(--room-character-flip, 1)) translateY(0) scale(1); }
+  42% { transform: scaleX(var(--room-character-flip, 1)) translateY(-12px) scale(1.04); }
+}
+
 @media (max-width: 720px) {
   .room-toolbar { align-items: flex-start; flex-direction: column; }
   .room-actions { justify-content: flex-start; }
@@ -284,9 +453,14 @@ _EDITOR_CSS = """
 
 @media (prefers-reduced-motion: reduce) {
   .room-stage::after,
-  .room-reaction { transition: none; }
+  .room-reaction,
+  .room-character-reaction,
+  .room-save-feedback { transition: none; }
   .room-spark,
-  .room-stage.is-celebrating .room-object > img { animation: none; }
+  .room-object.is-character:not(.is-selected) > img,
+  .room-object.is-character.is-reacting > img,
+  .room-stage.is-celebrating .room-object > img,
+  .room-stage.is-saved { animation: none; }
 }
 """
 
@@ -346,10 +520,11 @@ export default function (component) {
   const stage = parentElement.querySelector(".room-stage")
   const selectionLabel = parentElement.querySelector(".room-selection")
   const moodLabel = parentElement.querySelector(".room-mood")
+  const characterHelp = parentElement.querySelector(".room-character-help")
   const encourageButton = parentElement.querySelector('[data-action="encourage"]')
   const flipButton = parentElement.querySelector('[data-action="flip"]')
   const resetButton = parentElement.querySelector('[data-action="reset"]')
-  if (!editor || !stage || !selectionLabel || !moodLabel || !encourageButton || !flipButton || !resetButton) return
+  if (!editor || !stage || !selectionLabel || !moodLabel || !characterHelp || !encourageButton || !flipButton || !resetButton) return
 
   const canvasWidth = Number(data?.canvas_width) || 1600
   const canvasHeight = Number(data?.canvas_height) || 900
@@ -361,6 +536,11 @@ export default function (component) {
       cleanupPointer: null,
       transforms: {},
       reactionTimer: null,
+      characterReactionTimer: null,
+      characterMessageIndex: 0,
+      saveFeedbackTimer: null,
+      lastSaveEventId: null,
+      saveFeedbackVisibleUntil: 0,
     }
     instances.set(parentElement, state)
   }
@@ -381,7 +561,8 @@ export default function (component) {
         current_streak: 0,
       }
   stage.dataset.mood = String(mood.tier || "ready")
-  moodLabel.textContent = `Lv.${Number(mood.level) || 1} · ${Number(mood.current_streak) || 0}일 연속`
+  const tierLabel = String(mood.tier_label || "불씨 준비")
+  moodLabel.textContent = `Lv.${Number(mood.level) || 1} · ${tierLabel} · ${Number(mood.current_streak) || 0}일`
 
   const baseImage = document.createElement("img")
   baseImage.className = "room-base"
@@ -398,7 +579,34 @@ export default function (component) {
   )
   stage.appendChild(reaction)
 
+  const characterReaction = document.createElement("div")
+  characterReaction.className = "room-character-reaction"
+  characterReaction.setAttribute("role", "status")
+  characterReaction.setAttribute("aria-live", "polite")
+  const characterReactionTitle = document.createElement("strong")
+  const characterReactionMessage = document.createElement("span")
+  characterReaction.append(characterReactionTitle, characterReactionMessage)
+  stage.appendChild(characterReaction)
+
+  const saveFeedback = document.createElement("div")
+  saveFeedback.className = "room-save-feedback"
+  saveFeedback.setAttribute("role", "status")
+  const saveFeedbackIcon = document.createElement("span")
+  saveFeedbackIcon.className = "room-save-feedback__icon"
+  saveFeedbackIcon.textContent = "✓"
+  const saveFeedbackCopy = document.createElement("span")
+  saveFeedbackCopy.className = "room-save-feedback__copy"
+  const saveFeedbackTitle = document.createElement("strong")
+  const saveFeedbackMessage = document.createElement("span")
+  saveFeedbackCopy.append(saveFeedbackTitle, saveFeedbackMessage)
+  saveFeedback.append(saveFeedbackIcon, saveFeedbackCopy)
+  stage.appendChild(saveFeedback)
+
   const layerElements = new Map()
+  const characterLayer = layers.find(
+    layer => layer.item_key === "accent_study_cat" && layer.slot === "accent",
+  )
+  characterHelp.hidden = !characterLayer
 
   const emitTransforms = () => {
     setStateValue("transforms", clone(state.transforms))
@@ -442,6 +650,10 @@ export default function (component) {
     element.style.transform = `translate(-50%, -50%) rotate(${transform.rotation}deg)`
     element.classList.toggle("is-selected", layer.slot === state.selectedSlot)
     const image = element.querySelector("img")
+    image.style.setProperty(
+      "--room-character-flip",
+      transform.flip_horizontal ? "-1" : "1",
+    )
     image.style.transform = transform.flip_horizontal ? "scaleX(-1)" : "none"
     const controls = element.querySelectorAll(".room-control")
     controls.forEach(control => {
@@ -454,6 +666,50 @@ export default function (component) {
     renderToolbar()
   }
 
+  const revealCharacterReaction = reason => {
+    if (!characterLayer) return
+    const character = mood?.character && typeof mood.character === "object"
+      ? mood.character
+      : {}
+    const messages = Array.isArray(character.messages)
+      ? character.messages.filter(message => typeof message === "string" && message.trim())
+      : []
+    let message = "오늘도 한 단계씩 같이 해봐요!"
+    if (reason === "save" && typeof character.save_message === "string") {
+      message = character.save_message
+    } else if (messages.length) {
+      message = messages[state.characterMessageIndex % messages.length]
+      state.characterMessageIndex += 1
+    }
+
+    const center = layerCenter(characterLayer)
+    const transform = state.transforms[characterLayer.slot]
+    const halfHeight = Number(characterLayer.height) * transform.scale / 200
+    const reactionX = clamp(center.x, canvasWidth * .14, canvasWidth * .86)
+    const reactionY = clamp(
+      center.y - halfHeight - 34,
+      canvasHeight * .08,
+      canvasHeight * .82,
+    )
+    characterReaction.style.left = `${reactionX / canvasWidth * 100}%`
+    characterReaction.style.top = `${reactionY / canvasHeight * 100}%`
+    characterReactionTitle.textContent = String(character.name || "공부 고양이")
+    characterReactionMessage.textContent = message
+
+    const characterElement = layerElements.get(characterLayer.slot)
+    if (state.characterReactionTimer) window.clearTimeout(state.characterReactionTimer)
+    characterReaction.classList.remove("is-visible")
+    characterElement?.classList.remove("is-reacting")
+    void characterReaction.offsetWidth
+    characterReaction.classList.add("is-visible")
+    characterElement?.classList.add("is-reacting")
+    state.characterReactionTimer = window.setTimeout(() => {
+      characterReaction.classList.remove("is-visible")
+      characterElement?.classList.remove("is-reacting")
+      state.characterReactionTimer = null
+    }, 2800)
+  }
+
   const startPointerInteraction = (event, layer, mode) => {
     event.preventDefault()
     event.stopPropagation()
@@ -462,6 +718,7 @@ export default function (component) {
 
     const startPoint = clientToCanvas(event)
     const startTransform = clone(state.transforms[layer.slot])
+    let maximumPointerDistance = 0
     const center = layerCenter(layer)
     const startDistance = Math.max(
       1,
@@ -474,6 +731,10 @@ export default function (component) {
 
     const onMove = moveEvent => {
       const point = clientToCanvas(moveEvent)
+      maximumPointerDistance = Math.max(
+        maximumPointerDistance,
+        Math.hypot(point.x - startPoint.x, point.y - startPoint.y),
+      )
       const next = state.transforms[layer.slot]
       if (mode === "move") {
         next.x = clamp(
@@ -503,7 +764,18 @@ export default function (component) {
       window.removeEventListener("pointerup", finish)
       window.removeEventListener("pointercancel", finish)
       state.cleanupPointer = null
-      emitTransforms()
+      const isCharacterTap = (
+        mode === "move"
+        && layer.item_key === "accent_study_cat"
+        && maximumPointerDistance <= 12
+      )
+      if (isCharacterTap) {
+        state.transforms[layer.slot] = startTransform
+        renderLayer(layer)
+        revealCharacterReaction("tap")
+      } else {
+        emitTransforms()
+      }
     }
 
     state.cleanupPointer = () => {
@@ -520,6 +792,7 @@ export default function (component) {
   for (const [index, layer] of layers.entries()) {
     const element = document.createElement("div")
     element.className = "room-object"
+    element.classList.toggle("is-character", layer.item_key === "accent_study_cat")
     element.dataset.slot = layer.slot
     element.style.zIndex = String(20 + index)
     element.setAttribute("role", "button")
@@ -590,7 +863,16 @@ export default function (component) {
     stage.classList.add("is-celebrating")
     reaction.classList.add("is-visible")
 
-    for (let index = 0; index < 12; index += 1) {
+    const sparkCounts = {
+      ready: 4,
+      spark: 7,
+      growing: 10,
+      strong: 12,
+      blazing: 18,
+      legendary: 24,
+    }
+    const sparkCount = sparkCounts[String(mood.tier || "ready")] || 4
+    for (let index = 0; index < sparkCount; index += 1) {
       const spark = document.createElement("span")
       spark.className = "room-spark"
       spark.style.setProperty("--spark-x", `${12 + (index * 37) % 76}%`)
@@ -607,11 +889,44 @@ export default function (component) {
     }, 3200)
   }
 
+  const revealSaveFeedback = () => {
+    const feedback = data?.save_feedback
+    if (!feedback || typeof feedback !== "object") return
+    const eventId = String(feedback.event_id || "")
+    if (!eventId) return
+    const now = Date.now()
+    const isNewEvent = eventId !== state.lastSaveEventId
+    if (isNewEvent) {
+      state.lastSaveEventId = eventId
+      state.saveFeedbackVisibleUntil = now + 2800
+    } else if (now >= state.saveFeedbackVisibleUntil) {
+      return
+    }
+    saveFeedbackTitle.textContent = String(feedback.title || "학습방 저장 완료")
+    saveFeedbackMessage.textContent = String(feedback.message || "현재 구성을 안전하게 저장했습니다.")
+    if (state.saveFeedbackTimer) window.clearTimeout(state.saveFeedbackTimer)
+    if (isNewEvent) {
+      stage.classList.remove("is-saved")
+      void stage.offsetWidth
+      stage.classList.add("is-saved")
+      revealCharacterReaction("save")
+    }
+    saveFeedback.classList.add("is-visible")
+    state.saveFeedbackTimer = window.setTimeout(() => {
+      saveFeedback.classList.remove("is-visible")
+      stage.classList.remove("is-saved")
+      state.saveFeedbackTimer = null
+    }, Math.max(0, state.saveFeedbackVisibleUntil - now))
+  }
+
   renderAll()
+  revealSaveFeedback()
 
   return () => {
     if (state.cleanupPointer) state.cleanupPointer()
     if (state.reactionTimer) window.clearTimeout(state.reactionTimer)
+    if (state.characterReactionTimer) window.clearTimeout(state.characterReactionTimer)
+    if (state.saveFeedbackTimer) window.clearTimeout(state.saveFeedbackTimer)
     encourageButton.onclick = null
     flipButton.onclick = null
     resetButton.onclick = null
@@ -633,13 +948,18 @@ def render_study_room_editor(
     *,
     key: str,
     mood: Mapping[str, Any] | None = None,
+    save_feedback: Mapping[str, Any] | None = None,
     on_transforms_change: Callable[[], None] | None = None,
 ) -> Any:
     """직접 조작 가능한 학습방 캔버스를 안정된 Python API로 표시합니다."""
 
     return _STUDY_ROOM_EDITOR(
         key=key,
-        data={**dict(scene), "mood": dict(mood or {})},
+        data={
+            **dict(scene),
+            "mood": dict(mood or {}),
+            "save_feedback": dict(save_feedback or {}),
+        },
         height="content",
         on_transforms_change=on_transforms_change,
     )

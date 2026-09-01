@@ -1,5 +1,7 @@
+from collections.abc import MutableMapping
 from datetime import datetime, timezone
 from math import ceil
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import streamlit as st
@@ -38,6 +40,7 @@ from views.gamification_state import (
     queue_gamification_notifications,
 )
 from views.error_feedback import render_unexpected_error
+from views.interaction_state import queue_challenge_reward_interaction
 from views.ui_components import (
     MetricItem,
     render_metric_row,
@@ -444,9 +447,10 @@ def _render_claim_button(supabase, challenge: dict) -> None:
         st.session_state[CLAIM_IN_PROGRESS_KEY] = challenge["id"]
         try:
             with st.spinner("보상을 안전하게 지급하고 있습니다..."):
-                result = claim_challenge_reward(
+                result = execute_challenge_reward_claim(
                     supabase,
                     challenge["id"],
+                    st.session_state,
                 )
             st.session_state[SUCCESS_MESSAGE_KEY] = (
                 "이미 수령한 보상입니다."
@@ -462,6 +466,18 @@ def _render_claim_button(supabase, challenge: dict) -> None:
             )
         finally:
             st.session_state.pop(CLAIM_IN_PROGRESS_KEY, None)
+
+
+def execute_challenge_reward_claim(
+    supabase,
+    challenge_id: str,
+    state: MutableMapping[str, Any],
+) -> dict:
+    """보상 수령 RPC를 한 번 호출하고 신규 지급 연출만 예약합니다."""
+
+    result = claim_challenge_reward(supabase, challenge_id)
+    queue_challenge_reward_interaction(state, result)
+    return result
 
 
 def _render_achievements(achievements: list[dict]) -> None:

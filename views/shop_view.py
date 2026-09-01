@@ -1,11 +1,9 @@
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 import streamlit as st
 
 from models.shop import ShopItemCategory
-from services.shop_catalog import SHOP_ITEMS_BY_KEY
 from services.shop_repository import (
     get_shop_items,
     get_user_coin_wallet,
@@ -13,15 +11,20 @@ from services.shop_repository import (
     purchase_shop_item,
 )
 from views.error_feedback import render_unexpected_error
+from views.shop_asset_utils import get_approved_shop_thumbnail_path
+from views.shop_purchase_reveal_component import (
+    build_shop_purchase_feedback,
+    render_shop_purchase_reveal,
+)
 from views.shop_state import (
     CATEGORY_FILTER_KEY,
     PURCHASE_IN_PROGRESS_KEY,
     SUCCESS_MESSAGE_KEY,
+    pop_purchase_reveal,
+    queue_purchase_reveal,
 )
 from views.ui_components import MetricItem, render_empty_state, render_metric_row
 
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 CATEGORY_LABELS = {
     ShopItemCategory.BACKGROUND.value: "배경",
@@ -99,6 +102,15 @@ def render_shop_market(
 
     if SUCCESS_MESSAGE_KEY in st.session_state:
         st.success(st.session_state.pop(SUCCESS_MESSAGE_KEY))
+    purchase_reveal = pop_purchase_reveal(st.session_state)
+    if purchase_reveal is not None:
+        render_shop_purchase_reveal(
+            purchase_reveal,
+            key=(
+                "shop_purchase_reveal_"
+                f"{purchase_reveal['item_key']}"
+            ),
+        )
 
     render_metric_row(
         [
@@ -252,8 +264,12 @@ def _show_purchase_dialog(
             st.session_state[PURCHASE_IN_PROGRESS_KEY] = True
             try:
                 with st.spinner("아이템을 안전하게 구매하고 있습니다..."):
-                    message = execute_shop_purchase(supabase, item)
-                st.session_state[SUCCESS_MESSAGE_KEY] = message
+                    feedback = execute_shop_purchase_feedback(
+                        supabase,
+                        item,
+                    )
+                st.session_state[SUCCESS_MESSAGE_KEY] = feedback["message"]
+                queue_purchase_reveal(st.session_state, feedback)
                 st.rerun()
             except Exception as error:
                 render_unexpected_error(
@@ -268,13 +284,17 @@ def _show_purchase_dialog(
 def execute_shop_purchase(supabase, item: dict) -> str:
     """구매 RPC를 한 번 호출하고 사용자에게 보여줄 결과 문구를 만듭니다."""
 
+    return execute_shop_purchase_feedback(supabase, item)["message"]
+
+
+def execute_shop_purchase_feedback(
+    supabase,
+    item: dict,
+) -> dict[str, Any]:
+    """구매 RPC를 한 번 호출하고 안전한 일회성 표시 payload를 만듭니다."""
+
     result = purchase_shop_item(supabase, item["item_key"])
-    if result["already_owned"]:
-        return "이미 보유한 아이템입니다. 코인은 차감되지 않았습니다."
-    return (
-        f"'{item['name_ko']}' 구매를 완료했습니다. "
-        f"남은 코인은 {result['balance']}개입니다."
-    )
+    return build_shop_purchase_feedback(item, result)
 
 
 def _render_shop_item_card(
@@ -349,7 +369,7 @@ def _render_inventory_item_card(
 def render_shop_item_visual(item: dict) -> None:
     """승인된 로컬 썸네일만 표시하고 없으면 카테고리 아이콘을 사용합니다."""
 
-    thumbnail_path = _get_approved_thumbnail_path(item)
+    thumbnail_path = get_approved_shop_thumbnail_path(item)
     with st.container(
         height=150,
         horizontal_alignment="center",
@@ -360,18 +380,6 @@ def render_shop_item_visual(item: dict) -> None:
         else:
             st.markdown(f"## {CATEGORY_ICONS[item['category']]}")
             st.caption("아이템 이미지 준비 중")
-
-
-def _get_approved_thumbnail_path(item: dict) -> Path | None:
-    """코드 카탈로그와 경로가 같은 실제 에셋만 로컬에서 읽습니다."""
-
-    definition = SHOP_ITEMS_BY_KEY.get(item.get("item_key"))
-    if definition is None:
-        return None
-    if item.get("thumbnail_path") != definition.thumbnail_path:
-        return None
-    candidate = PROJECT_ROOT / definition.thumbnail_path
-    return candidate if candidate.is_file() else None
 
 
 def _format_acquired_date(value: str | datetime) -> str:

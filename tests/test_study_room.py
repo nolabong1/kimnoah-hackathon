@@ -188,6 +188,10 @@ class StudyRoomModelAndServiceTests(unittest.TestCase):
             [layer["slot"] for layer in scene["layers"]],
             ["desk", "chair"],
         )
+        self.assertEqual(
+            [layer["item_key"] for layer in scene["layers"]],
+            ["desk_oak_basic", "chair_blue_basic"],
+        )
         self.assertTrue(
             all(
                 str(layer["source"]).startswith("data:image/png;base64,")

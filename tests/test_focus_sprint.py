@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from views import focus_sprint_component
 from views.focus_sprint_component import (
+    apply_focus_completion_request,
     build_focus_sprint_config,
     normalize_focus_timer_state,
 )
@@ -82,12 +83,60 @@ class FocusSprintTests(unittest.TestCase):
             },
         )
 
+    def test_completion_request_opens_only_matching_task_stage(self):
+        state = {
+            "focus-task-1": {
+                "ready_to_complete_task_id": "task-1",
+            },
+            "dashboard_task_stage_task-1": "content",
+            "unrelated": "preserved",
+        }
+
+        changed = apply_focus_completion_request(
+            state,
+            component_key="focus-task-1",
+            stage_key="dashboard_task_stage_task-1",
+            expected_task_id="task-1",
+        )
+
+        self.assertTrue(changed)
+        self.assertEqual(
+            state["dashboard_task_stage_task-1"],
+            "complete",
+        )
+        self.assertEqual(state["unrelated"], "preserved")
+
+    def test_completion_request_rejects_other_task(self):
+        state = {
+            "focus-task-1": {
+                "ready_to_complete_task_id": "other-task",
+            },
+            "dashboard_task_stage_task-1": "content",
+        }
+
+        changed = apply_focus_completion_request(
+            state,
+            component_key="focus-task-1",
+            stage_key="dashboard_task_stage_task-1",
+            expected_task_id="task-1",
+        )
+
+        self.assertFalse(changed)
+        self.assertEqual(
+            state["dashboard_task_stage_task-1"],
+            "content",
+        )
+
     def test_frontend_updates_clock_without_per_second_streamlit_state(self):
         source = focus_sprint_component._FOCUS_SPRINT_JS
 
         self.assertIn("window.setInterval(render, 250)", source)
         self.assertIn('setStateValue("timer", nextTimer)', source)
         self.assertEqual(source.count('setStateValue("timer"'), 1)
+        self.assertIn(
+            'setTriggerValue("ready_to_complete_task_id"',
+            source,
+        )
         self.assertIn("window.clearInterval", source)
         self.assertIn("return () =>", source)
 

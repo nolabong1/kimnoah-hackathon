@@ -6,7 +6,14 @@ from services.collection_service import (
     CollectionSummary,
     build_collection_summary,
 )
-from views.shop_state import COLLECTION_CATEGORY_FILTER_KEY
+from views.collection_gallery_component import (
+    build_collection_gallery_items,
+    render_collection_gallery,
+)
+from views.shop_state import (
+    COLLECTION_CATEGORY_FILTER_KEY,
+    COLLECTION_STATUS_FILTER_KEY,
+)
 from views.shop_view import (
     CATEGORY_ICONS,
     CATEGORY_LABELS,
@@ -15,6 +22,24 @@ from views.shop_view import (
     render_shop_item_visual,
 )
 from views.ui_components import MetricItem, render_empty_state, render_metric_row
+
+
+COLLECTION_STATUS_ALL = "all"
+COLLECTION_STATUS_OWNED = "owned"
+COLLECTION_STATUS_EQUIPPED = "equipped"
+COLLECTION_STATUS_UNOWNED = "unowned"
+COLLECTION_STATUS_OPTIONS = (
+    COLLECTION_STATUS_ALL,
+    COLLECTION_STATUS_OWNED,
+    COLLECTION_STATUS_EQUIPPED,
+    COLLECTION_STATUS_UNOWNED,
+)
+COLLECTION_STATUS_LABELS = {
+    COLLECTION_STATUS_ALL: "전체",
+    COLLECTION_STATUS_OWNED: "보유",
+    COLLECTION_STATUS_EQUIPPED: "장착 중",
+    COLLECTION_STATUS_UNOWNED: "미보유",
+}
 
 
 def render_shop_collection(
@@ -69,19 +94,53 @@ def render_shop_collection(
 
     _render_category_progress(summary)
 
-    st.markdown("### 전체 아이템")
+    st.markdown("### 아이템 보유 현황")
+    selected_status = st.segmented_control(
+        "보유 상태",
+        options=COLLECTION_STATUS_OPTIONS,
+        default=COLLECTION_STATUS_ALL,
+        required=True,
+        format_func=lambda status: COLLECTION_STATUS_LABELS[status],
+        key=COLLECTION_STATUS_FILTER_KEY,
+        width="stretch",
+        persist_state="session",
+    )
     selected_category = st.selectbox(
         "컬렉션 카테고리",
         options=["전체", *CATEGORY_LABELS.values()],
         key=COLLECTION_CATEGORY_FILTER_KEY,
         persist_state="session",
     )
-    visible_items = filter_shop_items(items, selected_category)
+    category_items = filter_shop_items(items, selected_category)
+    visible_items = filter_collection_items_by_status(
+        category_items,
+        owned_keys=summary.owned_keys,
+        equipped_keys=summary.equipped_keys,
+        selected_status=selected_status,
+    )
     if not visible_items:
         render_empty_state(
-            "이 카테고리에 아이템이 없습니다",
-            "다른 카테고리를 선택해주세요.",
+            "선택한 조건에 아이템이 없습니다",
+            "다른 보유 상태나 카테고리를 선택해주세요.",
             icon=":material/category:",
+        )
+        return
+
+    gallery_items = build_collection_gallery_items(
+        visible_items,
+        owned_keys=summary.owned_keys,
+        equipped_keys=summary.equipped_keys,
+    )
+    if render_collection_gallery(
+        gallery_items,
+        key=(
+            "shop_collection_gallery_"
+            f"{selected_status}_{selected_category}"
+        ),
+    ):
+        st.caption(
+            "아이템 카드를 선택하면 오른쪽에서 수집 상태와 이용 방법을 "
+            "확인할 수 있습니다. 구매와 장착은 상점·학습방에서 진행합니다."
         )
         return
 
@@ -89,6 +148,28 @@ def render_shop_collection(
     for index, item in enumerate(visible_items):
         with columns[index % 3]:
             _render_collection_item_card(item, summary)
+
+
+def filter_collection_items_by_status(
+    items: list[dict],
+    *,
+    owned_keys: frozenset[str] | set[str],
+    equipped_keys: frozenset[str] | set[str],
+    selected_status: object,
+) -> list[dict]:
+    """보유·장착 상태에 해당하는 컬렉션 아이템을 기존 순서대로 반환합니다."""
+
+    if selected_status == COLLECTION_STATUS_ALL:
+        return list(items)
+    if selected_status == COLLECTION_STATUS_OWNED:
+        return [item for item in items if item.get("item_key") in owned_keys]
+    if selected_status == COLLECTION_STATUS_EQUIPPED:
+        return [
+            item for item in items if item.get("item_key") in equipped_keys
+        ]
+    if selected_status == COLLECTION_STATUS_UNOWNED:
+        return [item for item in items if item.get("item_key") not in owned_keys]
+    return []
 
 
 def _render_category_progress(summary: CollectionSummary) -> None:

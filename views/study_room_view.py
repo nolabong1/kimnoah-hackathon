@@ -26,6 +26,8 @@ from views.shop_state import (
     ROOM_SAVED_SOURCE_KEY,
     ROOM_SUCCESS_MESSAGE_KEY,
     ROOM_TRANSFORMS_DRAFT_KEY,
+    pop_room_save_reveal,
+    queue_room_save_reveal,
 )
 from views.study_room_editor_component import (
     build_study_room_mood,
@@ -171,12 +173,20 @@ def render_study_room(
             st.session_state[ROOM_SAVE_IN_PROGRESS_KEY] = True
             try:
                 with st.spinner("학습방을 안전하게 저장하고 있습니다..."):
-                    execute_study_room_save(
+                    saved_result = execute_study_room_save(
                         supabase,
                         selected_equipment,
                         owned_keys,
                         selected_transforms,
                     )
+                queue_room_save_reveal(
+                    st.session_state,
+                    build_study_room_save_feedback(
+                        saved_result,
+                        saved_equipment,
+                        saved_transforms,
+                    ),
+                )
                 st.session_state[ROOM_SUCCESS_MESSAGE_KEY] = (
                     "학습방 구성을 저장했습니다."
                 )
@@ -214,6 +224,9 @@ def render_study_room(
                         ),
                         on_transforms_change=(
                             _capture_study_room_editor_transforms
+                        ),
+                        save_feedback=pop_room_save_reveal(
+                            st.session_state
                         ),
                     )
                 except Exception as error:
@@ -253,6 +266,55 @@ def execute_study_room_save(
         normalized,
         normalized_transforms,
     )
+
+
+def build_study_room_save_feedback(
+    saved_room: Mapping[str, Any],
+    previous_equipment: Mapping[str, Any],
+    previous_transforms: object | None,
+) -> dict[str, Any]:
+    """검증된 서버 저장 결과를 편집기 내부 일회성 피드백으로 변환합니다."""
+
+    updated_at = saved_room.get("updated_at")
+    if updated_at is None:
+        raise ValueError("학습방 저장 시각 정보가 올바르지 않습니다.")
+    event_id = (
+        updated_at.isoformat()
+        if hasattr(updated_at, "isoformat")
+        else str(updated_at).strip()
+    )
+    if not event_id:
+        raise ValueError("학습방 저장 시각 정보가 올바르지 않습니다.")
+
+    saved_equipment = extract_study_room_equipment(dict(saved_room))
+    saved_transforms = extract_study_room_transforms(dict(saved_room))
+    previous_transform_values = validate_study_room_transforms(
+        previous_transforms
+    )
+    changed_slot_count = sum(
+        saved_equipment[field_name] != previous_equipment.get(field_name)
+        for field_name in EQUIPMENT_FIELD_SLOTS
+    )
+    equipped_count = sum(
+        item_key is not None for item_key in saved_equipment.values()
+    )
+    placement_changed = saved_transforms != previous_transform_values
+    changes = []
+    if changed_slot_count:
+        changes.append(f"슬롯 {changed_slot_count}개 변경")
+    if placement_changed:
+        changes.append("가구 배치 반영")
+    if not changes:
+        changes.append("현재 구성 확인")
+
+    return {
+        "event_id": event_id,
+        "title": "학습방 저장 완료",
+        "message": f"장착 아이템 {equipped_count}개 · {' · '.join(changes)}",
+        "equipped_count": equipped_count,
+        "changed_slot_count": changed_slot_count,
+        "placement_changed": placement_changed,
+    }
 
 
 def _capture_study_room_editor_transforms() -> None:

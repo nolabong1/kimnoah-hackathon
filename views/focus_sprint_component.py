@@ -1,11 +1,42 @@
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, MutableMapping
 from typing import Any
 
 import streamlit as st
 
+from views.learning_flow_state import TASK_STAGE_COMPLETE
+
 
 MAX_FOCUS_MINUTES = 25
 ALLOWED_TIMER_PHASES = {"ready", "running", "paused", "completed"}
+
+
+def apply_focus_completion_request(
+    state: MutableMapping[str, Any],
+    *,
+    component_key: str,
+    stage_key: str,
+    expected_task_id: str,
+) -> bool:
+    """집중 종료 요청을 검증해 기존 과제 완료 확인 단계만 엽니다."""
+
+    component_state = state.get(component_key)
+    if not isinstance(component_state, Mapping):
+        return False
+
+    requested_task_id = component_state.get(
+        "ready_to_complete_task_id"
+    )
+    if (
+        not isinstance(requested_task_id, str)
+        or requested_task_id != expected_task_id
+    ):
+        return False
+
+    if state.get(stage_key) == TASK_STAGE_COMPLETE:
+        return False
+
+    state[stage_key] = TASK_STAGE_COMPLETE
+    return True
 
 
 def build_focus_sprint_config(task: Mapping[str, Any]) -> dict[str, Any]:
@@ -349,7 +380,7 @@ _FOCUS_SPRINT_JS = """
 const activeIntervals = new WeakMap()
 
 export default function (component) {
-  const { data, parentElement, setStateValue } = component
+  const { data, parentElement, setStateValue, setTriggerValue } = component
   const root = parentElement.querySelector(".focus-sprint")
   const time = parentElement.querySelector(".focus-sprint__time")
   const title = parentElement.querySelector(".focus-sprint__title")
@@ -418,9 +449,9 @@ export default function (component) {
       mainButton.disabled = false
     } else if (timer.phase === "completed") {
       status.textContent = "스프린트 완주"
-      message.textContent = "집중 세션을 마쳤습니다! 학습이 끝났다면 기존 과제 완료 버튼으로 기록하세요."
-      mainButton.textContent = "완주 완료"
-      mainButton.disabled = true
+      message.textContent = "집중 세션을 마쳤습니다! 이해가 정리됐다면 완료 확인 단계로 이동하고, 더 필요하면 초기화해 이어가세요."
+      mainButton.textContent = "완료 확인으로 이동"
+      mainButton.disabled = false
     } else {
       status.textContent = `${config.duration_minutes}분 준비`
       message.textContent = config.is_capped
@@ -432,12 +463,15 @@ export default function (component) {
   }
 
   mainButton.onclick = () => {
+    if (timer.phase === "completed") {
+      setTriggerValue("ready_to_complete_task_id", String(config.task_id || ""))
+      return
+    }
     if (timer.phase === "running") {
       const remaining = getRemaining()
       emitTimer({ phase: "paused", remaining_seconds: remaining, target_at_ms: null })
       return
     }
-    if (timer.phase === "completed") return
     const remaining = Math.max(1, Number(timer.remaining_seconds) || duration)
     emitTimer({
       phase: "running",
@@ -480,6 +514,7 @@ def render_focus_sprint(
     task: Mapping[str, Any],
     *,
     key: str,
+    on_ready_to_complete_task_id_change: Callable[[], None] | None = None,
 ) -> Any:
     """선택 과제의 세션 전용 집중 타이머를 표시합니다."""
 
@@ -500,6 +535,9 @@ def render_focus_sprint(
             data={"config": config, "timer": timer},
             height="content",
             on_timer_change=lambda: None,
+            on_ready_to_complete_task_id_change=(
+                on_ready_to_complete_task_id_change
+            ),
         )
     except ValueError as error:
         if "Component 'task_focus_sprint' is not registered" in str(error):

@@ -8,7 +8,9 @@ from streamlit.testing.v1 import AppTest
 from views.test_tools_view import (
     ACCESS_ALLOWED_KEY,
     ACCESS_CHECKED_KEY,
+    STREAK_PREVIEW_KEY,
     TEST_TOOLS_EXPANDER_KEY,
+    build_streak_preview_profile,
     clear_test_tools_state,
 )
 
@@ -24,6 +26,7 @@ def render_test_tools_page(supabase, user):
     render_sidebar_test_tools(
         supabase=supabase,
         user=user,
+        profile={"current_streak": 2},
     )
 
 
@@ -55,6 +58,49 @@ class TestToolsStateTests(unittest.TestCase):
         self.assertNotIn(ACCESS_CHECKED_KEY, state)
         self.assertNotIn(ACCESS_ALLOWED_KEY, state)
         self.assertEqual(state["unrelated_state"], "kept")
+
+    def test_streak_preview_changes_only_display_profile(self):
+        profile = {
+            "nickname": "테스터",
+            "current_streak": 2,
+            "total_exp": 100,
+        }
+        state = {
+            ACCESS_ALLOWED_KEY: True,
+            STREAK_PREVIEW_KEY: 7,
+        }
+
+        preview = build_streak_preview_profile(profile, state)
+
+        self.assertEqual(preview["current_streak"], 7)
+        self.assertEqual(preview["total_exp"], 100)
+        self.assertEqual(profile["current_streak"], 2)
+
+    def test_streak_preview_requires_access_and_known_preset(self):
+        profile = {"current_streak": 2}
+
+        unauthorized = build_streak_preview_profile(
+            profile,
+            {STREAK_PREVIEW_KEY: 30},
+        )
+        invalid = build_streak_preview_profile(
+            profile,
+            {
+                ACCESS_ALLOWED_KEY: True,
+                STREAK_PREVIEW_KEY: 999,
+            },
+        )
+        boolean_value = build_streak_preview_profile(
+            profile,
+            {
+                ACCESS_ALLOWED_KEY: True,
+                STREAK_PREVIEW_KEY: True,
+            },
+        )
+
+        self.assertEqual(unauthorized["current_streak"], 2)
+        self.assertEqual(invalid["current_streak"], 2)
+        self.assertEqual(boolean_value["current_streak"], 2)
 
 
 class TestToolsLayoutTests(unittest.TestCase):
@@ -151,6 +197,12 @@ class TestToolsLayoutTests(unittest.TestCase):
         self.assertIn("오늘 테스트 기록 초기화", button_labels)
         self.assertIn("이번 주 계획 완료 처리", button_labels)
         self.assertIn("상점 테스트 시작", button_labels)
+        self.assertTrue(
+            any(
+                selectbox.label == "미리 볼 연속 학습일"
+                for selectbox in app.sidebar.selectbox
+            )
+        )
 
     def test_active_shop_test_session_shows_reset_action(self):
         plan = {

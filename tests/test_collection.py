@@ -4,6 +4,12 @@ from streamlit.testing.v1 import AppTest
 
 from services.collection_service import build_collection_summary
 from services.shop_catalog import SHOP_ITEM_CATALOG
+from views.collection_view import (
+    COLLECTION_STATUS_EQUIPPED,
+    COLLECTION_STATUS_OWNED,
+    COLLECTION_STATUS_UNOWNED,
+    filter_collection_items_by_status,
+)
 
 
 def _catalog_items() -> list[dict]:
@@ -24,6 +30,51 @@ def render_collection_test_page(shop_data, saved_room):
 
 
 class CollectionServiceTests(unittest.TestCase):
+    def test_status_filter_keeps_catalog_order_and_ownership_meaning(self):
+        items = [
+            {"item_key": "owned"},
+            {"item_key": "equipped"},
+            {"item_key": "locked"},
+        ]
+        owned_keys = frozenset({"owned", "equipped"})
+        equipped_keys = frozenset({"equipped"})
+
+        self.assertEqual(
+            [
+                item["item_key"]
+                for item in filter_collection_items_by_status(
+                    items,
+                    owned_keys=owned_keys,
+                    equipped_keys=equipped_keys,
+                    selected_status=COLLECTION_STATUS_OWNED,
+                )
+            ],
+            ["owned", "equipped"],
+        )
+        self.assertEqual(
+            [
+                item["item_key"]
+                for item in filter_collection_items_by_status(
+                    items,
+                    owned_keys=owned_keys,
+                    equipped_keys=equipped_keys,
+                    selected_status=COLLECTION_STATUS_EQUIPPED,
+                )
+            ],
+            ["equipped"],
+        )
+        self.assertEqual(
+            [
+                item["item_key"]
+                for item in filter_collection_items_by_status(
+                    items,
+                    owned_keys=owned_keys,
+                    equipped_keys=equipped_keys,
+                    selected_status=COLLECTION_STATUS_UNOWNED,
+                )
+            ],
+            ["locked"],
+        )
     def test_summary_counts_owned_and_equipped_items(self):
         summary = build_collection_summary(
             _catalog_items(),
@@ -110,6 +161,10 @@ class CollectionViewTests(unittest.TestCase):
         self.assertIn(
             "컬렉션 카테고리",
             [selectbox.label for selectbox in app.selectbox],
+        )
+        self.assertIn(
+            "보유 상태",
+            [control.label for control in app.segmented_control],
         )
         self.assertEqual(list(app.button), [])
         self.assertTrue(

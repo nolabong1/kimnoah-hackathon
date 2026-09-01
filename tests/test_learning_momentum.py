@@ -41,6 +41,35 @@ class LearningMomentumTests(unittest.TestCase):
         self.assertTrue(momentum["today_complete"])
         self.assertIn("완주", momentum["pace_message"])
 
+    def test_streak_milestones_have_distinct_presentation_tiers(self):
+        expected = {
+            0: "ready",
+            1: "spark",
+            3: "growing",
+            7: "strong",
+            14: "blazing",
+            30: "legendary",
+        }
+
+        for streak, tier in expected.items():
+            with self.subTest(streak=streak):
+                momentum = build_learning_momentum(
+                    {"total_exp": 0, "level": 1, "current_streak": streak},
+                    completed_tasks=0,
+                    total_tasks=1,
+                )
+                self.assertEqual(momentum["streak_tier"], tier)
+                self.assertTrue(momentum["streak_tier_label"])
+
+        self.assertIn(
+            '[data-tier="blazing"]',
+            learning_momentum_component._MOMENTUM_CSS,
+        )
+        self.assertIn(
+            '[data-tier="legendary"]',
+            learning_momentum_component._MOMENTUM_CSS,
+        )
+
     def test_invalid_counts_and_profile_values_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "완료 과제 수"):
             build_learning_momentum(

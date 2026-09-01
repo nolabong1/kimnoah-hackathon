@@ -66,6 +66,7 @@ _FEEDBACK_CSS = """
 .celebration-card[data-tone="quiz"] { --tone: var(--st-blue-color, #3978e6); }
 .celebration-card[data-tone="achievement"] { --tone: var(--st-violet-color, #845ef7); }
 .celebration-card[data-tone="challenge"] { --tone: var(--st-orange-color, #e78b24); }
+.celebration-card[data-tone="level"] { --tone: var(--st-pink-color, #df5eb4); }
 
 .celebration-overlay[data-placement="inline"] .celebration-card {
   box-shadow: 0 8px 24px color-mix(in srgb, var(--tone) 16%, transparent);

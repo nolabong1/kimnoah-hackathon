@@ -14,6 +14,8 @@ ALLOWED_EVENT_KINDS = {
     "quiz_result",
     "achievement_unlock",
     "challenge_complete",
+    "challenge_reward_claimed",
+    "level_up",
 }
 ALLOWED_EVENT_TONES = {
     "success",
@@ -21,6 +23,7 @@ ALLOWED_EVENT_TONES = {
     "quiz",
     "achievement",
     "challenge",
+    "level",
 }
 
 
@@ -160,6 +163,34 @@ def queue_task_completion_interactions(
             },
         )
 
+    gamification = result.get("gamification")
+    achievement_exp = (
+        gamification.get("achievement_exp_awarded", 0)
+        if isinstance(gamification, dict)
+        else 0
+    )
+    normalized_daily_bonus = (
+        daily_bonus_exp
+        if not isinstance(daily_bonus_exp, bool)
+        and isinstance(daily_bonus_exp, int)
+        and daily_bonus_exp >= 0
+        else 0
+    )
+    if (
+        not isinstance(achievement_exp, bool)
+        and isinstance(achievement_exp, int)
+        and achievement_exp >= 0
+    ):
+        queue_level_up_interaction(
+            state,
+            event_source=f"task:{normalized_task_id}",
+            total_exp=total_exp,
+            awarded_exp=(
+                task_exp + normalized_daily_bonus + achievement_exp
+            ),
+            level=result.get("level"),
+        )
+
 
 def queue_quiz_result_interaction(
     state: MutableMapping[str, Any],
@@ -193,6 +224,106 @@ def queue_quiz_result_interaction(
             ),
             "value": f"{score}점",
             "icon": "◆" if perfect else "?",
+        },
+    )
+
+
+def queue_challenge_reward_interaction(
+    state: MutableMapping[str, Any],
+    result: object,
+) -> None:
+    """서버가 새 도전과제 EXP 지급을 확정한 경우에만 연출을 예약합니다."""
+
+    if not isinstance(result, dict) or result.get("already_claimed") is not False:
+        return
+    challenge_id = _normalize_text(
+        result.get("challenge_id"),
+        maximum=100,
+    )
+    reward_exp = result.get("reward_exp")
+    total_exp = result.get("total_exp")
+    level = result.get("level")
+    if (
+        challenge_id is None
+        or isinstance(reward_exp, bool)
+        or not isinstance(reward_exp, int)
+        or reward_exp <= 0
+        or isinstance(total_exp, bool)
+        or not isinstance(total_exp, int)
+        or total_exp < 0
+        or isinstance(level, bool)
+        or not isinstance(level, int)
+        or level < 1
+    ):
+        return
+
+    queue_interaction_event(
+        state,
+        {
+            "event_id": f"challenge_reward:{challenge_id}",
+            "kind": "challenge_reward_claimed",
+            "tone": "challenge",
+            "title": "도전과제 보상 획득!",
+            "message": f"현재 레벨 {level} · 총 EXP {total_exp}",
+            "value": f"+{reward_exp} EXP",
+            "icon": "★",
+        },
+    )
+    queue_level_up_interaction(
+        state,
+        event_source=f"challenge:{challenge_id}",
+        total_exp=total_exp,
+        awarded_exp=reward_exp,
+        level=level,
+    )
+
+
+def queue_level_up_interaction(
+    state: MutableMapping[str, Any],
+    *,
+    event_source: object,
+    total_exp: object,
+    awarded_exp: object,
+    level: object,
+) -> None:
+    """확정 보상이 100 EXP 경계를 넘긴 경우에만 레벨업을 예약합니다."""
+
+    normalized_source = _normalize_text(event_source, maximum=140)
+    if (
+        normalized_source is None
+        or isinstance(total_exp, bool)
+        or not isinstance(total_exp, int)
+        or total_exp < 0
+        or isinstance(awarded_exp, bool)
+        or not isinstance(awarded_exp, int)
+        or awarded_exp <= 0
+        or awarded_exp > total_exp
+        or isinstance(level, bool)
+        or not isinstance(level, int)
+        or level < 1
+    ):
+        return
+
+    expected_level = (total_exp // 100) + 1
+    previous_total_exp = total_exp - awarded_exp
+    previous_level = (previous_total_exp // 100) + 1
+    if level != expected_level or level <= previous_level:
+        return
+
+    next_level_exp = level * 100
+    queue_interaction_event(
+        state,
+        {
+            "event_id": f"level_up:{normalized_source}:{level}",
+            "kind": "level_up",
+            "tone": "level",
+            "title": f"레벨 {level} 달성!",
+            "message": (
+                f"누적 EXP {total_exp} · 다음 레벨까지 "
+                f"{next_level_exp - total_exp} EXP"
+            ),
+            "value": f"Lv.{previous_level} → Lv.{level}",
+            "icon": "▲",
         },
     )
 

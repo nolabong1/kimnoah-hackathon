@@ -17,6 +17,10 @@ from services.study_plan_repository import (
 )
 from services.test_tools_repository import can_use_test_tools
 from views.error_feedback import render_unexpected_error
+from views.streak_presentation import (
+    get_streak_tier_label,
+    resolve_streak_tier,
+)
 from views.weekly_review_state import TEST_COMPLETED_PLAN_PENDING_KEY
 
 
@@ -33,6 +37,39 @@ SHOP_TEST_RUNNING_KEY = "test_tools_shop_running"
 SHOP_TEST_MESSAGE_KEY = "test_tools_shop_message"
 ACCESS_CHECKED_KEY = "test_tools_access_checked"
 ACCESS_ALLOWED_KEY = "test_tools_access_allowed"
+STREAK_PREVIEW_KEY = "test_tools_streak_preview_days"
+STREAK_PREVIEW_OPTIONS = (None, 0, 1, 3, 7, 14, 30)
+
+
+def _is_streak_preview_option(value: object) -> bool:
+    """클라이언트가 보낸 연속 학습 미리보기 값을 검증합니다."""
+
+    return value is None or (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and value in STREAK_PREVIEW_OPTIONS
+    )
+
+
+def build_streak_preview_profile(
+    profile: dict,
+    state: MutableMapping[str, Any],
+) -> dict:
+    """허용된 테스트 사용자의 화면용 연속 학습일만 덮어씁니다."""
+
+    preview_profile = dict(profile)
+    if state.get(ACCESS_ALLOWED_KEY) is not True:
+        return preview_profile
+
+    preview_days = state.get(STREAK_PREVIEW_KEY)
+    if not _is_streak_preview_option(preview_days):
+        return preview_profile
+
+    if preview_days is None:
+        return preview_profile
+
+    preview_profile["current_streak"] = preview_days
+    return preview_profile
 
 
 def clear_test_tools_state(state: MutableMapping[str, Any]) -> None:
@@ -329,6 +366,48 @@ def _render_plan_completion_tool(
             st.rerun()
 
 
+def _render_streak_preview_tool(profile: dict) -> None:
+    """DB를 변경하지 않는 연속 학습 화면 미리보기를 표시합니다."""
+
+    st.divider()
+    st.markdown("**연속 학습 화면 미리보기**")
+    st.caption(
+        "사이드바·오늘 학습·학습방의 연속 학습 표현만 바꿉니다. "
+        "실제 기록과 보상은 변경하지 않습니다."
+    )
+
+    selected_preview = st.session_state.get(STREAK_PREVIEW_KEY)
+    if not _is_streak_preview_option(selected_preview):
+        st.session_state.pop(STREAK_PREVIEW_KEY, None)
+
+    st.selectbox(
+        "미리 볼 연속 학습일",
+        options=STREAK_PREVIEW_OPTIONS,
+        format_func=lambda days: (
+            f"실제 기록 · {profile['current_streak']}일"
+            if days is None
+            else (
+                f"{days}일 상태 · "
+                f"{get_streak_tier_label(resolve_streak_tier(days))}"
+            )
+        ),
+        key=STREAK_PREVIEW_KEY,
+        help="3·7·14·30일 상태에서 불꽃과 학습방 반응을 확인할 수 있습니다.",
+    )
+
+    preview_days = st.session_state.get(STREAK_PREVIEW_KEY)
+    if isinstance(preview_days, int) and not isinstance(preview_days, bool):
+        tier_label = get_streak_tier_label(
+            resolve_streak_tier(preview_days)
+        )
+        st.info(
+            f"현재 화면은 {preview_days}일 연속 학습의 "
+            f"‘{tier_label}’ 단계를 미리 봅니다. "
+            f"DB의 실제 기록은 {profile['current_streak']}일입니다.",
+            icon=":material/visibility:",
+        )
+
+
 def _render_shop_test_tool(
     *,
     supabase,
@@ -520,6 +599,7 @@ def render_sidebar_test_tools(
     *,
     supabase,
     user,
+    profile: dict,
 ) -> None:
     """인증 사용자의 개발용 테스트 도구를 사이드바에 표시합니다."""
 
@@ -558,6 +638,7 @@ def render_sidebar_test_tools(
                 supabase=supabase,
                 user_id=str(user.id),
             )
+            _render_streak_preview_tool(profile)
             _render_shop_test_tool(
                 supabase=supabase,
                 user_id=str(user.id),

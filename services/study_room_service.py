@@ -183,6 +183,7 @@ def build_study_room_editor_scene(
         layers.append(
             {
                 "slot": slot.value,
+                "item_key": item.item_key,
                 "label": item.name_ko,
                 "source": source,
                 "base_x": left,
