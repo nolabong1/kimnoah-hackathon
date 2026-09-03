@@ -35,6 +35,12 @@ from services.weekly_review_service import (
 from views.create_plan_view import CURRENT_LEVEL_OPTIONS
 from views.error_feedback import render_unexpected_error
 from views.operation_feedback import operation_status
+from views.study_plan_data_state import (
+    get_study_plan_list_snapshot,
+    get_study_tasks_by_plan_ids_snapshot,
+    invalidate_learning_objective_snapshots,
+    invalidate_study_plan_list_snapshot,
+)
 from views.ui_components import (
     MetricItem,
     READING_CONTENT_WIDTH,
@@ -561,6 +567,10 @@ def _render_next_plan_section(
                             start_date=metadata["start_date"],
                             available_schedule=metadata["available_schedule"],
                         )
+                        invalidate_study_plan_list_snapshot(st.session_state)
+                        invalidate_learning_objective_snapshots(
+                            st.session_state
+                        )
                         status.write("새 7일 계획을 원자적으로 저장했습니다.")
                     st.session_state[NEXT_PLAN_SAVED_KEY] = True
                     st.session_state[NEXT_PLAN_SAVED_ID_KEY] = saved_plan["id"]
@@ -603,11 +613,25 @@ def render_weekly_review(supabase, user) -> None:
         st.success(st.session_state.pop(SUCCESS_MESSAGE_KEY))
 
     try:
-        plans = get_user_study_plans(supabase=supabase, user_id=user_id)
-        tasks_by_plan = get_study_tasks_by_plan_ids(
-            supabase=supabase,
-            user_id=user_id,
-            plan_ids=[str(plan["id"]) for plan in plans],
+        plans = get_study_plan_list_snapshot(
+            supabase,
+            user_id,
+            st.session_state,
+            loader=lambda: get_user_study_plans(
+                supabase=supabase,
+                user_id=user_id,
+            ),
+        )
+        tasks_by_plan = get_study_tasks_by_plan_ids_snapshot(
+            supabase,
+            user_id,
+            [str(plan["id"]) for plan in plans],
+            st.session_state,
+            loader=lambda missing_plan_ids: get_study_tasks_by_plan_ids(
+                supabase=supabase,
+                user_id=user_id,
+                plan_ids=missing_plan_ids,
+            ),
         )
         eligible_entries = [
             (plan, tasks_by_plan.get(str(plan["id"]), []))

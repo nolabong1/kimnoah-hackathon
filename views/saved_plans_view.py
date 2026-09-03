@@ -23,8 +23,18 @@ from views.quiz_ui import render_quiz_section
 from views.review_material_ui import (
     render_review_material_section,
 )
+from views.reference_material_state import (
+    invalidate_reference_material_snapshots,
+)
 from views.spaced_review_ui import (
     get_spaced_review_label,
+)
+from views.study_plan_data_state import (
+    get_study_plan_tasks_snapshot,
+    get_study_plan_list_snapshot,
+    invalidate_learning_objective_snapshots,
+    invalidate_study_plan_list_snapshot,
+    invalidate_study_task_snapshots,
 )
 from views.ui_components import (
     MetricItem,
@@ -128,6 +138,19 @@ def show_delete_plan_dialog(
                         user_id=user_id,
                         plan_id=plan["id"],
                     )
+                    invalidate_study_plan_list_snapshot(st.session_state)
+                    invalidate_learning_objective_snapshots(
+                        st.session_state,
+                        str(plan["id"]),
+                    )
+                    invalidate_study_task_snapshots(
+                        st.session_state,
+                        str(plan["id"]),
+                    )
+                    invalidate_reference_material_snapshots(
+                        st.session_state,
+                        str(plan["id"]),
+                    )
 
                 st.session_state[DELETED_PLAN_CLEANUP_KEY] = (
                     plan["id"]
@@ -171,6 +194,7 @@ def complete_task_and_rerun(
             task_id=task_id,
             result=result,
         )
+        invalidate_study_task_snapshots(st.session_state)
 
         if result["already_completed"]:
             message = "이미 완료된 과제입니다."
@@ -400,9 +424,14 @@ def render_saved_plans(supabase, user):
         )
 
     try:
-        saved_plans = get_user_study_plans(
-            supabase=supabase,
-            user_id=user.id,
+        saved_plans = get_study_plan_list_snapshot(
+            supabase,
+            str(user.id),
+            st.session_state,
+            loader=lambda: get_user_study_plans(
+                supabase=supabase,
+                user_id=user.id,
+            ),
         )
 
     except Exception as error:
@@ -489,10 +518,16 @@ def render_saved_plans(supabase, user):
             )
 
     try:
-        saved_tasks = get_study_plan_tasks(
-            supabase=supabase,
-            user_id=user.id,
-            plan_id=selected_plan_id,
+        saved_tasks = get_study_plan_tasks_snapshot(
+            supabase,
+            str(user.id),
+            selected_plan_id,
+            st.session_state,
+            loader=lambda: get_study_plan_tasks(
+                supabase=supabase,
+                user_id=user.id,
+                plan_id=selected_plan_id,
+            ),
         )
 
     except Exception as error:

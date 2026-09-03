@@ -17,6 +17,7 @@ from views.saved_plans_view import (
     render_saved_plans,
 )
 from views.create_plan_view import render_create_plan
+from views.cursor_style import apply_site_cursor
 from views.dashboard_view import render_dashboard
 from views.error_feedback import render_unexpected_error
 from views.gamification_state import (
@@ -45,6 +46,8 @@ from views.shop_pages_view import (
 )
 from views.shop_state import clear_shop_state
 from views.profile_state import clear_profile_state, get_profile_snapshot
+from views.reference_material_state import clear_reference_material_state
+from views.study_plan_data_state import clear_study_plan_data_state
 from views.source_review_material_view import (
     SOURCE_REVIEW_SESSION_KEYS,
     render_source_review_material,
@@ -92,6 +95,8 @@ def _logout_current_user(supabase) -> None:
     clear_shop_state(st.session_state)
     clear_test_tools_state(st.session_state)
     clear_profile_state(st.session_state)
+    clear_reference_material_state(st.session_state)
+    clear_study_plan_data_state(st.session_state)
     clear_auth_session_state()
 
 
@@ -105,6 +110,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+apply_site_cursor()
 
 supabase = get_supabase_client()
 

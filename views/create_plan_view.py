@@ -7,6 +7,10 @@ from services.study_plan_repository import save_weekly_study_plan
 from services.study_plan_service import generate_weekly_study_plan
 from views.error_feedback import render_unexpected_error
 from views.operation_feedback import operation_status
+from views.study_plan_data_state import (
+    invalidate_learning_objective_snapshots,
+    invalidate_study_plan_list_snapshot,
+)
 from views.ui_components import render_page_header
 
 
@@ -306,6 +310,8 @@ def render_create_plan(supabase, user):
                             "available_schedule"
                         ],
                     )
+                    invalidate_study_plan_list_snapshot(st.session_state)
+                    invalidate_learning_objective_snapshots(st.session_state)
                     status.write(
                         "7일 계획과 연결 과제를 원자적으로 저장했습니다."
                     )

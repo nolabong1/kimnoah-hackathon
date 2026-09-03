@@ -41,6 +41,8 @@ from views.error_feedback import (
     render_unexpected_warning,
 )
 from views.operation_feedback import operation_status
+from views.reference_material_state import get_reference_materials_snapshot
+from views.study_plan_data_state import invalidate_study_task_snapshots
 from views.spaced_review_ui import (
     get_spaced_review_label,
 )
@@ -652,6 +654,7 @@ def _submit_quiz_answers(
             st.session_state,
             attempt,
         )
+        invalidate_study_task_snapshots(st.session_state)
 
         st.session_state.pop(request_state_key, None)
         st.session_state[retake_state_key] = False
@@ -794,15 +797,25 @@ def _render_quiz_reference_selector(
     """현재 계획의 저장 자료를 퀴즈 근거로 선택하고 검증합니다."""
 
     try:
-        learning_materials = get_learning_materials_by_plan(
-            supabase=supabase,
-            user_id=user_id,
-            plan_id=plan_id,
-        )
-        review_materials = get_review_materials_by_plan(
-            supabase=supabase,
-            user_id=user_id,
-            plan_id=plan_id,
+        learning_materials, review_materials = (
+            get_reference_materials_snapshot(
+                supabase,
+                user_id,
+                plan_id,
+                st.session_state,
+                loader=lambda: (
+                    get_learning_materials_by_plan(
+                        supabase=supabase,
+                        user_id=user_id,
+                        plan_id=plan_id,
+                    ),
+                    get_review_materials_by_plan(
+                        supabase=supabase,
+                        user_id=user_id,
+                        plan_id=plan_id,
+                    ),
+                ),
+            )
         )
     except Exception as error:
         render_unexpected_warning(

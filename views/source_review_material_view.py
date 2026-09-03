@@ -36,6 +36,14 @@ from views.error_feedback import (
     render_unexpected_warning,
 )
 from views.operation_feedback import operation_status
+from views.reference_material_state import (
+    get_source_review_bundles_snapshot,
+    invalidate_reference_material_snapshots,
+)
+from views.study_plan_data_state import (
+    get_learning_objectives_by_plan_ids_snapshot,
+    get_study_plan_list_snapshot,
+)
 from views.ui_components import render_empty_state, render_page_header
 
 
@@ -178,6 +186,10 @@ def _show_delete_source_review_material_dialog(
                         review_material_id=str(review_material["id"]),
                         source_material_id=str(source_material["id"]),
                     )
+                    invalidate_reference_material_snapshots(
+                        st.session_state,
+                        plan_id,
+                    )
 
                 st.session_state[DELETED_ITEM_CLEANUP_KEY] = str(
                     review_material["id"]
@@ -238,10 +250,16 @@ def _render_saved_source_review_materials(
     )
 
     try:
-        saved_bundles = get_source_review_material_bundles_by_plan(
-            supabase=supabase,
-            user_id=user_id,
-            plan_id=selected_plan_id,
+        saved_bundles = get_source_review_bundles_snapshot(
+            supabase,
+            user_id,
+            selected_plan_id,
+            st.session_state,
+            loader=lambda: get_source_review_material_bundles_by_plan(
+                supabase=supabase,
+                user_id=user_id,
+                plan_id=selected_plan_id,
+            ),
         )
     except Exception as error:
         render_unexpected_error(
@@ -362,9 +380,14 @@ def render_source_review_material(supabase, user) -> None:
         st.success(delete_message)
 
     try:
-        study_plans = get_user_study_plans(
-            supabase=supabase,
-            user_id=user_id,
+        study_plans = get_study_plan_list_snapshot(
+            supabase,
+            user_id,
+            st.session_state,
+            loader=lambda: get_user_study_plans(
+                supabase=supabase,
+                user_id=user_id,
+            ),
         )
     except Exception as error:
         render_unexpected_error(
@@ -411,10 +434,18 @@ def render_source_review_material(supabase, user) -> None:
         return
 
     try:
-        objectives_by_plan = get_learning_objectives_by_plan_ids(
-            supabase=supabase,
-            user_id=user_id,
-            plan_ids=plan_ids,
+        objectives_by_plan = get_learning_objectives_by_plan_ids_snapshot(
+            supabase,
+            user_id,
+            plan_ids,
+            st.session_state,
+            loader=lambda missing_plan_ids: (
+                get_learning_objectives_by_plan_ids(
+                    supabase=supabase,
+                    user_id=user_id,
+                    plan_ids=missing_plan_ids,
+                )
+            ),
         )
     except Exception as error:
         render_unexpected_error(
@@ -696,6 +727,10 @@ def render_source_review_material(supabase, user) -> None:
                             source_text=source_text,
                             material=generated_material,
                             learning_objective_id=selected_objective_id,
+                        )
+                        invalidate_reference_material_snapshots(
+                            st.session_state,
+                            selected_plan_id,
                         )
 
                     st.session_state[RESULT_STATE_KEY] = {

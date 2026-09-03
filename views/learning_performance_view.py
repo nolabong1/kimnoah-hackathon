@@ -14,6 +14,7 @@ from services.study_plan_repository import get_user_study_plans
 from services.weekly_review_repository import get_weekly_review_by_plan
 from services.weekly_review_service import REFLECTION_QUESTIONS
 from views.error_feedback import render_unexpected_error
+from views.study_plan_data_state import get_study_plan_list_snapshot
 from views.ui_components import (
     MetricItem,
     render_empty_state,
@@ -363,9 +364,14 @@ def render_learning_performance(supabase, user) -> None:
     )
 
     try:
-        plans = get_user_study_plans(
-            supabase=supabase,
-            user_id=str(user.id),
+        plans = get_study_plan_list_snapshot(
+            supabase,
+            str(user.id),
+            st.session_state,
+            loader=lambda: get_user_study_plans(
+                supabase=supabase,
+                user_id=str(user.id),
+            ),
         )
     except Exception as error:
         render_unexpected_error(

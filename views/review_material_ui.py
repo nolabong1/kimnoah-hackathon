@@ -16,6 +16,9 @@ from views.error_feedback import (
     render_unexpected_warning,
 )
 from views.operation_feedback import operation_status
+from views.reference_material_state import (
+    invalidate_reference_material_snapshots,
+)
 
 
 def render_review_material_section(
@@ -159,6 +162,10 @@ def render_review_material_section(
                         plan_id=plan_id,
                         task_id=task["id"],
                         material=material_draft,
+                    )
+                    invalidate_reference_material_snapshots(
+                        st.session_state,
+                        str(plan_id),
                     )
 
             except Exception as error:

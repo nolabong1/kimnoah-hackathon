@@ -18,7 +18,15 @@ from services.study_plan_repository import (
 from services.test_tools_repository import can_use_test_tools
 from views.error_feedback import render_unexpected_error
 from views.profile_state import update_profile_snapshot
+from views.reference_material_state import (
+    invalidate_reference_material_snapshots,
+)
 from views.shop_state import invalidate_shop_snapshots
+from views.study_plan_data_state import (
+    get_study_plan_list_snapshot,
+    get_study_plan_tasks_snapshot,
+    invalidate_study_task_snapshots,
+)
 from views.streak_presentation import (
     get_streak_tier_label,
     resolve_streak_tier,
@@ -136,6 +144,8 @@ def _render_reset_tool(supabase) -> None:
                             supabase=supabase,
                         )
                     update_profile_snapshot(st.session_state, reset_result)
+                    invalidate_study_task_snapshots(st.session_state)
+                    invalidate_reference_material_snapshots(st.session_state)
 
                     st.session_state.pop(RESET_CONFIRM_KEY, None)
                     st.session_state.pop("pending_future_task_id", None)
@@ -210,9 +220,14 @@ def _render_plan_completion_tool(
     )
 
     try:
-        plans = get_user_study_plans(
-            supabase=supabase,
-            user_id=user_id,
+        plans = get_study_plan_list_snapshot(
+            supabase,
+            user_id,
+            st.session_state,
+            loader=lambda: get_user_study_plans(
+                supabase=supabase,
+                user_id=user_id,
+            ),
         )
     except Exception as error:
         render_unexpected_error(
@@ -248,10 +263,16 @@ def _render_plan_completion_tool(
     )
 
     try:
-        selected_tasks = get_study_plan_tasks(
-            supabase=supabase,
-            user_id=user_id,
-            plan_id=selected_plan_id,
+        selected_tasks = get_study_plan_tasks_snapshot(
+            supabase,
+            user_id,
+            selected_plan_id,
+            st.session_state,
+            loader=lambda: get_study_plan_tasks(
+                supabase=supabase,
+                user_id=user_id,
+                plan_id=selected_plan_id,
+            ),
         )
     except Exception as error:
         render_unexpected_error(
@@ -321,6 +342,10 @@ def _render_plan_completion_tool(
                             plan_id=selected_plan_id,
                         )
                     update_profile_snapshot(st.session_state, result)
+                    invalidate_study_task_snapshots(
+                        st.session_state,
+                        selected_plan_id,
+                    )
 
                     if result["already_completed"]:
                         message = "선택한 계획은 이미 모두 완료되어 있습니다."

@@ -7,6 +7,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 CANVAS_SIZE = (1600, 900)
 THUMBNAIL_SIZE = (256, 256)
+LARGE_OVERLAY_COLOR_BITS = 6
 WALL_POLYGONS = (
     ((132, 198), (800, 24), (800, 394), (140, 603)),
     ((800, 24), (1495, 198), (1495, 603), (800, 394)),
@@ -119,7 +120,7 @@ def prepare_background_overlay(
         mask_draw.polygon(polygon, fill=255)
     mask = mask.filter(ImageFilter.GaussianBlur(radius=1.25))
     variant.putalpha(mask)
-    _save_image(variant, output_path)
+    _save_image(optimize_large_overlay(variant), output_path)
 
     preview = base.convert("RGBA")
     preview.alpha_composite(variant)
@@ -156,7 +157,7 @@ def prepare_floor_overlay(
     ImageDraw.Draw(mask).polygon(FLOOR_POLYGON, fill=255)
     mask = mask.filter(ImageFilter.GaussianBlur(radius=1.25))
     variant.putalpha(mask)
-    _save_image(variant, output_path)
+    _save_image(optimize_large_overlay(variant), output_path)
 
     preview = base.convert("RGBA")
     preview.alpha_composite(variant)
@@ -188,6 +189,19 @@ def build_preview(
         preview.alpha_composite(overlay)
 
     _save_image(preview.convert("RGB"), output_path)
+
+
+def optimize_large_overlay(image: Image.Image) -> Image.Image:
+    """큰 투명 오버레이의 RGB 단계만 줄이고 알파 마스크는 보존합니다."""
+
+    rgba = image.convert("RGBA")
+    alpha = rgba.getchannel("A")
+    optimized = ImageOps.posterize(
+        rgba.convert("RGB"),
+        LARGE_OVERLAY_COLOR_BITS,
+    )
+    optimized.putalpha(alpha)
+    return optimized
 
 
 def export_catalog(output_path: Path) -> None:

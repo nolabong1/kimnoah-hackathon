@@ -38,6 +38,11 @@ from views.learning_context_state import (
     has_learning_context,
 )
 from views.operation_feedback import operation_status
+from views.reference_material_state import get_reference_materials_snapshot
+from views.study_plan_data_state import (
+    get_study_plan_list_snapshot,
+    get_study_plan_tasks_snapshot,
+)
 from views.tutor_state import (
     ACTIVE_SESSION_ID_KEY,
     ACTIVE_USER_ID_KEY,
@@ -422,9 +427,14 @@ def _render_tutor_setup(supabase, user_id: str) -> None:
     """새 튜터 세션에 필요한 계획·과제·자료·질문을 입력받습니다."""
 
     try:
-        study_plans = get_user_study_plans(
-            supabase=supabase,
-            user_id=user_id,
+        study_plans = get_study_plan_list_snapshot(
+            supabase,
+            user_id,
+            st.session_state,
+            loader=lambda: get_user_study_plans(
+                supabase=supabase,
+                user_id=user_id,
+            ),
         )
     except Exception as error:
         render_unexpected_error(
@@ -474,10 +484,16 @@ def _render_tutor_setup(supabase, user_id: str) -> None:
         )
 
     try:
-        tasks = get_study_plan_tasks(
-            supabase=supabase,
-            user_id=user_id,
-            plan_id=selected_plan_id,
+        tasks = get_study_plan_tasks_snapshot(
+            supabase,
+            user_id,
+            selected_plan_id,
+            st.session_state,
+            loader=lambda: get_study_plan_tasks(
+                supabase=supabase,
+                user_id=user_id,
+                plan_id=selected_plan_id,
+            ),
         )
     except Exception as error:
         tasks = []
@@ -491,15 +507,25 @@ def _render_tutor_setup(supabase, user_id: str) -> None:
         )
 
     try:
-        learning_materials = get_learning_materials_by_plan(
-            supabase=supabase,
-            user_id=user_id,
-            plan_id=selected_plan_id,
-        )
-        review_materials = get_review_materials_by_plan(
-            supabase=supabase,
-            user_id=user_id,
-            plan_id=selected_plan_id,
+        learning_materials, review_materials = (
+            get_reference_materials_snapshot(
+                supabase,
+                user_id,
+                selected_plan_id,
+                st.session_state,
+                loader=lambda: (
+                    get_learning_materials_by_plan(
+                        supabase=supabase,
+                        user_id=user_id,
+                        plan_id=selected_plan_id,
+                    ),
+                    get_review_materials_by_plan(
+                        supabase=supabase,
+                        user_id=user_id,
+                        plan_id=selected_plan_id,
+                    ),
+                ),
+            )
         )
     except Exception as error:
         learning_materials = []

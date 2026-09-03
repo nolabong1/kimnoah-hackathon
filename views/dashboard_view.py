@@ -32,6 +32,10 @@ from views.learning_flow_state import (
     get_task_stage_label,
 )
 from views.learning_context_state import request_tutor_learning_context
+from views.study_plan_data_state import (
+    get_study_plan_list_snapshot,
+    invalidate_study_task_snapshots,
+)
 from views.learning_momentum_component import (
     build_learning_momentum,
     render_learning_momentum,
@@ -411,6 +415,10 @@ def _render_today_task_card(
                 task_id=task["id"],
                 result=result,
             )
+            invalidate_study_task_snapshots(
+                st.session_state,
+                str(task["plan_id"]),
+            )
 
             if result["already_completed"]:
                 message = "이미 완료된 과제입니다."
@@ -481,9 +489,14 @@ def render_dashboard(supabase, user, profile: dict | None = None):
     ).date().isoformat()
 
     try:
-        saved_plans = get_user_study_plans(
-            supabase=supabase,
-            user_id=user.id,
+        saved_plans = get_study_plan_list_snapshot(
+            supabase,
+            str(user.id),
+            st.session_state,
+            loader=lambda: get_user_study_plans(
+                supabase=supabase,
+                user_id=user.id,
+            ),
         )
 
     except Exception as error:

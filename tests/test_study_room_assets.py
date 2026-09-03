@@ -7,11 +7,13 @@ from PIL import Image
 from tools.prepare_study_room_asset import (
     CANVAS_SIZE,
     THUMBNAIL_SIZE,
+    optimize_large_overlay,
     prepare_overlay,
 )
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+MAX_LARGE_OVERLAY_BYTES = 750_000
 
 
 class StudyRoomAssetTests(unittest.TestCase):
@@ -49,6 +51,62 @@ class StudyRoomAssetTests(unittest.TestCase):
             with self.subTest(preview=preview_path.name):
                 with Image.open(preview_path) as preview:
                     self.assertEqual(preview.size, CANVAS_SIZE)
+
+    def test_large_background_and_floor_overlays_are_size_optimized(self):
+        large_overlay_paths = [
+            *sorted(
+                (PROJECT_ROOT / "assets/study_room/items/backgrounds").glob(
+                    "*.png"
+                )
+            ),
+            *sorted(
+                (PROJECT_ROOT / "assets/study_room/items/floors").glob(
+                    "*.png"
+                )
+            ),
+        ]
+
+        self.assertEqual(len(large_overlay_paths), 6)
+        for overlay_path in large_overlay_paths:
+            with self.subTest(overlay=overlay_path.name):
+                self.assertLessEqual(
+                    overlay_path.stat().st_size,
+                    MAX_LARGE_OVERLAY_BYTES,
+                )
+
+    def test_large_overlay_optimization_preserves_alpha_and_dimensions(self):
+        source = Image.new("RGBA", (4, 2))
+        source.putdata(
+            [
+                (1, 2, 3, 0),
+                (63, 64, 65, 32),
+                (127, 128, 129, 64),
+                (191, 192, 193, 128),
+                (250, 251, 252, 192),
+                (253, 254, 255, 224),
+                (17, 18, 19, 254),
+                (101, 102, 103, 255),
+            ]
+        )
+
+        optimized = optimize_large_overlay(source)
+
+        self.assertEqual(optimized.size, source.size)
+        self.assertEqual(
+            list(optimized.getchannel("A").get_flattened_data()),
+            list(source.getchannel("A").get_flattened_data()),
+        )
+        for original_pixel, optimized_pixel in zip(
+            source.get_flattened_data(),
+            optimized.get_flattened_data(),
+        ):
+            self.assertLessEqual(
+                max(
+                    abs(original_pixel[channel] - optimized_pixel[channel])
+                    for channel in range(3)
+                ),
+                3,
+            )
 
     def test_exported_catalog_matches_python_catalog(self):
         import json
