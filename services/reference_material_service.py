@@ -1,3 +1,6 @@
+from services.presentation_labels import SOURCE_MATERIAL_TYPE_LABELS
+
+
 def build_reference_material_options(
     learning_materials: list[dict],
     review_materials: list[dict],
@@ -27,13 +30,17 @@ def build_reference_material_options(
 
         material_key = f"learning:{material_id}"
         material_type = material.get("material_type", "text")
+        material_type_label = SOURCE_MATERIAL_TYPE_LABELS.get(
+            material_type,
+            "자료",
+        )
         material_options[material_key] = {
             "id": str(material_id),
             "kind": "learning",
             "title": title,
             "label": (
                 f"원본 자료 · {title} "
-                f"({'PDF' if material_type == 'pdf' else '텍스트'})"
+                f"({material_type_label})"
             ),
             "content": material.get("content_text"),
             "learning_objective_id": material.get("learning_objective_id"),

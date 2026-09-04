@@ -155,6 +155,36 @@ class ShopRepositoryTests(unittest.TestCase):
         self.assertEqual(request.filters["is_active"], True)
         self.assertEqual(request.orders, [("sort_order", False)])
 
+    def test_catalog_allows_database_owned_operating_metadata(self):
+        item = SHOP_ITEMS_BY_KEY["decor_green_plant"].model_copy(
+            update={
+                "name_ko": "새 표시 이름",
+                "price": 55,
+                "rarity": ShopItemRarity.RARE,
+                "sort_order": 999,
+            }
+        )
+        supabase = FakeSupabase(
+            table_results={"shop_items": [item.model_dump(mode="json")]}
+        )
+
+        result = get_shop_items(supabase)
+
+        self.assertEqual(result[0]["name_ko"], "새 표시 이름")
+        self.assertEqual(result[0]["price"], 55)
+        self.assertEqual(result[0]["rarity"], "rare")
+
+    def test_catalog_rejects_database_asset_path_mismatch(self):
+        item = SHOP_ITEMS_BY_KEY["decor_green_plant"].model_copy(
+            update={"thumbnail_path": "assets/unapproved.webp"}
+        )
+        supabase = FakeSupabase(
+            table_results={"shop_items": [item.model_dump(mode="json")]}
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "배포 버전"):
+            get_shop_items(supabase)
+
     def test_purchase_sends_only_item_key_and_validates_result(self):
         response = {
             "item_key": "decor_green_plant",

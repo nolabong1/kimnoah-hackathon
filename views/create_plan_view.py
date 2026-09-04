@@ -1,10 +1,10 @@
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import timedelta
 
 import streamlit as st
 
 from services.study_plan_repository import save_weekly_study_plan
 from services.study_plan_service import generate_weekly_study_plan
+from services.time_service import get_seoul_today
 from views.error_feedback import render_unexpected_error
 from views.operation_feedback import operation_status
 from views.study_plan_data_state import (
@@ -79,9 +79,7 @@ def render_create_plan(supabase, user):
             with date_column:
                 start_date = st.date_input(
                     "학습 시작일",
-                    value=datetime.now(
-                        ZoneInfo("Asia/Seoul")
-                    ).date(),
+                    value=get_seoul_today(),
                 )
 
             st.markdown("#### 2. 하루별 학습 가능 시간")

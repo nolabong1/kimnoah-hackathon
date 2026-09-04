@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, time, timedelta
 from hashlib import md5
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from models.gamification import (
     AchievementDefinition,
@@ -20,10 +19,9 @@ from models.gamification import (
     PeriodWindow,
     QuizSubmissionFact,
 )
+from services.time_service import SEOUL_TIMEZONE, UTC_TIMEZONE
 
 
-SEOUL_TIMEZONE = ZoneInfo("Asia/Seoul")
-UTC_TIMEZONE = timezone.utc
 DAILY_CHALLENGE_LIMIT = 3
 WEEKLY_CHALLENGE_LIMIT = 2
 BALANCED_TASK_TYPES = frozenset({"learn", "review", "quiz"})

@@ -244,6 +244,19 @@ class GroundedQuizTests(unittest.TestCase):
         self.assertEqual(set(options), {"learning:same-id", "review:same-id"})
         self.assertIn("PDF", options["learning:same-id"]["label"])
 
+        image_options = build_reference_material_options(
+            learning_materials=[
+                {
+                    "id": "image-id",
+                    "title": "필기 화면",
+                    "material_type": "image",
+                    "content_text": "이미지에서 추출한 원문",
+                }
+            ],
+            review_materials=[],
+        )
+        self.assertIn("이미지", image_options["learning:image-id"]["label"])
+
     def test_reference_options_can_be_limited_to_task_objective(self):
         options = build_reference_material_options(
             learning_materials=[

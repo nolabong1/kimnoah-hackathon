@@ -12,18 +12,12 @@ from models.learning_performance import (
     QuizPerformance,
     TaskTypePerformance,
 )
+from services.presentation_labels import TASK_TYPE_LABELS
 from services.weekly_review_service import REFLECTION_QUESTIONS
 
 
 TASK_TYPES = ("learn", "review", "quiz")
 TASK_STATUSES = ("pending", "completed", "skipped")
-TASK_TYPE_LABELS = {
-    "learn": "학습",
-    "review": "복습",
-    "quiz": "퀴즈",
-}
-
-
 def _required_text(value: object, field_name: str) -> str:
     """필수 문자열을 정리하고 빈 값을 거부합니다."""
 

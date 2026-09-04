@@ -10,7 +10,9 @@ from models.tutor import (
     TutorGuidance,
     TutorHint,
 )
+from services.image_input_service import PreparedImageInput
 from services.tutor_service import (
+    IMAGE_ONLY_QUESTION,
     MAX_TUTOR_ATTEMPT_CHARS,
     MAX_TUTOR_QUESTION_CHARS,
     REFERENCE_LIMIT_MARKER,
@@ -19,12 +21,14 @@ from services.tutor_service import (
     generate_tutor_guidance,
     limit_reference_context,
     validate_tutor_attempt,
+    validate_tutor_problem_input,
     validate_tutor_question,
 )
 from views.tutor_state import (
     ACTIVE_SESSION_ID_KEY,
     FINAL_ANSWER_CONFIRMED_KEY,
     VISIBLE_HINT_LEVEL_KEY,
+    PROBLEM_IMAGES_KEY,
     advance_hint_level,
     clear_tutor_state,
     create_tutor_session_state,
@@ -70,6 +74,18 @@ def build_guidance() -> TutorGuidance:
             common_mistakes=["항을 이항할 때 부호를 바꾸지 않는 실수"],
             self_check_question="구한 값을 원래 식에 대입하면 양변이 같나요?",
         ),
+    )
+
+
+def build_prepared_image(marker: str = "a") -> PreparedImageInput:
+    return PreparedImageInput(
+        data_url=f"data:image/png;base64,aW1hZ2U{marker}=",
+        mime_type="image/png",
+        width=640,
+        height=480,
+        original_size_bytes=5,
+        prepared_size_bytes=5,
+        sha256=marker * 64,
     )
 
 
@@ -137,6 +153,7 @@ class TutorStateTests(unittest.TestCase):
             question="2x + 2 = 8에서 x를 구하세요.",
             original_attempt="2를 먼저 빼려고 합니다.",
             guidance=self.guidance,
+            problem_images=[build_prepared_image().to_session_payload()],
         )
 
     def test_initial_state_reveals_only_hint_one(self):
@@ -169,6 +186,7 @@ class TutorStateTests(unittest.TestCase):
         }
         clear_tutor_state(state)
         self.assertNotIn(ACTIVE_SESSION_ID_KEY, state)
+        self.assertNotIn(PROBLEM_IMAGES_KEY, state)
         self.assertEqual(state["saved_plan_id"], "keep-me")
         self.assertIn("task_completion_feedback", state)
 
@@ -184,6 +202,12 @@ class TutorServiceTests(unittest.TestCase):
                 "나" * (MAX_TUTOR_ATTEMPT_CHARS + 1),
                 required=True,
             )
+
+    def test_image_allows_an_empty_text_question(self):
+        self.assertEqual(
+            validate_tutor_problem_input("  ", [build_prepared_image()]),
+            IMAGE_ONLY_QUESTION,
+        )
 
     def test_reference_limit_is_deterministic(self):
         source = "가" * 100
@@ -219,6 +243,41 @@ class TutorServiceTests(unittest.TestCase):
             fake_client.responses.calls[0]["text_format"],
             TutorGuidance,
         )
+
+    @patch("services.tutor_service.get_openai_model", return_value="test-model")
+    @patch("services.tutor_service.get_openai_client")
+    def test_image_question_is_sent_once_and_not_stored(
+        self,
+        mock_client,
+        _mock_model,
+    ):
+        fake_client = FakeOpenAIClient(build_guidance())
+        mock_client.return_value = fake_client
+
+        result = generate_tutor_guidance(
+            course_name="수학",
+            goal="도형 넓이 이해",
+            current_level=3,
+            task_title=None,
+            task_description=None,
+            reference_title=None,
+            reference_context=None,
+            question="",
+            user_attempt=None,
+            problem_images=[
+                build_prepared_image("a"),
+                build_prepared_image("b"),
+            ],
+        )
+
+        self.assertEqual(result.resolved_question, IMAGE_ONLY_QUESTION)
+        self.assertEqual(len(fake_client.responses.calls), 1)
+        request = fake_client.responses.calls[0]
+        self.assertFalse(request["store"])
+        user_content = request["input"][1]["content"]
+        self.assertEqual(user_content[0]["type"], "input_image")
+        self.assertEqual(user_content[1]["type"], "input_image")
+        self.assertEqual(user_content[2]["type"], "input_text")
 
     @patch("services.tutor_service.get_openai_model", return_value="test-model")
     @patch("services.tutor_service.get_openai_client")

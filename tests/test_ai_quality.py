@@ -15,6 +15,8 @@ from services.quiz_service import QUIZ_PROMPT_VERSION
 from services.review_material_service import (
     REVIEW_MATERIAL_PROMPT_VERSION,
 )
+from services.study_plan_service import STUDY_PLAN_PROMPT_VERSION
+from services.tutor_service import TUTOR_GUIDANCE_PROMPT_VERSION
 
 
 def _case(case_id: str):
@@ -86,11 +88,26 @@ class AIQualityHarnessTests(unittest.TestCase):
             for case in cases
             if case.feature == "quiz"
         }
+        study_plan_versions = {
+            case.prompt_version
+            for case in cases
+            if case.feature == "study_plan"
+        }
+        tutor_versions = {
+            case.prompt_version
+            for case in cases
+            if case.feature == "tutor"
+        }
         self.assertEqual(
             review_versions,
             {REVIEW_MATERIAL_PROMPT_VERSION},
         )
         self.assertEqual(quiz_versions, {QUIZ_PROMPT_VERSION})
+        self.assertEqual(
+            study_plan_versions,
+            {STUDY_PLAN_PROMPT_VERSION},
+        )
+        self.assertEqual(tutor_versions, {TUTOR_GUIDANCE_PROMPT_VERSION})
 
     def test_representative_cases_cover_approved_quality_dimensions(self):
         cases = load_ai_quality_cases()

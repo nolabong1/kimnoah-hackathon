@@ -69,6 +69,7 @@ SYSTEM_PROMPT = """
 REVIEW_MATERIAL_PROMPT_VERSION = (
     "review_material_v4_repeated_diagnoses"
 )
+SOURCE_REVIEW_PROMPT_VERSION = "source_review_v2_compact_grounding"
 LEARNING_BLUEPRINT_PROMPT = """
 
 learning_blueprint는 학습자료와 평가가 공유하는 학습 계약입니다.
@@ -153,13 +154,17 @@ SOURCE_REVIEW_SYSTEM_PROMPT = """
 - 중요한 전문 용어와 기술 용어는 원문의 의미를 보존합니다.
 - 문단을 단순 축약하지 말고 복습에 도움이 되도록 핵심 구조를 재구성합니다.
 - 모든 결과는 자연스럽고 읽기 쉬운 한국어로 작성합니다.
+- 빠르게 복습할 수 있도록 핵심만 남기고 같은 설명을 다른 섹션에서 반복하지 않습니다.
+- source_overview와 final_summary는 각각 2~3문장, 나머지 설명과 답은 각각
+  1~2문장으로 간결하게 작성합니다.
 - title은 200자 이하로 간결하게 작성합니다.
 - core_concepts와 important_details는 서로 중복되지 않게 정리합니다.
 - 목록 항목 문자열에는 Markdown 목록 기호를 직접 넣지 않습니다.
 - core_concepts, important_details, caution_points의 각 source_evidence에는
   해당 설명을 직접 뒷받침하는 원본의 짧은 구절을 글자와 구두점을 바꾸지 않고
   그대로 복사합니다.
-- source_evidence는 새로 작성한 설명이 아니며 500자를 넘지 않습니다.
+- source_evidence는 화면에 표시할 본문이 아니라 서버 검증용이며, 새로 작성한
+  설명이 아니고 300자를 넘지 않습니다.
 - 원본에서 직접 뒷받침되는 주의점이 없다면 caution_points는 빈 목록으로 둡니다.
 - self_review_checklist는 정답을 새로 만들어내지 않는 확인 항목으로 작성합니다.
 - active_recall_questions는 2~5개를 만들고, 각 answer는 원본 범위 안에서만
@@ -193,6 +198,9 @@ SOURCE_REVIEW_SYNTHESIS_PROMPT = """
 - source_evidence는 partial_reviews에 있는 원문 구절을 글자와 구두점을
   바꾸지 말고 그대로 복사합니다.
 - 각 설명과 답은 연결된 source_evidence가 직접 뒷받침해야 합니다.
+- source_evidence는 화면에 표시할 본문이 아니라 서버 검증용입니다.
+- 빠르게 복습할 수 있도록 같은 설명을 반복하지 않고 각 항목은 1~2문장으로
+  간결하게 작성합니다.
 - 모든 결과는 자연스럽고 읽기 쉬운 한국어로 작성합니다.
 - core_concepts와 important_details는 서로 중복되지 않게 정리합니다.
 - 원본에서 직접 뒷받침되는 주의점이 없으면 caution_points는 빈 목록으로 둡니다.
@@ -446,39 +454,32 @@ def _resolve_source_review_evidence(
     return resolved_material
 
 
-def _format_source_evidence(
-    source_text: str,
-    source_evidence: str,
-) -> str:
-    """검증된 원문 인용을 페이지 정보와 함께 Markdown으로 표시합니다."""
+LEGACY_SOURCE_EVIDENCE_PATTERN = re.compile(
+    r"(?m)^>\s*원문 근거(?:\s*·\s*\d+페이지)?:[^\n]*(?:\n|$)"
+)
 
-    page_number = find_source_evidence_page(
-        source_text=source_text,
-        source_evidence=source_evidence,
-    )
-    page_label = (
-        f" · {page_number}페이지" if page_number is not None else ""
-    )
-    return f"> 원문 근거{page_label}: {source_evidence}"
+
+def compact_source_review_markdown(markdown: str) -> str:
+    """기존 자료의 반복 인용 표시를 제거해 학습 본문만 반환합니다."""
+
+    without_evidence = LEGACY_SOURCE_EVIDENCE_PATTERN.sub("", markdown)
+    return re.sub(r"\n{3,}", "\n\n", without_evidence).strip()
 
 
 def convert_source_review_to_markdown(
     material: SourceReviewMaterialDraft,
     source_text: str,
 ) -> str:
-    """근거가 검증된 구조화 결과를 고정된 한국어 Markdown으로 변환합니다."""
+    """검증 근거는 숨기고 학습 내용만 간결한 Markdown으로 변환합니다."""
+
+    # 호출부 호환성과 검증 흐름을 명시하기 위해 원문 인자를 유지합니다.
+    # 실제 원문 대조는 이 함수 호출 전에 _resolve_source_review_evidence가 수행합니다.
+    del source_text
 
     def grounded_list(items: list[SourceGroundedPoint]) -> str:
         if not items:
             return "- 원본에서 직접 뒷받침되는 별도 주의점을 찾지 못했습니다."
-        return "\n\n".join(
-            f"- {item.content}\n\n"
-            + _format_source_evidence(
-                source_text,
-                item.source_evidence,
-            )
-            for item in items
-        )
+        return "\n".join(f"- {item.content}" for item in items)
 
     checklist = "\n".join(
         f"- [ ] {item}"
@@ -492,11 +493,7 @@ def convert_source_review_to_markdown(
         recall_questions.append(
             f"### 질문 {index}\n\n"
             f"**문제:** {question.question}\n\n"
-            f"**정답:** {question.answer}\n\n"
-            + _format_source_evidence(
-                source_text,
-                question.source_evidence,
-            )
+            f"**정답:** {question.answer}"
         )
 
     sections = [

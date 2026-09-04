@@ -10,6 +10,10 @@ from services.shop_repository import (
     get_user_inventory,
     purchase_shop_item,
 )
+from services.presentation_labels import (
+    SHOP_CATEGORY_LABELS as CATEGORY_LABELS,
+    SHOP_RARITY_LABELS as RARITY_LABELS,
+)
 from views.error_feedback import render_unexpected_error
 from views.shop_asset_utils import get_approved_shop_thumbnail_path
 from views.shop_purchase_reveal_component import (
@@ -27,19 +31,6 @@ from views.shop_state import (
 from views.ui_components import MetricItem, render_empty_state, render_metric_row
 
 
-CATEGORY_LABELS = {
-    ShopItemCategory.BACKGROUND.value: "배경",
-    ShopItemCategory.FLOOR.value: "바닥",
-    ShopItemCategory.DESK.value: "책상",
-    ShopItemCategory.CHAIR.value: "의자",
-    ShopItemCategory.DECORATION.value: "장식",
-    ShopItemCategory.ACCENT.value: "포인트",
-}
-RARITY_LABELS = {
-    "common": "일반",
-    "uncommon": "고급",
-    "rare": "희귀",
-}
 CATEGORY_ICONS = {
     ShopItemCategory.BACKGROUND.value: ":material/wallpaper:",
     ShopItemCategory.FLOOR.value: ":material/texture:",

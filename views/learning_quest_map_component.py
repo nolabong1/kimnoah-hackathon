@@ -3,13 +3,7 @@ from typing import Any
 
 import streamlit as st
 
-
-_TASK_TYPE_LABELS = {
-    "learn": "학습",
-    "review": "복습",
-    "quiz": "퀴즈",
-}
-
+from services.presentation_labels import TASK_TYPE_LABELS
 
 def build_learning_quest_nodes(
     tasks: Sequence[Mapping[str, Any]],
@@ -43,7 +37,7 @@ def build_learning_quest_nodes(
                 "step": index,
                 "title": title.strip(),
                 "task_type": task_type,
-                "task_type_label": _TASK_TYPE_LABELS.get(task_type, "과제"),
+                "task_type_label": TASK_TYPE_LABELS.get(task_type, "과제"),
                 "estimated_minutes": estimated_minutes,
                 "completed": task.get("status") == "completed",
                 "selected": task_id == selected_task_id,

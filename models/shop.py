@@ -1,8 +1,19 @@
 from datetime import datetime
 from enum import StrEnum
+from typing import Final
 from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
+
+
+STUDY_ROOM_CANVAS_WIDTH: Final[int] = 1600
+STUDY_ROOM_CANVAS_HEIGHT: Final[int] = 900
+STUDY_ROOM_TRANSFORM_LIMITS: Final[dict[str, tuple[int, int]]] = {
+    "x": (-800, 800),
+    "y": (-450, 450),
+    "scale": (25, 200),
+    "rotation": (-180, 180),
+}
 
 
 class ShopItemCategory(StrEnum):
@@ -159,10 +170,26 @@ class StudyRoomEquipment(BaseModel):
 class StudyRoomItemTransform(BaseModel):
     """고정 배치점을 기준으로 적용하는 개별 에셋의 2D 변형값입니다."""
 
-    x: int = Field(default=0, ge=-800, le=800)
-    y: int = Field(default=0, ge=-450, le=450)
-    scale: int = Field(default=100, ge=25, le=200)
-    rotation: int = Field(default=0, ge=-180, le=180)
+    x: int = Field(
+        default=0,
+        ge=STUDY_ROOM_TRANSFORM_LIMITS["x"][0],
+        le=STUDY_ROOM_TRANSFORM_LIMITS["x"][1],
+    )
+    y: int = Field(
+        default=0,
+        ge=STUDY_ROOM_TRANSFORM_LIMITS["y"][0],
+        le=STUDY_ROOM_TRANSFORM_LIMITS["y"][1],
+    )
+    scale: int = Field(
+        default=100,
+        ge=STUDY_ROOM_TRANSFORM_LIMITS["scale"][0],
+        le=STUDY_ROOM_TRANSFORM_LIMITS["scale"][1],
+    )
+    rotation: int = Field(
+        default=0,
+        ge=STUDY_ROOM_TRANSFORM_LIMITS["rotation"][0],
+        le=STUDY_ROOM_TRANSFORM_LIMITS["rotation"][1],
+    )
     flip_horizontal: bool = False
 
 

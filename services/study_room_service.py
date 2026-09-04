@@ -8,6 +8,9 @@ from PIL import Image, ImageOps
 from pydantic import ValidationError
 
 from models.shop import (
+    STUDY_ROOM_CANVAS_HEIGHT,
+    STUDY_ROOM_CANVAS_WIDTH,
+    STUDY_ROOM_TRANSFORM_LIMITS,
     StudyRoomEquipment,
     StudyRoomItemTransform,
     StudyRoomSlot,
@@ -18,7 +21,7 @@ from services.shop_catalog import SHOP_ITEMS_BY_KEY
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BASE_ROOM_PATH = PROJECT_ROOT / "assets/study_room/base/room_default.webp"
-ROOM_CANVAS_SIZE = (1600, 900)
+ROOM_CANVAS_SIZE = (STUDY_ROOM_CANVAS_WIDTH, STUDY_ROOM_CANVAS_HEIGHT)
 
 EQUIPMENT_FIELD_SLOTS = {
     "background_item_key": StudyRoomSlot.BACKGROUND,
@@ -195,6 +198,10 @@ def build_study_room_editor_scene(
     return {
         "canvas_width": ROOM_CANVAS_SIZE[0],
         "canvas_height": ROOM_CANVAS_SIZE[1],
+        "transform_limits": {
+            name: list(bounds)
+            for name, bounds in STUDY_ROOM_TRANSFORM_LIMITS.items()
+        },
         "base_image": base_image,
         "layers": layers,
         "transforms": normalized_transforms,

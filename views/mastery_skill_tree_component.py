@@ -1,13 +1,13 @@
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import streamlit as st
 
+from services.time_service import SEOUL_TIMEZONE
+
 
 MAX_SKILL_TREE_NODES = 15
-SEOUL_TIMEZONE = ZoneInfo("Asia/Seoul")
 
 
 def build_mastery_skill_tree_nodes(

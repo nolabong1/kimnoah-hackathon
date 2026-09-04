@@ -1,5 +1,4 @@
-from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import date, timedelta
 
 import streamlit as st
 from pydantic import ValidationError
@@ -14,6 +13,7 @@ from services.study_plan_repository import (
     get_user_study_plans,
     save_weekly_study_plan,
 )
+from services.time_service import get_seoul_today
 from services.study_plan_service import generate_weekly_study_plan
 from services.weekly_review_repository import (
     create_weekly_review,
@@ -78,7 +78,7 @@ NEXT_SCORE_KEY = "weekly_review_next_recent_score"
 def _seoul_today() -> date:
     """사용자 일일 기준인 서울 현재 날짜를 반환합니다."""
 
-    return datetime.now(ZoneInfo("Asia/Seoul")).date()
+    return get_seoul_today()
 
 
 def _is_missing_review_table_error(error: Exception) -> bool:

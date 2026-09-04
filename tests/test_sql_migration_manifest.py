@@ -61,7 +61,37 @@ class SqlMigrationManifestTests(unittest.TestCase):
             "supabase_learning_objective_plan_save_validation.sql",
             plan,
         )
+        self.assertIn(
+            "039  supabase_image_source_material.sql  ->  "
+            "supabase_image_source_material_validation.sql",
+            plan,
+        )
         self.assertTrue(plan[-1].startswith("CHECK after "))
+
+    def test_image_source_material_expands_type_without_weakening_rls(self):
+        migration = (
+            PROJECT_ROOT / "supabase_image_source_material.sql"
+        ).read_text(encoding="utf-8").lower()
+        validation = (
+            PROJECT_ROOT / "supabase_image_source_material_validation.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("begin;", migration)
+        self.assertIn("'text', 'pdf', 'image'", migration)
+        self.assertIn("validate constraint", migration)
+        self.assertIn("learning_materials_image_content_check", migration)
+        self.assertIn("learning_materials_image_storage_check", migration)
+        self.assertIn("content_text is not null", migration)
+        self.assertIn("storage_path is null", migration)
+        self.assertNotIn("disable row level security", migration)
+        self.assertIn("set transaction read only", validation)
+        self.assertIn("relrowsecurity", validation)
+        self.assertIn("v_rls_enabled is not true", validation)
+        self.assertNotIn("pg_catalog.coalesce", validation)
+        self.assertNotIn("pg_catalog.position", validation)
+        self.assertIn("learning_materials_image_content_check", validation)
+        self.assertIn("learning_materials_image_storage_check", validation)
+        self.assertIn("storage_path is not null", validation)
 
     def test_reordered_dependency_is_rejected(self):
         invalid_manifest = deepcopy(self.manifest)

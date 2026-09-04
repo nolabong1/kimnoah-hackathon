@@ -4,7 +4,10 @@ from typing import Any
 import streamlit as st
 
 from views.shop_asset_utils import get_approved_shop_thumbnail_data_url
-from views.shop_view import CATEGORY_LABELS, RARITY_LABELS
+from services.presentation_labels import (
+    SHOP_CATEGORY_LABELS as CATEGORY_LABELS,
+    SHOP_RARITY_LABELS as RARITY_LABELS,
+)
 
 
 MAX_COLLECTION_GALLERY_ITEMS = 30

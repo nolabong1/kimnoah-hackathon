@@ -360,8 +360,8 @@ def save_source_review_material_bundle(
 ) -> dict:
     """원본과 AI 결과를 순서대로 저장하고 부분 실패를 정리합니다."""
 
-    if material_type not in {"text", "pdf"}:
-        raise ValueError("원본 자료 유형은 text 또는 pdf여야 합니다.")
+    if material_type not in {"text", "pdf", "image"}:
+        raise ValueError("원본 자료 유형은 text, pdf 또는 image여야 합니다.")
 
     source_material = create_learning_material(
         supabase=supabase,

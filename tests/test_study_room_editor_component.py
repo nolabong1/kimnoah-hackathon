@@ -29,6 +29,15 @@ class StudyRoomEditorComponentTests(unittest.TestCase):
         self.assertNotIn("Streamlit.setComponentValue", source)
         self.assertNotIn("window.parent.postMessage", source)
 
+    def test_component_receives_transform_limits_from_python_scene(self):
+        source = study_room_editor_component._EDITOR_JS
+
+        self.assertIn("resolveLimits(data?.transform_limits)", source)
+        self.assertIn("normalizeTransforms(data?.transforms, layers, limits)", source)
+        self.assertNotIn("const LIMITS", source)
+        self.assertNotIn("|| 1600", source)
+        self.assertNotIn("|| 900", source)
+
     def test_component_emits_only_after_pointer_interaction_finishes(self):
         source = study_room_editor_component._EDITOR_JS
         move_start = source.index("const onMove")

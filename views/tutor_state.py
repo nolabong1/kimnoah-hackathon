@@ -16,6 +16,7 @@ TASK_TITLE_KEY = "tutor_task_title"
 REFERENCE_TITLE_KEY = "tutor_reference_title"
 REFERENCE_CONTEXT_KEY = "tutor_reference_context"
 REFERENCE_LIMITED_KEY = "tutor_reference_was_limited"
+PROBLEM_IMAGES_KEY = "tutor_problem_images"
 QUESTION_KEY = "tutor_question"
 ORIGINAL_ATTEMPT_KEY = "tutor_original_attempt"
 GUIDANCE_KEY = "tutor_guidance"
@@ -43,6 +44,7 @@ def create_tutor_session_state(
     question: str,
     original_attempt: str,
     guidance: TutorGuidance,
+    problem_images: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """새 튜터 세션의 초기 상태를 생성합니다."""
 
@@ -57,6 +59,7 @@ def create_tutor_session_state(
         REFERENCE_TITLE_KEY: reference_title,
         REFERENCE_CONTEXT_KEY: reference_context,
         REFERENCE_LIMITED_KEY: reference_was_limited,
+        PROBLEM_IMAGES_KEY: problem_images or [],
         QUESTION_KEY: question,
         ORIGINAL_ATTEMPT_KEY: original_attempt,
         GUIDANCE_KEY: guidance.model_dump(),

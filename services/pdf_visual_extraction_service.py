@@ -14,6 +14,7 @@ from services.source_material_service import (
 
 
 MAX_VISUAL_PDF_PAGES = 20
+PDF_VISUAL_EXTRACTION_PROMPT_VERSION = "pdf_visual_extraction_v1"
 
 
 VISUAL_PDF_EXTRACTION_PROMPT = """

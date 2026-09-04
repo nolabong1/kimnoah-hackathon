@@ -10,6 +10,7 @@ from services.learning_performance_service import (
     build_performance_highlights,
     summarize_before_after_evidence,
 )
+from services.presentation_labels import TASK_TYPE_LABELS
 from services.study_plan_repository import get_user_study_plans
 from services.weekly_review_repository import get_weekly_review_by_plan
 from services.weekly_review_service import REFLECTION_QUESTIONS
@@ -24,13 +25,6 @@ from views.ui_components import (
 
 
 PERFORMANCE_PLAN_SELECT_KEY = "learning_performance_plan_id"
-TASK_TYPE_LABELS = {
-    "learn": "학습",
-    "review": "복습",
-    "quiz": "퀴즈",
-}
-
-
 def _format_number(value: float | None, suffix: str = "") -> str:
     """선택적인 숫자를 화면용 문자열로 바꿉니다."""
 

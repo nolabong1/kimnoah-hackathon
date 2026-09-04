@@ -8,13 +8,13 @@ from services.review_material_repository import (
     get_review_materials_by_plan,
     get_source_review_material_bundles_by_plan,
 )
+from views.cache_config import DEFAULT_SESSION_CACHE_TTL_SECONDS
 
 
 REFERENCE_MATERIAL_STATE_PREFIX = "reference_material_data_"
 MATERIAL_SNAPSHOTS_KEY = f"{REFERENCE_MATERIAL_STATE_PREFIX}by_plan"
 MATERIAL_LOADED_AT_KEY = f"{REFERENCE_MATERIAL_STATE_PREFIX}loaded_at"
 MATERIAL_USER_ID_KEY = f"{REFERENCE_MATERIAL_STATE_PREFIX}user_id"
-MATERIAL_CACHE_TTL_SECONDS = 30.0
 SOURCE_BUNDLE_SNAPSHOTS_KEY = (
     f"{REFERENCE_MATERIAL_STATE_PREFIX}source_bundles_by_plan"
 )
@@ -81,13 +81,13 @@ def get_reference_materials_snapshot(
         current_time - loaded_at
         if isinstance(loaded_at, (int, float))
         and not isinstance(loaded_at, bool)
-        else MATERIAL_CACHE_TTL_SECONDS
+        else DEFAULT_SESSION_CACHE_TTL_SECONDS
     )
     cache_is_current = (
         isinstance(snapshot, dict)
         and _is_material_list(snapshot.get("learning"))
         and _is_material_list(snapshot.get("review"))
-        and 0 <= cache_age < MATERIAL_CACHE_TTL_SECONDS
+        and 0 <= cache_age < DEFAULT_SESSION_CACHE_TTL_SECONDS
     )
     if not cache_is_current:
         learning_materials, review_materials = (
@@ -162,11 +162,11 @@ def get_source_review_bundles_snapshot(
         current_time - loaded_at
         if isinstance(loaded_at, (int, float))
         and not isinstance(loaded_at, bool)
-        else MATERIAL_CACHE_TTL_SECONDS
+        else DEFAULT_SESSION_CACHE_TTL_SECONDS
     )
     if not (
         _is_material_list(snapshot)
-        and 0 <= cache_age < MATERIAL_CACHE_TTL_SECONDS
+        and 0 <= cache_age < DEFAULT_SESSION_CACHE_TTL_SECONDS
     ):
         snapshot = (
             loader()

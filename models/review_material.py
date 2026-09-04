@@ -48,12 +48,12 @@ class SourceGroundedPoint(BaseModel):
 
     content: str = Field(
         min_length=1,
-        max_length=700,
-        description="원본을 학습하기 쉽게 풀어 쓴 간결한 한국어 설명",
+        max_length=500,
+        description="원본을 학습하기 쉽게 1~2문장으로 풀어 쓴 한국어 설명",
     )
     source_evidence: str = Field(
         min_length=1,
-        max_length=500,
+        max_length=300,
         description=(
             "설명을 직접 뒷받침하며 원본에서 그대로 복사한 짧은 구절"
         ),
@@ -75,17 +75,17 @@ class SourceRecallQuestion(BaseModel):
 
     question: str = Field(
         min_length=1,
-        max_length=500,
+        max_length=300,
         description="원본의 핵심 내용을 스스로 떠올리게 하는 짧은 질문",
     )
     answer: str = Field(
         min_length=1,
-        max_length=700,
+        max_length=500,
         description="원본 범위 안에서 작성한 간결한 모범 답안",
     )
     source_evidence: str = Field(
         min_length=1,
-        max_length=500,
+        max_length=300,
         description="답을 직접 뒷받침하며 원본에서 그대로 복사한 짧은 구절",
     )
 
@@ -110,35 +110,37 @@ class SourceReviewMaterialDraft(BaseModel):
     )
     source_overview: str = Field(
         min_length=1,
-        description="원본이 다루는 범위와 목적에 대한 간결한 개요",
+        max_length=700,
+        description="원본이 다루는 범위와 목적을 2~3문장으로 정리한 개요",
     )
     core_concepts: list[SourceGroundedPoint] = Field(
         min_length=1,
-        max_length=8,
+        max_length=6,
         description="원문 인용으로 뒷받침되는 핵심 개념 목록",
     )
     important_details: list[SourceGroundedPoint] = Field(
         min_length=1,
-        max_length=10,
+        max_length=6,
         description="원문 인용으로 뒷받침되는 중요한 세부 내용 목록",
     )
     caution_points: list[SourceGroundedPoint] = Field(
-        max_length=6,
+        max_length=4,
         description="원문 인용으로 뒷받침되는 오해 또는 주의점 목록",
     )
     self_review_checklist: list[str] = Field(
         min_length=1,
-        max_length=8,
+        max_length=6,
         description="학습자가 스스로 확인할 짧은 체크리스트",
     )
     active_recall_questions: list[SourceRecallQuestion] = Field(
         min_length=2,
-        max_length=5,
+        max_length=4,
         description="정답과 원문 근거를 포함한 짧은 능동 회상 문제",
     )
     final_summary: str = Field(
         min_length=1,
-        description="원본의 핵심을 다시 묶어 주는 최종 요약",
+        max_length=500,
+        description="원본의 핵심을 2~3문장으로 다시 묶는 최종 요약",
     )
 
     @field_validator(

@@ -5,6 +5,7 @@ from services.learning_blueprint_service import get_target_depth
 from services.openai_client import get_openai_client, get_openai_model
 
 
+STUDY_PLAN_PROMPT_VERSION = "study_plan_v1"
 SYSTEM_PROMPT = """
 당신은 대학생의 자기주도학습을 돕는 전문 학습 코치입니다.
 

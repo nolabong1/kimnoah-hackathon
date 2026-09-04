@@ -2,6 +2,7 @@ from collections.abc import Callable, Mapping, MutableMapping
 from time import monotonic
 from typing import Any
 
+from views.cache_config import DEFAULT_SESSION_CACHE_TTL_SECONDS
 
 SHOP_STATE_PREFIX = "shop_"
 SUCCESS_MESSAGE_KEY = "shop_success_message"
@@ -23,7 +24,6 @@ SHOP_DATA_LOADED_AT_KEY = "shop_data_snapshot_loaded_at"
 ROOM_DATA_SNAPSHOT_KEY = "shop_room_data_snapshot"
 ROOM_DATA_USER_ID_KEY = "shop_room_data_snapshot_user_id"
 ROOM_DATA_LOADED_AT_KEY = "shop_room_data_snapshot_loaded_at"
-SHOP_DATA_CACHE_TTL_SECONDS = 30.0
 
 
 def _cache_is_current(
@@ -43,7 +43,7 @@ def _cache_is_current(
     age = now - loaded_at
     return (
         state.get(user_key) == user_id
-        and 0 <= age < SHOP_DATA_CACHE_TTL_SECONDS
+        and 0 <= age < DEFAULT_SESSION_CACHE_TTL_SECONDS
     )
 
 

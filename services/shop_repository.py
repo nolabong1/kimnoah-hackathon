@@ -15,7 +15,10 @@ from models.shop import (
     UserInventoryItem,
     UserStudyRoom,
 )
-from services.shop_catalog import SHOP_ITEMS_BY_KEY
+from services.shop_catalog import (
+    SHOP_ITEMS_BY_KEY,
+    validate_shop_asset_contract,
+)
 
 
 def get_shop_items(supabase: Client) -> list[dict]:
@@ -31,11 +34,19 @@ def get_shop_items(supabase: Client) -> list[dict]:
         .order("sort_order")
         .execute()
     )
-    return _validate_list_response(
+    items = _validate_list_response(
         response.data,
         ShopItem,
         "상점 카탈로그 조회 결과가 올바르지 않습니다.",
     )
+    try:
+        for item in items:
+            validate_shop_asset_contract(ShopItem.model_validate(item))
+    except (ValidationError, ValueError) as error:
+        raise RuntimeError(
+            "상점 카탈로그의 에셋 정보가 배포 버전과 일치하지 않습니다."
+        ) from error
+    return items
 
 
 def get_user_coin_wallet(

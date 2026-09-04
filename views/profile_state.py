@@ -3,13 +3,13 @@ from time import monotonic
 from typing import Any
 
 from services.profile_service import get_profile
+from views.cache_config import DEFAULT_SESSION_CACHE_TTL_SECONDS
 
 
 PROFILE_STATE_PREFIX = "profile_snapshot_"
 PROFILE_SNAPSHOT_KEY = f"{PROFILE_STATE_PREFIX}data"
 PROFILE_USER_ID_KEY = f"{PROFILE_STATE_PREFIX}user_id"
 PROFILE_LOADED_AT_KEY = f"{PROFILE_STATE_PREFIX}loaded_at"
-PROFILE_CACHE_TTL_SECONDS = 30.0
 
 
 def _is_non_negative_int(value: object) -> bool:
@@ -55,12 +55,12 @@ def get_profile_snapshot(
         current_time - loaded_at
         if isinstance(loaded_at, (int, float))
         and not isinstance(loaded_at, bool)
-        else PROFILE_CACHE_TTL_SECONDS
+        else DEFAULT_SESSION_CACHE_TTL_SECONDS
     )
     cache_is_current = (
         state.get(PROFILE_USER_ID_KEY) == normalized_user_id
         and _is_profile_snapshot(snapshot)
-        and 0 <= cache_age < PROFILE_CACHE_TTL_SECONDS
+        and 0 <= cache_age < DEFAULT_SESSION_CACHE_TTL_SECONDS
     )
     if cache_is_current:
         return dict(snapshot)

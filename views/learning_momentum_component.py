@@ -3,13 +3,11 @@ from typing import Any
 
 import streamlit as st
 
+from services.reward_policy import EXP_PER_LEVEL
 from views.streak_presentation import (
     get_streak_tier_label,
     resolve_streak_tier,
 )
-
-
-EXP_PER_LEVEL = 100
 
 
 def build_learning_momentum(

@@ -1,5 +1,3 @@
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import streamlit as st
 
@@ -9,6 +7,7 @@ from services.study_plan_repository import (
     get_study_plan_tasks,
     get_user_study_plans,
 )
+from services.time_service import get_seoul_today
 from views.completion_feedback import (
     render_completion_feedback,
 )
@@ -566,9 +565,7 @@ def render_saved_plans(supabase, user):
 
         tasks_by_date[scheduled_date].append(task)
 
-    today = datetime.now(
-        ZoneInfo("Asia/Seoul")
-    ).date().isoformat()
+    today = get_seoul_today().isoformat()
     scheduled_dates = sorted(tasks_by_date)
     default_selected_date = (
         today

@@ -1,11 +1,11 @@
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import streamlit as st
 
 from services.concept_mastery_repository import (
     get_user_concept_masteries,
 )
+from services.time_service import SEOUL_TIMEZONE
 from services.concept_mastery_service import (
     summarize_course_masteries,
 )
@@ -25,9 +25,6 @@ from views.ui_components import (
 MASTERY_COURSE_SELECT_KEY = "mastery_dashboard_course_key"
 MASTERY_FILTER_KEY = "mastery_dashboard_concept_filter"
 MASTERY_DETAIL_VIEW_KEY = "mastery_dashboard_detail_view"
-SEOUL_TIMEZONE = ZoneInfo("Asia/Seoul")
-
-
 def _format_last_assessed_at(value: str | None) -> str:
     """마지막 평가 시각을 서울 기준으로 표시합니다."""
 

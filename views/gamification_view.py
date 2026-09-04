@@ -1,17 +1,12 @@
 from collections.abc import MutableMapping
-from datetime import datetime, timezone
+from datetime import datetime
 from math import ceil
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import streamlit as st
 
 from services.error_reporting import report_exception
-from models.gamification import (
-    AchievementCategory,
-    ChallengePeriodType,
-    ChallengeStatus,
-)
+from models.gamification import ChallengePeriodType, ChallengeStatus
 from services.gamification_catalog import (
     ACHIEVEMENT_CATALOG,
     ACHIEVEMENTS_BY_KEY,
@@ -30,6 +25,12 @@ from services.gamification_service import (
     get_period_window,
     mask_achievement_definition,
 )
+from services.presentation_labels import (
+    ACHIEVEMENT_CATEGORY_LABELS as CATEGORY_LABELS,
+    ACHIEVEMENT_TIER_LABELS as TIER_LABELS,
+    BADGE_RARITY_LABELS as RARITY_LABELS,
+)
+from services.time_service import SEOUL_TIMEZONE, UTC_TIMEZONE
 from views.gamification_state import (
     ACTIVE_TAB_KEY,
     BADGE_IN_PROGRESS_KEY,
@@ -52,31 +53,7 @@ from views.ui_components import (
 )
 
 
-SEOUL_TIMEZONE = ZoneInfo("Asia/Seoul")
 ACHIEVEMENT_FILTER_KEY = "gamification_achievement_category_filter"
-
-CATEGORY_LABELS = {
-    AchievementCategory.TASK: "과제",
-    AchievementCategory.STREAK: "연속 학습",
-    AchievementCategory.PLAN: "계획",
-    AchievementCategory.REVIEW: "복습",
-    AchievementCategory.QUIZ: "퀴즈",
-    AchievementCategory.BALANCE: "균형",
-}
-TIER_LABELS = {
-    "bronze": "브론즈",
-    "silver": "실버",
-    "gold": "골드",
-    "platinum": "플래티넘",
-}
-RARITY_LABELS = {
-    "common": "일반",
-    "uncommon": "고급",
-    "rare": "희귀",
-    "epic": "영웅",
-    "legendary": "전설",
-}
-
 
 def load_gamification_page_data(
     supabase,
@@ -272,7 +249,7 @@ def render_gamification_dashboard_summary_from_data(
 ) -> None:
     """이미 조회한 게임화 데이터로 오늘의 성장 요약을 표시합니다."""
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC_TIMEZONE)
     daily_window = get_period_window(
         ChallengePeriodType.DAILY,
         now,
@@ -349,7 +326,7 @@ def _render_challenges(supabase, challenges: list[dict]) -> None:
     """현재 일간·주간 및 이전 미수령 도전과제를 표시합니다."""
 
     st.subheader("현재 도전과제")
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC_TIMEZONE)
     daily_window = get_period_window(ChallengePeriodType.DAILY, now)
     weekly_window = get_period_window(ChallengePeriodType.WEEKLY, now)
     current_daily = _get_current_challenges(

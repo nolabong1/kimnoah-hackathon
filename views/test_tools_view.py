@@ -4,6 +4,10 @@ from typing import Any
 import streamlit as st
 
 from services.error_reporting import report_exception
+from services.reward_policy import (
+    DAILY_COMPLETION_BONUS_EXP,
+    TASK_COMPLETION_EXP,
+)
 from services.shop_repository import (
     get_active_shop_test_session,
     reset_shop_test_session,
@@ -321,7 +325,8 @@ def _render_plan_completion_tool(
 
     st.warning(
         "미래 과제와 아직 만점을 받지 않은 퀴즈 과제도 완료됩니다. "
-        "과제당 10 EXP와 조건 충족 시 오늘의 20 EXP가 실제로 기록됩니다."
+        f"과제당 {TASK_COMPLETION_EXP} EXP와 조건 충족 시 오늘의 "
+        f"{DAILY_COMPLETION_BONUS_EXP} EXP가 실제로 기록됩니다."
     )
     with st.container(horizontal=True):
         if st.button(

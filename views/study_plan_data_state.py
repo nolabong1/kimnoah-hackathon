@@ -12,21 +12,19 @@ from services.study_plan_repository import (
     get_study_tasks_by_plan_ids,
     get_user_study_plans,
 )
+from views.cache_config import DEFAULT_SESSION_CACHE_TTL_SECONDS
 
 
 STUDY_PLAN_DATA_STATE_PREFIX = "study_plan_data_"
 PLAN_LIST_SNAPSHOT_KEY = f"{STUDY_PLAN_DATA_STATE_PREFIX}plans"
 PLAN_LIST_USER_ID_KEY = f"{STUDY_PLAN_DATA_STATE_PREFIX}user_id"
 PLAN_LIST_LOADED_AT_KEY = f"{STUDY_PLAN_DATA_STATE_PREFIX}loaded_at"
-PLAN_LIST_CACHE_TTL_SECONDS = 30.0
 TASK_SNAPSHOTS_KEY = f"{STUDY_PLAN_DATA_STATE_PREFIX}tasks_by_plan"
 TASK_LOADED_AT_KEY = f"{STUDY_PLAN_DATA_STATE_PREFIX}tasks_loaded_at"
 TASK_USER_ID_KEY = f"{STUDY_PLAN_DATA_STATE_PREFIX}tasks_user_id"
-TASK_CACHE_TTL_SECONDS = 30.0
 OBJECTIVE_SNAPSHOTS_KEY = f"{STUDY_PLAN_DATA_STATE_PREFIX}objectives_by_plan"
 OBJECTIVE_LOADED_AT_KEY = f"{STUDY_PLAN_DATA_STATE_PREFIX}objectives_loaded_at"
 OBJECTIVE_USER_ID_KEY = f"{STUDY_PLAN_DATA_STATE_PREFIX}objectives_user_id"
-OBJECTIVE_CACHE_TTL_SECONDS = 30.0
 
 
 def _is_plan_list(value: object) -> bool:
@@ -79,12 +77,12 @@ def get_study_plan_list_snapshot(
         current_time - loaded_at
         if isinstance(loaded_at, (int, float))
         and not isinstance(loaded_at, bool)
-        else PLAN_LIST_CACHE_TTL_SECONDS
+        else DEFAULT_SESSION_CACHE_TTL_SECONDS
     )
     cache_is_current = (
         state.get(PLAN_LIST_USER_ID_KEY) == normalized_user_id
         and _is_plan_list(snapshot)
-        and 0 <= cache_age < PLAN_LIST_CACHE_TTL_SECONDS
+        and 0 <= cache_age < DEFAULT_SESSION_CACHE_TTL_SECONDS
     )
     if cache_is_current:
         return deepcopy(snapshot)
@@ -167,11 +165,11 @@ def get_learning_objectives_by_plan_ids_snapshot(
             current_time - loaded_at
             if isinstance(loaded_at, (int, float))
             and not isinstance(loaded_at, bool)
-            else OBJECTIVE_CACHE_TTL_SECONDS
+            else DEFAULT_SESSION_CACHE_TTL_SECONDS
         )
         if not (
             _is_objective_list(cached_objectives.get(plan_id))
-            and 0 <= cache_age < OBJECTIVE_CACHE_TTL_SECONDS
+            and 0 <= cache_age < DEFAULT_SESSION_CACHE_TTL_SECONDS
         ):
             missing_plan_ids.append(plan_id)
 
@@ -275,11 +273,11 @@ def get_study_tasks_by_plan_ids_snapshot(
             current_time - loaded_at
             if isinstance(loaded_at, (int, float))
             and not isinstance(loaded_at, bool)
-            else TASK_CACHE_TTL_SECONDS
+            else DEFAULT_SESSION_CACHE_TTL_SECONDS
         )
         if not (
             _is_task_list(cached_tasks.get(plan_id))
-            and 0 <= cache_age < TASK_CACHE_TTL_SECONDS
+            and 0 <= cache_age < DEFAULT_SESSION_CACHE_TTL_SECONDS
         ):
             missing_plan_ids.append(plan_id)
 

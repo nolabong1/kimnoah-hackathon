@@ -7,6 +7,14 @@ from models.tutor import (
     TutorAttemptFeedback,
     TutorGuidance,
 )
+from services.image_input_service import (
+    MAX_IMAGE_COUNT,
+    MAX_IMAGE_UPLOAD_BYTES,
+    MAX_TOTAL_IMAGE_UPLOAD_BYTES,
+    ImageInputValidationError,
+    prepare_images_for_ai,
+    restore_prepared_images,
+)
 from services.review_material_repository import (
     get_learning_materials_by_plan,
     get_review_materials_by_plan,
@@ -26,7 +34,7 @@ from services.tutor_service import (
     generate_tutor_attempt_feedback,
     generate_tutor_guidance,
     validate_tutor_attempt,
-    validate_tutor_question,
+    validate_tutor_problem_input,
 )
 from views.error_feedback import (
     render_unexpected_error,
@@ -54,6 +62,7 @@ from views.tutor_state import (
     GUIDANCE_KEY,
     LATEST_FEEDBACK_KEY,
     ORIGINAL_ATTEMPT_KEY,
+    PROBLEM_IMAGES_KEY,
     QUESTION_KEY,
     REFERENCE_CONTEXT_KEY,
     REFERENCE_LIMITED_KEY,
@@ -77,6 +86,7 @@ SETUP_TASK_KEY = "tutor_setup_task_id"
 SETUP_MATERIAL_KEY = "tutor_setup_material_key"
 SETUP_QUESTION_KEY = "tutor_setup_question"
 SETUP_ATTEMPT_KEY = "tutor_setup_attempt"
+SETUP_IMAGES_KEY = "tutor_setup_problem_images"
 REVISED_ATTEMPT_KEY = "tutor_revised_attempt"
 
 
@@ -227,6 +237,19 @@ def _render_active_tutor_session(user_id: str) -> None:
         )
         return
 
+    try:
+        problem_images = restore_prepared_images(
+            st.session_state.get(PROBLEM_IMAGES_KEY)
+        )
+    except ImageInputValidationError:
+        st.error("진행 중인 문제 이미지 세션을 복원하지 못했습니다.")
+        st.button(
+            "새 질문 시작하기",
+            key="tutor_invalid_image_session_reset",
+            on_click=_clear_current_tutor,
+        )
+        return
+
     with st.container(horizontal=True, horizontal_alignment="right"):
         st.button(
             "새 질문 시작하기",
@@ -256,6 +279,19 @@ def _render_active_tutor_session(user_id: str) -> None:
             st.caption("사용자 입력")
             st.markdown("### 내가 입력한 문제")
             st.write(st.session_state[QUESTION_KEY])
+            if problem_images:
+                st.caption(
+                    f"첨부한 문제 이미지 {len(problem_images)}장 · "
+                    "세션 종료 시 삭제"
+                )
+                image_columns = st.columns(min(2, len(problem_images)))
+                for image_index, problem_image in enumerate(problem_images):
+                    with image_columns[image_index % len(image_columns)]:
+                        st.image(
+                            problem_image.data_url,
+                            caption=f"이미지 {image_index + 1}",
+                            width="stretch",
+                        )
             if st.session_state.get(ORIGINAL_ATTEMPT_KEY):
                 st.markdown("**처음 시도한 풀이**")
                 st.write(st.session_state[ORIGINAL_ATTEMPT_KEY])
@@ -394,6 +430,7 @@ def _render_active_tutor_session(user_id: str) -> None:
                         revised_attempt=cleaned_revised_attempt,
                         guidance=guidance,
                         revealed_hint_level=visible_hint_level,
+                        problem_images=problem_images,
                     )
                     status.write("잘한 점과 다음에 시도할 단계를 정리했습니다.")
                 st.session_state[LATEST_FEEDBACK_KEY] = feedback.model_dump()
@@ -629,6 +666,21 @@ def _render_tutor_setup(supabase, user_id: str) -> None:
                 placeholder="풀이 과정을 도움받고 싶은 문제를 입력하세요.",
                 key=SETUP_QUESTION_KEY,
             )
+            uploaded_images = st.file_uploader(
+                f"문제 스크린샷 (선택, 최대 {MAX_IMAGE_COUNT}장)",
+                type=["png", "jpg", "jpeg", "webp"],
+                accept_multiple_files=True,
+                max_upload_size=(
+                    MAX_IMAGE_UPLOAD_BYTES // (1024 * 1024)
+                ),
+                help=(
+                    f"파일당 최대 {MAX_IMAGE_UPLOAD_BYTES // (1024 * 1024)}MB, "
+                    f"전체 {MAX_TOTAL_IMAGE_UPLOAD_BYTES // (1024 * 1024)}MB, "
+                    f"최대 {MAX_IMAGE_COUNT}장. 첨부 순서대로 분석하며 "
+                    "현재 튜터 세션에만 사용합니다."
+                ),
+                key=SETUP_IMAGES_KEY,
+            )
             user_attempt = st.text_area(
                 "현재 풀이 또는 생각 (선택)",
                 height=150,
@@ -637,7 +689,8 @@ def _render_tutor_setup(supabase, user_id: str) -> None:
             )
             st.caption(
                 f"질문과 풀이는 각각 최대 {MAX_TUTOR_QUESTION_CHARS:,}자, "
-                f"{MAX_TUTOR_ATTEMPT_CHARS:,}자까지 사용할 수 있습니다."
+                f"{MAX_TUTOR_ATTEMPT_CHARS:,}자까지 사용할 수 있습니다. "
+                "텍스트 질문이나 문제 스크린샷 중 하나는 필요합니다."
             )
         start_submitted = st.form_submit_button(
             "AI 튜터 시작하기",
@@ -671,7 +724,24 @@ def _render_tutor_setup(supabase, user_id: str) -> None:
                 "선택한 참고자료를 찾을 수 없습니다. 다시 선택해주세요."
             )
 
-        cleaned_question = validate_tutor_question(question)
+        problem_images = (
+            prepare_images_for_ai(
+                [
+                    (
+                        uploaded_image.getvalue(),
+                        uploaded_image.name,
+                        uploaded_image.type,
+                    )
+                    for uploaded_image in uploaded_images
+                ]
+            )
+            if uploaded_images
+            else ()
+        )
+        cleaned_question = validate_tutor_problem_input(
+            question,
+            problem_images,
+        )
         cleaned_attempt = validate_tutor_attempt(user_attempt)
         selected_plan = plan_by_id[selected_plan_id]
         selected_task = (
@@ -714,6 +784,7 @@ def _render_tutor_setup(supabase, user_id: str) -> None:
                 ),
                 question=cleaned_question,
                 user_attempt=cleaned_attempt,
+                problem_images=problem_images,
             )
             status.write("힌트 1~3과 최종 풀이 구조를 검증했습니다.")
 
@@ -737,13 +808,17 @@ def _render_tutor_setup(supabase, user_id: str) -> None:
                 reference_was_limited=(
                     generation_result.reference_was_limited
                 ),
-                question=cleaned_question,
+                question=generation_result.resolved_question,
                 original_attempt=cleaned_attempt,
                 guidance=generation_result.guidance,
+                problem_images=[
+                    problem_image.to_session_payload()
+                    for problem_image in problem_images
+                ],
             )
         )
         started = True
-    except TutorInputValidationError as error:
+    except (TutorInputValidationError, ImageInputValidationError) as error:
         st.warning(str(error))
     except Exception as error:
         render_unexpected_error(

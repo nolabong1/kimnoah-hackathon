@@ -21,6 +21,7 @@ from services.review_material_repository import (
     save_source_review_material_bundle,
 )
 from services.review_material_service import (
+    compact_source_review_markdown,
     convert_source_review_to_markdown,
     estimate_source_review_ai_calls,
     find_source_evidence_page,
@@ -353,7 +354,8 @@ class SourceReviewMaterialTests(unittest.TestCase):
         ]:
             self.assertIn(heading, markdown)
         self.assertIn("- [ ] 정규화의 목적을 설명할 수 있다.", markdown)
-        self.assertIn("원문 근거 · 2페이지", markdown)
+        self.assertNotIn("원문 근거", markdown)
+        self.assertIn("- 정규화는 데이터 중복을 줄입니다.", markdown)
         self.assertEqual(
             find_source_evidence_page(
                 source_text,
@@ -473,10 +475,25 @@ class SourceReviewMaterialTests(unittest.TestCase):
         )
 
         self.assertEqual(len(fake_client.responses.calls), 1)
+        self.assertNotIn("원문 근거", result.content_markdown)
         self.assertIn(
-            f"> 원문 근거 · 1페이지: {source_evidence}",
+            "- 정규화는 데이터 중복을 줄입니다.",
             result.content_markdown,
         )
+
+    def test_legacy_inline_evidence_is_hidden_from_display_markdown(self):
+        legacy_markdown = (
+            "## 핵심 개념\n\n"
+            "- 정규화는 중복을 줄입니다.\n\n"
+            "> 원문 근거 · 2페이지: 정규화는 데이터 중복을 줄입니다.\n\n"
+            "## 최종 요약\n\n중복을 줄이는 구조화 과정입니다."
+        )
+
+        compact_markdown = compact_source_review_markdown(legacy_markdown)
+
+        self.assertNotIn("원문 근거", compact_markdown)
+        self.assertIn("- 정규화는 중복을 줄입니다.", compact_markdown)
+        self.assertIn("## 최종 요약", compact_markdown)
 
     @patch("services.review_material_service.get_openai_model")
     @patch("services.review_material_service.get_openai_client")
@@ -561,6 +578,28 @@ class SourceReviewMaterialTests(unittest.TestCase):
             saved_bundle["source_material"]["learning_objective_id"],
             "44444444-4444-4444-8444-444444444444",
         )
+
+    def test_image_bundle_saves_extracted_text_without_storage_path(self):
+        supabase = FakeSupabase()
+        material = ReviewMaterialDraft(
+            title="이미지 복습 자료",
+            content_markdown="## 원본 개요\n\n이미지에서 읽은 내용",
+        )
+
+        saved_bundle = save_source_review_material_bundle(
+            supabase=supabase,
+            user_id=USER_ID,
+            plan_id=PLAN_ID,
+            source_title="필기 이미지",
+            material_type="image",
+            source_text="[이미지 원본]\n\n정규화된 추출 텍스트",
+            material=material,
+        )
+
+        source = saved_bundle["source_material"]
+        self.assertEqual(source["material_type"], "image")
+        self.assertIn("정규화된 추출 텍스트", source["content_text"])
+        self.assertIsNone(source["storage_path"])
 
     def test_archive_bundles_only_owned_source_linked_reviews(self):
         valid_source = {

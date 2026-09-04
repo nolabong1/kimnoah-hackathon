@@ -3,22 +3,11 @@ from typing import Any
 
 import streamlit as st
 
+from services.presentation_labels import (
+    SHOP_CATEGORY_LABELS as CATEGORY_LABELS,
+    SHOP_RARITY_LABELS as RARITY_LABELS,
+)
 from views.shop_asset_utils import get_approved_shop_thumbnail_data_url
-
-
-CATEGORY_LABELS = {
-    "background": "배경",
-    "floor": "바닥",
-    "desk": "책상",
-    "chair": "의자",
-    "decoration": "장식",
-    "accent": "포인트",
-}
-RARITY_LABELS = {
-    "common": "일반",
-    "uncommon": "고급",
-    "rare": "희귀",
-}
 
 
 def build_shop_purchase_feedback(

@@ -1,9 +1,18 @@
 import hashlib
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import streamlit as st
 
+from services.image_input_service import (
+    MAX_IMAGE_COUNT,
+    MAX_IMAGE_UPLOAD_BYTES,
+    MAX_TOTAL_IMAGE_UPLOAD_BYTES,
+    ImageInputValidationError,
+    prepare_images_for_ai,
+)
+from services.image_visual_extraction_service import (
+    extract_images_with_ai_vision,
+)
 from services.learner_context_service import load_learner_context
 from services.learning_objective_repository import (
     get_learning_objectives_by_plan_ids,
@@ -12,12 +21,14 @@ from services.pdf_visual_extraction_service import (
     MAX_VISUAL_PDF_PAGES,
     extract_pdf_with_ai_vision,
 )
+from services.presentation_labels import SOURCE_MATERIAL_TYPE_LABELS
 from services.review_material_repository import (
     delete_source_review_material,
     get_source_review_material_bundles_by_plan,
     save_source_review_material_bundle,
 )
 from services.review_material_service import (
+    compact_source_review_markdown,
     estimate_source_review_ai_calls,
     generate_source_review_material,
 )
@@ -31,6 +42,7 @@ from services.source_material_service import (
     validate_source_title,
 )
 from services.study_plan_repository import get_user_study_plans
+from services.time_service import SEOUL_TIMEZONE
 from views.error_feedback import (
     render_unexpected_error,
     render_unexpected_warning,
@@ -56,6 +68,7 @@ OBJECTIVE_KEY = "source_review_material_objective_id"
 TITLE_KEY = "source_review_material_title"
 TEXT_KEY = "source_review_material_text"
 PDF_KEY = "source_review_material_pdf"
+IMAGE_KEY = "source_review_material_image"
 PDF_READING_MODE_KEY = "source_review_material_pdf_reading_mode"
 VIEW_MODE_KEY = "source_review_material_view_mode"
 ARCHIVE_PLAN_KEY = "source_review_material_archive_plan_id"
@@ -72,6 +85,7 @@ SOURCE_REVIEW_SESSION_KEYS = (
     TITLE_KEY,
     TEXT_KEY,
     PDF_KEY,
+    IMAGE_KEY,
     PDF_READING_MODE_KEY,
     VIEW_MODE_KEY,
     ARCHIVE_PLAN_KEY,
@@ -79,9 +93,6 @@ SOURCE_REVIEW_SESSION_KEYS = (
     DELETED_ITEM_CLEANUP_KEY,
     DELETE_MESSAGE_KEY,
 )
-
-SEOUL_TIMEZONE = ZoneInfo("Asia/Seoul")
-
 
 def _build_request_fingerprint(
     user_id: str,
@@ -275,7 +286,7 @@ def _render_saved_source_review_materials(
     if not saved_bundles:
         render_empty_state(
             "저장된 복습자료가 없습니다",
-            "새 자료 만들기에서 텍스트나 PDF로 복습자료를 생성해주세요.",
+            "새 자료 만들기에서 텍스트·PDF·이미지로 복습자료를 생성해주세요.",
             icon=":material/library_books:",
         )
         return
@@ -308,10 +319,14 @@ def _render_saved_source_review_materials(
             )
             selected_bundle = bundle_by_id[selected_bundle_id]
             source_material = selected_bundle["source_material"]
+            material_type_label = SOURCE_MATERIAL_TYPE_LABELS.get(
+                source_material.get("material_type", "text"),
+                "자료",
+            )
             st.caption(
                 "원본 · "
                 f"{source_material.get('title', '제목 없음')} · "
-                f"{'PDF' if source_material.get('material_type') == 'pdf' else '텍스트'}"
+                f"{material_type_label}"
             )
             st.caption(
                 "저장 · "
@@ -338,7 +353,11 @@ def _render_saved_source_review_materials(
             st.markdown(
                 f"## {review_material.get('title', '제목 없는 복습자료')}"
             )
-            st.markdown(review_material.get("content_markdown", ""))
+            st.markdown(
+                compact_source_review_markdown(
+                    review_material.get("content_markdown", "")
+                )
+            )
             with st.container(
                 horizontal=True,
                 horizontal_alignment="right",
@@ -357,17 +376,16 @@ def _render_saved_source_review_materials(
 
 
 def render_source_review_material(supabase, user) -> None:
-    """텍스트 또는 PDF 원본 기반 AI 복습자료 생성 화면을 표시합니다."""
+    """텍스트·PDF·이미지 원본 기반 AI 복습자료 화면을 표시합니다."""
 
     user_id = str(user.id)
     render_page_header(
         "AI 복습 자료 만들기",
-        "붙여넣은 글이나 텍스트형 PDF를 학습하기 좋은 한국어 자료로 정리합니다.",
+        "글, PDF 또는 학습 이미지를 근거가 확인된 한국어 자료로 정리합니다.",
     )
     st.caption(
-        "PDF 원본 파일은 저장하지 않으며 추출한 텍스트만 저장합니다. "
-        "페이지 경계와 읽기 순서를 보존해 분석하며, 스캔본과 이미지 전용 "
-        f"PDF는 현재 지원하지 않습니다. 원본은 최대 "
+        "PDF와 이미지 원본 파일은 저장하지 않으며 추출한 텍스트만 저장합니다. "
+        "페이지 경계와 읽기 순서를 보존해 분석합니다. 원본은 최대 "
         f"{MAX_SOURCE_TEXT_CHARS:,}자까지 처리합니다."
     )
 
@@ -491,11 +509,13 @@ def render_source_review_material(supabase, user) -> None:
                 st.session_state[OBJECTIVE_KEY] = next(iter(objective_by_id))
             source_type = st.segmented_control(
                 "원본 유형",
-                options=["text", "pdf"],
+                options=["text", "pdf", "image"],
                 default="text",
-                format_func=lambda value: (
-                    "텍스트 붙여넣기" if value == "text" else "PDF 업로드"
-                ),
+                format_func=lambda value: {
+                    "text": "텍스트 붙여넣기",
+                    "pdf": "PDF 업로드",
+                    "image": "이미지 업로드",
+                }[value],
                 key=SOURCE_TYPE_KEY,
                 required=True,
                 persist_state="page",
@@ -522,6 +542,7 @@ def render_source_review_material(supabase, user) -> None:
 
                 pasted_text = None
                 uploaded_pdf = None
+                uploaded_images = []
                 pdf_reading_mode = "text"
                 if source_type == "text":
                     pasted_text = st.text_area(
@@ -530,7 +551,7 @@ def render_source_review_material(supabase, user) -> None:
                         placeholder="복습 자료로 만들 내용을 붙여넣으세요.",
                         key=TEXT_KEY,
                     )
-                else:
+                elif source_type == "pdf":
                     pdf_reading_mode = st.selectbox(
                         "PDF 읽기 방식",
                         options=["text", "ai_visual"],
@@ -560,6 +581,22 @@ def render_source_review_material(supabase, user) -> None:
                         ),
                         key=PDF_KEY,
                     )
+                else:
+                    uploaded_images = st.file_uploader(
+                        f"학습 이미지 (최대 {MAX_IMAGE_COUNT}장)",
+                        type=["png", "jpg", "jpeg", "webp"],
+                        accept_multiple_files=True,
+                        max_upload_size=(
+                            MAX_IMAGE_UPLOAD_BYTES // (1024 * 1024)
+                        ),
+                        help=(
+                            f"파일당 최대 {MAX_IMAGE_UPLOAD_BYTES // (1024 * 1024)}MB, "
+                            f"전체 {MAX_TOTAL_IMAGE_UPLOAD_BYTES // (1024 * 1024)}MB, "
+                            f"최대 {MAX_IMAGE_COUNT}장. 첨부 순서대로 분석하며 "
+                            "원본 이미지는 저장하지 않습니다."
+                        ),
+                        key=IMAGE_KEY,
+                    )
 
                 submitted = st.form_submit_button(
                     "AI 복습 자료 생성하기",
@@ -574,7 +611,7 @@ def render_source_review_material(supabase, user) -> None:
             st.warning("이미 복습 자료를 생성하고 있습니다.")
         else:
             try:
-                if source_type not in {"text", "pdf"}:
+                if source_type not in {"text", "pdf", "image"}:
                     raise SourceMaterialValidationError(
                         "올바른 원본 유형을 선택해주세요."
                     )
@@ -586,10 +623,12 @@ def render_source_review_material(supabase, user) -> None:
                 cleaned_title = validate_source_title(source_title)
                 extraction_summary = None
                 visual_pdf_bytes = None
+                prepared_images = ()
+                image_filenames = []
                 if source_type == "text":
                     source_text = validate_source_text(pasted_text or "")
                     fingerprint_source = source_text
-                else:
+                elif source_type == "pdf":
                     if uploaded_pdf is None:
                         raise SourceMaterialValidationError(
                             "PDF 파일을 선택해주세요."
@@ -620,6 +659,29 @@ def render_source_review_material(supabase, user) -> None:
                         raise SourceMaterialValidationError(
                             "올바른 PDF 읽기 방식을 선택해주세요."
                         )
+                else:
+                    if not uploaded_images:
+                        raise SourceMaterialValidationError(
+                            "학습 이미지를 한 장 이상 선택해주세요."
+                        )
+                    prepared_images = prepare_images_for_ai(
+                        [
+                            (
+                                uploaded_image.getvalue(),
+                                uploaded_image.name,
+                                uploaded_image.type,
+                            )
+                            for uploaded_image in uploaded_images
+                        ]
+                    )
+                    image_filenames = [
+                        uploaded_image.name
+                        for uploaded_image in uploaded_images
+                    ]
+                    source_text = None
+                    fingerprint_source = "images:" + "|".join(
+                        image.sha256 for image in prepared_images
+                    )
 
                 request_fingerprint = _build_request_fingerprint(
                     user_id=user_id,
@@ -651,7 +713,7 @@ def render_source_review_material(supabase, user) -> None:
                         "AI 복습 자료 생성과 저장을 완료했습니다",
                         "AI 복습 자료 처리 중 오류가 발생했습니다",
                     ) as status:
-                        visual_extraction_calls = 0
+                        source_extraction_calls = 0
                         if visual_pdf_bytes is not None:
                             status.write(
                                 "PDF의 텍스트·표·도표를 AI 정밀 읽기로 추출합니다."
@@ -671,21 +733,37 @@ def render_source_review_material(supabase, user) -> None:
                             extraction_summary = (
                                 extraction_result.to_summary()
                             )
-                            visual_extraction_calls = 1
+                            source_extraction_calls = 1
+                        if prepared_images:
+                            status.write(
+                                f"이미지 {len(prepared_images)}장의 글자·수식·"
+                                "시각 정보를 AI로 읽습니다."
+                            )
+                            st.info(
+                                "선택한 이미지들은 한 번의 분석 요청에 첨부 순서대로 "
+                                "사용하며 원본 파일을 앱이나 Supabase에 저장하지 않습니다."
+                            )
+                            extraction_result = extract_images_with_ai_vision(
+                                images=prepared_images,
+                                filenames=image_filenames,
+                            )
+                            source_text = extraction_result.text
+                            extraction_summary = extraction_result.to_summary()
+                            source_extraction_calls = 1
                         if source_text is None:
                             raise RuntimeError(
-                                "PDF에서 복습자료용 텍스트를 준비하지 못했습니다."
+                                "원본에서 복습자료용 텍스트를 준비하지 못했습니다."
                             )
                         status.write("원본 텍스트와 선택한 학습목표를 확인했습니다.")
 
                         estimated_ai_calls = (
                             estimate_source_review_ai_calls(source_text)
-                            + visual_extraction_calls
+                            + source_extraction_calls
                         )
                         if estimated_ai_calls > 1:
                             st.info(
                                 "정상 처리 기준 AI 요청은 "
-                                f"{estimated_ai_calls}회이며 원문 근거 교정이 "
+                                f"{estimated_ai_calls}회이며 원문 대조 보정이 "
                                 "필요하면 추가 요청이 발생할 수 있습니다."
                             )
                         learner_context = None
@@ -707,7 +785,7 @@ def render_source_review_material(supabase, user) -> None:
                                     "원본 내용만으로 복습자료를 생성합니다."
                                 ),
                             )
-                        status.write("원문 근거를 유지하며 AI 복습 자료를 생성합니다.")
+                        status.write("원문 범위 안에서 간결한 AI 복습 자료를 생성합니다.")
                         generated_material = generate_source_review_material(
                             source_title=cleaned_title,
                             course_name=selected_plan["course_name"],
@@ -755,7 +833,10 @@ def render_source_review_material(supabase, user) -> None:
                         FINGERPRINT_STATE_KEY
                     ] = request_fingerprint
 
-            except SourceMaterialValidationError as error:
+            except (
+                SourceMaterialValidationError,
+                ImageInputValidationError,
+            ) as error:
                 st.warning(str(error))
             except Exception as error:
                 render_unexpected_error(
@@ -787,17 +868,21 @@ def render_source_review_material(supabase, user) -> None:
 
         review_material = result["review_material"]
         with st.container(border=True):
+            material_type_label = SOURCE_MATERIAL_TYPE_LABELS.get(
+                result["material_type"],
+                "자료",
+            )
             st.caption(
                 f"원본 · {result['source_title']} · "
-                f"{'PDF' if result['material_type'] == 'pdf' else '텍스트'}"
+                f"{material_type_label}"
             )
             st.caption(
                 "연결 목표 · "
                 f"{result.get('learning_objective_title', '제목 없음')}"
             )
             st.success(
-                "복습자료의 핵심 내용과 회상 문제에 사용된 원문 근거를 "
-                "확인했습니다."
+                "복습자료의 내용을 원문과 대조해 확인했습니다. "
+                "반복 인용은 숨기고 학습 내용만 표시합니다."
             )
             if result.get("pdf_reading_mode") == "ai_visual":
                 st.caption(
@@ -810,12 +895,31 @@ def render_source_review_material(supabase, user) -> None:
                 )
             extraction_summary = result.get("extraction_summary")
             if extraction_summary is not None:
-                st.caption(
-                    "PDF 추출 · "
-                    f"전체 {extraction_summary['page_count']}페이지 중 "
-                    f"{extraction_summary['extracted_page_count']}페이지 사용"
-                )
-                for warning in extraction_summary.get("warnings", ()):
-                    st.info(warning)
+                if result["material_type"] == "image":
+                    st.caption(
+                        f"이미지 판독 · {extraction_summary['image_count']}장 분석"
+                    )
+                    for image_index, image_summary in enumerate(
+                        extraction_summary["images"],
+                        start=1,
+                    ):
+                        st.caption(
+                            f"{image_index}. {image_summary['filename']} · "
+                            f"{image_summary['width']}×{image_summary['height']}px"
+                        )
+                        for warning in image_summary.get("warnings", ()):
+                            st.info(f"이미지 {image_index}: {warning}")
+                else:
+                    st.caption(
+                        "PDF 추출 · "
+                        f"전체 {extraction_summary['page_count']}페이지 중 "
+                        f"{extraction_summary['extracted_page_count']}페이지 사용"
+                    )
+                    for warning in extraction_summary.get("warnings", ()):
+                        st.info(warning)
             st.markdown(f"## {review_material['title']}")
-            st.markdown(review_material["content_markdown"])
+            st.markdown(
+                compact_source_review_markdown(
+                    review_material["content_markdown"]
+                )
+            )

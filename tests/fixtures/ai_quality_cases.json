@@ -245,7 +245,7 @@
   {
     "case_id": "tutor_linear_equation_hint",
     "feature": "tutor",
-    "prompt_version": "tutor_v1",
+    "prompt_version": "tutor_v3_multi_image",
     "course_name": "수학",
     "learner_level": 4,
     "learning_goal": "등식의 성질을 이용해 일차방정식을 스스로 해결한다.",
@@ -267,7 +267,7 @@
   {
     "case_id": "tutor_python_debugging_beginner",
     "feature": "tutor",
-    "prompt_version": "tutor_v1",
+    "prompt_version": "tutor_v3_multi_image",
     "course_name": "Python",
     "learner_level": 2,
     "learning_goal": "반복문 코드의 들여쓰기 오류 위치를 스스로 찾고 수정 방향을 설명한다.",
@@ -290,7 +290,7 @@
   {
     "case_id": "tutor_physics_vector_advanced",
     "feature": "tutor",
-    "prompt_version": "tutor_v1",
+    "prompt_version": "tutor_v3_multi_image",
     "course_name": "일반물리학",
     "learner_level": 9,
     "learning_goal": "경사면 위 물체에 작용하는 힘을 성분으로 분해하고 평형 조건을 세운다.",

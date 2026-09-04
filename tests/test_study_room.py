@@ -5,7 +5,11 @@ from pathlib import Path
 from PIL import Image
 from streamlit.testing.v1 import AppTest
 
-from models.shop import StudyRoomEquipment, StudyRoomItemTransform
+from models.shop import (
+    STUDY_ROOM_TRANSFORM_LIMITS,
+    StudyRoomEquipment,
+    StudyRoomItemTransform,
+)
 from services.shop_repository import (
     get_user_study_room,
     save_user_study_room,
@@ -181,6 +185,13 @@ class StudyRoomModelAndServiceTests(unittest.TestCase):
 
         self.assertEqual(scene["canvas_width"], 1600)
         self.assertEqual(scene["canvas_height"], 900)
+        self.assertEqual(
+            scene["transform_limits"],
+            {
+                name: list(bounds)
+                for name, bounds in STUDY_ROOM_TRANSFORM_LIMITS.items()
+            },
+        )
         self.assertTrue(
             str(scene["base_image"]).startswith("data:image/webp;base64,")
         )
@@ -363,6 +374,15 @@ class StudyRoomMigrationTests(unittest.TestCase):
             self.editor_sql,
         )
         self.assertIn("set transaction read only", self.editor_validation_sql)
+
+    def test_python_transform_limits_match_database_validation(self):
+        for property_name, bounds in STUDY_ROOM_TRANSFORM_LIMITS.items():
+            minimum, maximum = bounds
+            expected = (
+                f"v_property = '{property_name}' and "
+                f"(v_number < {minimum} or v_number > {maximum})"
+            )
+            self.assertIn(expected, self.editor_sql)
 
     def test_shop_test_session_restores_transform_snapshot(self):
         self.assertIn(

@@ -2,6 +2,7 @@ from collections.abc import Callable, Mapping, MutableMapping
 from time import monotonic
 from typing import Any
 
+from views.cache_config import DEFAULT_SESSION_CACHE_TTL_SECONDS
 from views.profile_state import update_profile_snapshot
 
 
@@ -16,7 +17,6 @@ ACTIVE_TAB_KEY = "gamification_active_tab"
 DATA_SNAPSHOT_KEY = "gamification_data_snapshot"
 DATA_USER_ID_KEY = "gamification_data_snapshot_user_id"
 DATA_LOADED_AT_KEY = "gamification_data_snapshot_loaded_at"
-DATA_CACHE_TTL_SECONDS = 30.0
 
 
 def _copy_gamification_snapshot(
@@ -53,7 +53,7 @@ def get_gamification_data_snapshot(
         and state.get(DATA_USER_ID_KEY) == normalized_user_id
         and isinstance(loaded_at, (int, float))
         and not isinstance(loaded_at, bool)
-        and 0 <= current_time - loaded_at < DATA_CACHE_TTL_SECONDS
+        and 0 <= current_time - loaded_at < DEFAULT_SESSION_CACHE_TTL_SECONDS
     ):
         return _copy_gamification_snapshot(cached)
 

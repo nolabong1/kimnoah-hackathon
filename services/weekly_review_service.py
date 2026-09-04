@@ -13,6 +13,7 @@ from services.openai_client import get_openai_client, get_openai_model
 
 MAX_REFLECTION_ANSWER_CHARS = 1_500
 MAX_REFLECTION_TOTAL_CHARS = 4_000
+WEEKLY_REVIEW_PROMPT_VERSION = "weekly_review_v1"
 REFLECTION_QUESTIONS = {
     "went_well": "이번 주에 가장 잘된 점은 무엇인가요?",
     "difficulty": "가장 어렵거나 계획대로 되지 않은 부분은 무엇인가요?",

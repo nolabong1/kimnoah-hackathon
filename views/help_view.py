@@ -1,5 +1,11 @@
 import streamlit as st
 
+from services.image_input_service import MAX_IMAGE_COUNT
+from services.reward_policy import (
+    DAILY_COMPLETION_BONUS_EXP,
+    TASK_COMPLETION_EXP,
+)
+
 
 @st.dialog(
     "AI 학습 코치 사용 안내",
@@ -90,8 +96,8 @@ def render_help_dialog() -> None:
                 (
                     ":material/psychology: AI로 도움받기",
                     (
-                        "글·PDF를 요약해 보관 → **AI 복습 자료 만들기**",
-                        "정답 대신 단계별 힌트 받기 → **단계별 힌트 AI 튜터**",
+                        "글·PDF·이미지를 요약해 보관 → **AI 복습 자료 만들기**",
+                        f"문제 글이나 스크린샷(최대 {MAX_IMAGE_COUNT}장)으로 힌트 받기 → **단계별 힌트 AI 튜터**",
                         "과제별 자료 생성 → 과제의 **AI 학습자료** 단계",
                     ),
                 ),
@@ -150,8 +156,9 @@ def render_help_dialog() -> None:
             with st.container(border=True):
                 st.markdown("**:material/stars: EXP·코인**")
                 st.markdown(
-                    "- 과제 완료: **10 EXP**, 오늘 활성 과제 전체 완료: "
-                    "**추가 20 EXP**\n"
+                    f"- 과제 완료: **{TASK_COMPLETION_EXP} EXP**, "
+                    "오늘 활성 과제 전체 완료: "
+                    f"**추가 {DAILY_COMPLETION_BONUS_EXP} EXP**\n"
                     "- 업적은 해금 시, 도전과제는 보상 수령 시 한 번 지급됩니다.\n"
                     "- 코인은 EXP와 분리된 꾸미기 재화로 **상점**에서 사용합니다."
                 )
@@ -166,11 +173,12 @@ def render_help_dialog() -> None:
         st.subheader("자주 막히는 지점")
         with st.container(border=True):
             st.markdown(
-                """
+                f"""
 - **오늘 과제가 보이지 않아요**: ‘오늘 학습’ 위쪽에서 표시할 저장 계획을 확인하세요.
 - **퀴즈 과제를 완료할 수 없어요**: 현재 퀴즈의 모든 문항을 맞혀야 완료 버튼이 열립니다. 재응시는 가능합니다.
 - **PDF에서 글자를 읽지 못해요**: 먼저 빠른 추출을 사용하고, 표·도표·수식이 중요하면 지원 페이지 범위에서 AI 정밀 읽기를 선택하세요. 이미지로만 된 PDF는 빠른 추출이 어렵습니다.
-- **만든 PDF 복습자료를 다시 보고 싶어요**: ‘AI 복습 자료 만들기’의 저장된 자료에서 다시 열거나 삭제할 수 있습니다.
+- **스크린샷이 분석되지 않아요**: PNG·JPG·JPEG·WEBP 형식으로 최대 {MAX_IMAGE_COUNT}장까지 올릴 수 있습니다. 파일당 5MB, 전체 15MB 이하로 맞추고, 문제와 필요한 표·도표만 선명하게 보이도록 첨부하세요. 여러 장은 선택한 순서대로 분석됩니다.
+- **만든 원본 복습자료를 다시 보고 싶어요**: ‘AI 복습 자료 만들기’의 저장된 자료에서 다시 열거나 삭제할 수 있습니다. 원본 이미지 파일은 저장하지 않고 AI가 추출한 텍스트만 보관합니다.
 - **AI 결과가 바로 저장되나요**: 학습계획은 미리보기 후 직접 저장하며, 원본 기반 복습자료는 생성 성공 후 저장됩니다.
 - **미래 과제를 완료하려고 해요**: 기존 재확인 안내를 읽고 명시적으로 확인해야 합니다.
                 """

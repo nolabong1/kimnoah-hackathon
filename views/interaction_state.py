@@ -1,6 +1,7 @@
 from collections.abc import MutableMapping
 from typing import Any
 
+from services.reward_policy import EXP_PER_LEVEL, calculate_level
 
 INTERACTION_STATE_PREFIX = "interaction_"
 INTERACTION_QUEUE_KEY = "interaction_event_queue"
@@ -304,13 +305,13 @@ def queue_level_up_interaction(
     ):
         return
 
-    expected_level = (total_exp // 100) + 1
+    expected_level = calculate_level(total_exp)
     previous_total_exp = total_exp - awarded_exp
-    previous_level = (previous_total_exp // 100) + 1
+    previous_level = calculate_level(previous_total_exp)
     if level != expected_level or level <= previous_level:
         return
 
-    next_level_exp = level * 100
+    next_level_exp = level * EXP_PER_LEVEL
     queue_interaction_event(
         state,
         {

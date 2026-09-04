@@ -467,13 +467,6 @@ _EDITOR_CSS = """
 _EDITOR_JS = """
 const instances = new WeakMap()
 
-const LIMITS = {
-  x: [-800, 800],
-  y: [-450, 450],
-  scale: [25, 200],
-  rotation: [-180, 180],
-}
-
 const defaultTransform = () => ({
   x: 0,
   y: 0,
@@ -495,18 +488,35 @@ const normalizeRotation = value => {
 
 const clone = value => JSON.parse(JSON.stringify(value ?? {}))
 
-function normalizeTransforms(rawTransforms, layers) {
+function resolveLimits(rawLimits) {
+  const names = ["x", "y", "scale", "rotation"]
+  const limits = {}
+  for (const name of names) {
+    const pair = rawLimits?.[name]
+    if (
+      !Array.isArray(pair)
+      || pair.length !== 2
+      || !Number.isFinite(Number(pair[0]))
+      || !Number.isFinite(Number(pair[1]))
+      || Number(pair[0]) > Number(pair[1])
+    ) return null
+    limits[name] = [Number(pair[0]), Number(pair[1])]
+  }
+  return limits
+}
+
+function normalizeTransforms(rawTransforms, layers, limits) {
   const source = clone(rawTransforms)
   const normalized = {}
   for (const layer of layers) {
     const raw = source[layer.slot] ?? {}
     normalized[layer.slot] = {
-      x: clamp(Math.round(Number(raw.x) || 0), ...LIMITS.x),
-      y: clamp(Math.round(Number(raw.y) || 0), ...LIMITS.y),
-      scale: clamp(Math.round(Number(raw.scale) || 100), ...LIMITS.scale),
+      x: clamp(Math.round(Number(raw.x) || 0), ...limits.x),
+      y: clamp(Math.round(Number(raw.y) || 0), ...limits.y),
+      scale: clamp(Math.round(Number(raw.scale) || 100), ...limits.scale),
       rotation: clamp(
         normalizeRotation(Number(raw.rotation) || 0),
-        ...LIMITS.rotation,
+        ...limits.rotation,
       ),
       flip_horizontal: raw.flip_horizontal === true,
     }
@@ -526,8 +536,16 @@ export default function (component) {
   const resetButton = parentElement.querySelector('[data-action="reset"]')
   if (!editor || !stage || !selectionLabel || !moodLabel || !characterHelp || !encourageButton || !flipButton || !resetButton) return
 
-  const canvasWidth = Number(data?.canvas_width) || 1600
-  const canvasHeight = Number(data?.canvas_height) || 900
+  const canvasWidth = Number(data?.canvas_width)
+  const canvasHeight = Number(data?.canvas_height)
+  const limits = resolveLimits(data?.transform_limits)
+  if (
+    !Number.isFinite(canvasWidth)
+    || canvasWidth <= 0
+    || !Number.isFinite(canvasHeight)
+    || canvasHeight <= 0
+    || !limits
+  ) return
   const layers = Array.isArray(data?.layers) ? data.layers : []
   let state = instances.get(parentElement)
   if (!state) {
@@ -545,7 +563,7 @@ export default function (component) {
     instances.set(parentElement, state)
   }
   if (state.cleanupPointer) state.cleanupPointer()
-  state.transforms = normalizeTransforms(data?.transforms, layers)
+  state.transforms = normalizeTransforms(data?.transforms, layers, limits)
   if (!layers.some(layer => layer.slot === state.selectedSlot)) {
     state.selectedSlot = null
   }
@@ -739,17 +757,17 @@ export default function (component) {
       if (mode === "move") {
         next.x = clamp(
           Math.round(startTransform.x + point.x - startPoint.x),
-          ...LIMITS.x,
+          ...limits.x,
         )
         next.y = clamp(
           Math.round(startTransform.y + point.y - startPoint.y),
-          ...LIMITS.y,
+          ...limits.y,
         )
       } else if (mode === "scale") {
         const distance = Math.hypot(point.x - center.x, point.y - center.y)
         next.scale = clamp(
           Math.round(startTransform.scale * distance / startDistance),
-          ...LIMITS.scale,
+          ...limits.scale,
         )
       } else if (mode === "rotate") {
         const angle = Math.atan2(point.y - center.y, point.x - center.x)

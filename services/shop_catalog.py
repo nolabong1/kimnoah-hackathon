@@ -6,6 +6,15 @@ from models.shop import (
 )
 
 
+SHOP_ASSET_CONTRACT_FIELDS = (
+    "category",
+    "allowed_slots",
+    "layer",
+    "overlay_path",
+    "thumbnail_path",
+)
+
+
 def _item(
     item_key: str,
     name_ko: str,
@@ -120,3 +129,16 @@ SHOP_ITEM_CATALOG: tuple[ShopItem, ...] = (
 
 
 SHOP_ITEMS_BY_KEY = {item.item_key: item for item in SHOP_ITEM_CATALOG}
+
+
+def validate_shop_asset_contract(item: ShopItem) -> None:
+    """DB 운영 정보가 배포된 로컬 에셋 계약을 벗어나지 않았는지 확인합니다."""
+
+    approved = SHOP_ITEMS_BY_KEY.get(item.item_key)
+    if approved is None:
+        raise ValueError("배포되지 않은 상점 에셋입니다.")
+    for field_name in SHOP_ASSET_CONTRACT_FIELDS:
+        if getattr(item, field_name) != getattr(approved, field_name):
+            raise ValueError(
+                f"상점 아이템의 {field_name} 값이 배포 에셋과 일치하지 않습니다."
+            )
