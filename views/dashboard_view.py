@@ -8,7 +8,11 @@ from services.study_plan_repository import (
     get_user_study_plans,
 )
 from services.time_service import get_seoul_today
-from views.completion_feedback import render_completion_feedback
+from services.weekly_review_service import is_plan_fully_completed
+from views.completion_feedback import (
+    render_completion_feedback,
+    render_weekly_review_continuation_card,
+)
 from views.error_feedback import render_unexpected_error
 from views.focus_sprint_component import (
     apply_focus_completion_request,
@@ -242,6 +246,7 @@ def _render_today_task_card(
     user,
     task: dict,
     today_tasks: list[dict],
+    plan_tasks: list[dict],
 ) -> None:
     """선택한 오늘 과제를 안내·콘텐츠·완료 단계로 표시합니다."""
 
@@ -462,6 +467,16 @@ def _render_today_task_card(
                     if isinstance(next_task, dict)
                     else None
                 ),
+                "completed_plan_id": (
+                    str(task["plan_id"])
+                    if not result["already_completed"]
+                    and is_plan_fully_completed(
+                        plan_tasks,
+                        completing_task_id=str(task["id"]),
+                    )
+                    else None
+                ),
+                "completed_plan_title": task.get("plan_title"),
             }
             st.rerun()
         except Exception as error:
@@ -575,6 +590,13 @@ def render_dashboard(supabase, user, profile: dict | None = None):
 
     plan_tasks = dashboard_snapshot["plan_tasks"]
     concept_masteries = dashboard_snapshot["concept_masteries"]
+
+    if is_plan_fully_completed(plan_tasks):
+        render_weekly_review_continuation_card(
+            plan_id=str(selected_plan_id),
+            plan_title=str(selected_plan["title"]),
+            widget_scope="dashboard",
+        )
 
     today_tasks = _build_today_tasks(
         plan_tasks=plan_tasks,
@@ -749,6 +771,7 @@ def render_dashboard(supabase, user, profile: dict | None = None):
             user=user,
             task=task_by_id[selected_task_id],
             today_tasks=today_tasks,
+            plan_tasks=plan_tasks,
         )
 
     with insight_column:

@@ -56,6 +56,18 @@ def render_saved_plans_test_page(supabase, user):
     render_saved_plans(supabase, user)
 
 
+def render_weekly_review_continuation_test_page():
+    from views.completion_feedback import (
+        render_weekly_review_continuation_card,
+    )
+
+    render_weekly_review_continuation_card(
+        plan_id="22222222-2222-4222-8222-222222222222",
+        plan_title="파이썬 7일 계획",
+        widget_scope="test",
+    )
+
+
 def render_source_review_test_page(supabase, user):
     from views.source_review_material_view import (
         render_source_review_material,
@@ -690,7 +702,37 @@ class AppLayoutTests(unittest.TestCase):
         )
         self.assertEqual(
             [tab.label for tab in app.tabs],
-            ["학습 기록과 나의 회고", "AI 주간 회고", "다음 주 계획"],
+            ["1. 기록·나의 회고", "2. AI 주간 회고", "3. 다음 7일 계획"],
+        )
+        self.assertTrue(
+            any(
+                "완료한 7일 계획은 여기서 끝나지 않습니다" in item.value
+                for item in app.info
+            )
+        )
+
+    def test_completed_plan_cta_routes_with_the_selected_plan(self):
+        from views.weekly_review_state import (
+            COMPLETED_PLAN_PENDING_KEY,
+            PENDING_NAVIGATION_KEY,
+        )
+
+        app = AppTest.from_function(
+            render_weekly_review_continuation_test_page
+        ).run()
+
+        app.button(
+            key=f"test_continue_weekly_review_{PLAN_ID}"
+        ).click().run()
+
+        self.assertEqual(list(app.exception), [])
+        self.assertEqual(
+            app.session_state[COMPLETED_PLAN_PENDING_KEY],
+            PLAN_ID,
+        )
+        self.assertEqual(
+            app.session_state[PENDING_NAVIGATION_KEY],
+            "주간 학습 회고",
         )
 
     def test_tutor_final_answer_uses_explicit_confirmation_dialog(self):

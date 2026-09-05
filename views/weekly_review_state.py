@@ -17,7 +17,9 @@ NEXT_PLAN_SAVED_ID_KEY = "weekly_review_next_plan_saved_id"
 SAVE_RUNNING_KEY = "weekly_review_save_running"
 SUCCESS_MESSAGE_KEY = "weekly_review_success_message"
 PENDING_NAVIGATION_KEY = "weekly_review_pending_navigation"
+COMPLETED_PLAN_PENDING_KEY = "weekly_review_completed_plan_pending"
 TEST_COMPLETED_PLAN_PENDING_KEY = "weekly_review_test_completed_plan_pending"
+SAMPLE_REFLECTION_PENDING_KEY = "weekly_review_sample_reflection_pending"
 
 
 def clear_weekly_review_state(state: MutableMapping[str, Any]) -> None:
@@ -73,3 +75,16 @@ def clear_next_plan_draft(state: MutableMapping[str, Any]) -> None:
         NEXT_PLAN_SAVED_ID_KEY,
     ):
         state.pop(key, None)
+
+
+def request_weekly_review_navigation(
+    state: MutableMapping[str, Any],
+    plan_id: str,
+) -> None:
+    """완료한 계획을 선택한 상태로 주간 학습 회고 이동을 예약합니다."""
+
+    normalized_plan_id = str(plan_id).strip()
+    if not normalized_plan_id:
+        raise ValueError("주간 회고로 이동할 계획 ID가 필요합니다.")
+    state[COMPLETED_PLAN_PENDING_KEY] = normalized_plan_id
+    state[PENDING_NAVIGATION_KEY] = "주간 학습 회고"

@@ -8,6 +8,8 @@ from streamlit.testing.v1 import AppTest
 from views.test_tools_view import (
     ACCESS_ALLOWED_KEY,
     ACCESS_CHECKED_KEY,
+    PENDING_NAVIGATION_KEY,
+    SAMPLE_INPUT_SELECT_KEY,
     STREAK_PREVIEW_KEY,
     TEST_TOOLS_EXPANDER_KEY,
     build_streak_preview_profile,
@@ -197,6 +199,13 @@ class TestToolsLayoutTests(unittest.TestCase):
         self.assertIn("오늘 테스트 기록 초기화", button_labels)
         self.assertIn("이번 주 계획 완료 처리", button_labels)
         self.assertIn("상점 테스트 시작", button_labels)
+        self.assertIn("선택한 샘플 입력 채우기", button_labels)
+        self.assertTrue(
+            any(
+                selectbox.label == "샘플을 채울 기능"
+                for selectbox in app.sidebar.selectbox
+            )
+        )
         self.assertTrue(
             any(
                 selectbox.label == "미리 볼 연속 학습일"
@@ -249,6 +258,57 @@ class TestToolsLayoutTests(unittest.TestCase):
         self.assertEqual(list(app.exception), [])
         button_labels = [button.label for button in app.sidebar.button]
         self.assertIn("상점 테스트 초기화", button_labels)
+
+    def test_sample_button_fills_input_and_requests_target_navigation(self):
+        from views.source_review_material_view import TEXT_KEY, TITLE_KEY
+
+        plan = {
+            "id": PLAN_ID,
+            "title": "파이썬 테스트 계획",
+            "start_date": "2026-08-17",
+        }
+        task = {
+            "id": "task-1",
+            "status": "pending",
+            "task_type": "learn",
+        }
+        app = AppTest.from_function(
+            render_test_tools_page,
+            args=(object(), SimpleNamespace(id=USER_ID)),
+        )
+        app.session_state[TEST_TOOLS_EXPANDER_KEY] = True
+
+        with (
+            patch(
+                "views.test_tools_view.can_use_test_tools",
+                return_value=True,
+            ),
+            patch(
+                "views.test_tools_view.get_user_study_plans",
+                return_value=[plan],
+            ),
+            patch(
+                "views.test_tools_view.get_study_plan_tasks",
+                return_value=[task],
+            ),
+            patch(
+                "views.test_tools_view.get_active_shop_test_session",
+                return_value=None,
+            ),
+        ):
+            app.run()
+            app.selectbox(key=SAMPLE_INPUT_SELECT_KEY).set_value(
+                "source_review"
+            ).run()
+            app.button(key="test_tools_apply_sample_input").click().run()
+
+        self.assertEqual(list(app.exception), [])
+        self.assertEqual(
+            app.session_state[PENDING_NAVIGATION_KEY],
+            "AI 복습 자료 만들기",
+        )
+        self.assertTrue(app.session_state[TITLE_KEY])
+        self.assertGreater(len(app.session_state[TEXT_KEY]), 200)
 
     def test_page_views_no_longer_render_test_buttons(self):
         saved_plan_source = (

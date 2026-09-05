@@ -24,17 +24,21 @@ from services.weekly_review_service import (
     convert_weekly_review_to_markdown,
     generate_weekly_review,
     get_default_next_plan_start_date,
+    is_plan_fully_completed,
     is_weekly_review_eligible,
     validate_reflection_answers,
 )
 from views.weekly_review_state import (
+    COMPLETED_PLAN_PENDING_KEY,
     NEXT_PLAN_DRAFT_KEY,
     NEXT_PLAN_SAVED_ID_KEY,
     NEXT_PLAN_SAVED_KEY,
     PLAN_SELECT_KEY,
+    PENDING_NAVIGATION_KEY,
     apply_selected_plan_state,
     clear_weekly_review_state,
     create_next_plan_draft_state,
+    request_weekly_review_navigation,
 )
 
 
@@ -252,6 +256,31 @@ class WeeklyReviewEligibilityTests(unittest.TestCase):
         tasks = [build_task(status="completed"), build_task(status="pending")]
         self.assertFalse(
             is_weekly_review_eligible(plan, tasks, date(2026, 8, 10))
+        )
+
+    def test_plan_completion_includes_the_successful_pending_task(self):
+        tasks = [
+            {"id": "task-1", "status": "completed"},
+            {"id": "task-2", "status": "pending"},
+        ]
+
+        self.assertFalse(is_plan_fully_completed(tasks))
+        self.assertTrue(
+            is_plan_fully_completed(
+                tasks,
+                completing_task_id="task-2",
+            )
+        )
+
+    def test_empty_or_partially_completed_plan_is_not_fully_completed(self):
+        self.assertFalse(is_plan_fully_completed([]))
+        self.assertFalse(
+            is_plan_fully_completed(
+                [
+                    {"id": "task-1", "status": "completed"},
+                    {"id": "task-2", "status": "skipped"},
+                ]
+            )
         )
 
 
@@ -566,6 +595,15 @@ class WeeklyReviewPersistenceTests(unittest.TestCase):
 
         clear_weekly_review_state(state)
         self.assertNotIn(PLAN_SELECT_KEY, state)
+        self.assertEqual(state["saved_plan_selected_id"], "keep-saved-plan")
+
+    def test_completion_navigation_selects_plan_without_touching_other_state(self):
+        state = {"saved_plan_selected_id": "keep-saved-plan"}
+
+        request_weekly_review_navigation(state, PLAN_ID)
+
+        self.assertEqual(state[COMPLETED_PLAN_PENDING_KEY], PLAN_ID)
+        self.assertEqual(state[PENDING_NAVIGATION_KEY], "주간 학습 회고")
         self.assertEqual(state["saved_plan_selected_id"], "keep-saved-plan")
 
 

@@ -80,6 +80,30 @@ def is_weekly_review_eligible(
     return bool(tasks) and all(task.get("status") == "completed" for task in tasks)
 
 
+def is_plan_fully_completed(
+    tasks: list[dict],
+    completing_task_id: str | None = None,
+) -> bool:
+    """현재 완료 요청까지 반영했을 때 계획의 모든 과제가 완료되는지 판정합니다."""
+
+    if not tasks:
+        return False
+
+    completing_task_id = (
+        str(completing_task_id)
+        if completing_task_id is not None
+        else None
+    )
+    return all(
+        task.get("status") == "completed"
+        or (
+            completing_task_id is not None
+            and str(task.get("id")) == completing_task_id
+        )
+        for task in tasks
+    )
+
+
 def calculate_weekly_statistics(
     plan: dict,
     tasks: list[dict],

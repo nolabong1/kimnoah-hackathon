@@ -16,7 +16,10 @@ from views.saved_plans_view import (
     PENDING_NAVIGATION_KEY as SAVED_PLANS_PENDING_NAVIGATION_KEY,
     render_saved_plans,
 )
-from views.create_plan_view import render_create_plan
+from views.create_plan_view import (
+    clear_create_plan_input_state,
+    render_create_plan,
+)
 from views.cursor_style import apply_site_cursor
 from views.dashboard_view import render_dashboard
 from views.error_feedback import render_unexpected_error
@@ -55,6 +58,8 @@ from views.source_review_material_view import (
 from views.tutor_state import clear_tutor_state
 from views.tutor_view import render_tutor
 from views.test_tools_view import (
+    PENDING_NAVIGATION_KEY as TEST_TOOLS_PENDING_NAVIGATION_KEY,
+    SAMPLE_INPUT_MESSAGE_KEY,
     build_streak_preview_profile,
     clear_test_tools_state,
     render_sidebar_test_tools,
@@ -97,6 +102,7 @@ def _logout_current_user(supabase) -> None:
     clear_profile_state(st.session_state)
     clear_reference_material_state(st.session_state)
     clear_study_plan_data_state(st.session_state)
+    clear_create_plan_input_state(st.session_state)
     clear_auth_session_state()
 
 
@@ -500,6 +506,11 @@ pending_navigation = st.session_state.pop(
 )
 if pending_navigation is None:
     pending_navigation = st.session_state.pop(
+        TEST_TOOLS_PENDING_NAVIGATION_KEY,
+        None,
+    )
+if pending_navigation is None:
+    pending_navigation = st.session_state.pop(
         WEEKLY_REVIEW_PENDING_NAVIGATION_KEY,
         None,
     )
@@ -525,6 +536,13 @@ if pending_navigation in shop_hub_section_by_navigation:
     )
 if pending_navigation in pages_by_title:
     st.switch_page(pages_by_title[pending_navigation])
+
+sample_input_message = st.session_state.pop(
+    SAMPLE_INPUT_MESSAGE_KEY,
+    None,
+)
+if sample_input_message:
+    st.toast(sample_input_message, icon=":material/edit_note:")
 
 
 gamification_notifications = render_gamification_notifications()

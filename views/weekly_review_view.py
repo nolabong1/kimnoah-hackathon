@@ -50,6 +50,7 @@ from views.ui_components import (
     render_page_header,
 )
 from views.weekly_review_state import (
+    COMPLETED_PLAN_PENDING_KEY,
     NEXT_PLAN_DRAFT_KEY,
     NEXT_PLAN_METADATA_KEY,
     NEXT_PLAN_RUNNING_KEY,
@@ -60,6 +61,7 @@ from views.weekly_review_state import (
     REGENERATION_CONFIRM_KEY,
     REQUEST_RUNNING_KEY,
     SAVE_RUNNING_KEY,
+    SAMPLE_REFLECTION_PENDING_KEY,
     SUCCESS_MESSAGE_KEY,
     TEST_COMPLETED_PLAN_PENDING_KEY,
     apply_selected_plan_state,
@@ -675,9 +677,15 @@ def render_weekly_review(supabase, user) -> None:
     }
     eligible_plan_ids = list(entry_by_id)
     pending_completed_plan_id = st.session_state.pop(
+        COMPLETED_PLAN_PENDING_KEY,
+        None,
+    )
+    test_completed_plan_id = st.session_state.pop(
         TEST_COMPLETED_PLAN_PENDING_KEY,
         None,
     )
+    if pending_completed_plan_id is None:
+        pending_completed_plan_id = test_completed_plan_id
     if pending_completed_plan_id in eligible_plan_ids:
         st.session_state[PLAN_SELECT_KEY] = pending_completed_plan_id
     if st.session_state.get(PLAN_SELECT_KEY) not in eligible_plan_ids:
@@ -694,8 +702,20 @@ def render_weekly_review(supabase, user) -> None:
         ),
         key=PLAN_SELECT_KEY,
     )
+    sample_reflection_answers = st.session_state.pop(
+        SAMPLE_REFLECTION_PENDING_KEY,
+        None,
+    )
     apply_selected_plan_state(st.session_state, selected_plan_id)
     selected_plan, selected_tasks = entry_by_id[selected_plan_id]
+
+    if isinstance(sample_reflection_answers, dict):
+        for answer_key in REFLECTION_QUESTIONS:
+            sample_answer = sample_reflection_answers.get(answer_key)
+            if isinstance(sample_answer, str):
+                st.session_state[
+                    _reflection_widget_key(selected_plan_id, answer_key)
+                ] = sample_answer
 
     try:
         existing_review = get_weekly_review_by_plan(
@@ -755,8 +775,21 @@ def render_weekly_review(supabase, user) -> None:
                 f"완료 {statistics.completed_tasks}/{statistics.total_tasks}개"
             )
 
+    st.info(
+        "완료한 7일 계획은 여기서 끝나지 않습니다. "
+        "**1. 기록과 나의 회고 → 2. AI 주간 회고 → "
+        "3. 다음 7일 계획 생성·저장** 순서로 이어가세요.",
+        icon=":material/route:",
+    )
+    if existing_review:
+        st.success(
+            "AI 주간 회고가 준비되어 있습니다. "
+            "마지막 탭에서 다음 7일 계획을 이어서 만들 수 있습니다.",
+            icon=":material/event_upcoming:",
+        )
+
     record_tab, review_tab, next_plan_tab = st.tabs(
-        ["학습 기록과 나의 회고", "AI 주간 회고", "다음 주 계획"]
+        ["1. 기록·나의 회고", "2. AI 주간 회고", "3. 다음 7일 계획"]
     )
 
     with record_tab:
@@ -831,7 +864,7 @@ def render_weekly_review(supabase, user) -> None:
         if existing_review is None:
             render_empty_state(
                 "AI 회고가 아직 없습니다",
-                "학습 기록과 나의 회고 탭에서 답변을 작성해 생성해주세요.",
+                "1단계에서 답변을 작성해 AI 주간 회고를 생성해주세요.",
                 icon=":material/auto_awesome:",
             )
         else:
@@ -841,7 +874,8 @@ def render_weekly_review(supabase, user) -> None:
         if existing_review is None:
             render_empty_state(
                 "다음 계획을 만들 준비가 필요합니다",
-                "AI 주간 회고를 저장하면 다음 7일 계획을 만들 수 있습니다.",
+                "1단계의 회고를 작성하고 2단계의 AI 회고를 저장하면 "
+                "다음 7일 계획을 만들 수 있습니다.",
                 icon=":material/event_upcoming:",
             )
         else:

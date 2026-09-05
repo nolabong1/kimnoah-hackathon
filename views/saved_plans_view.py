@@ -8,8 +8,10 @@ from services.study_plan_repository import (
     get_user_study_plans,
 )
 from services.time_service import get_seoul_today
+from services.weekly_review_service import is_plan_fully_completed
 from views.completion_feedback import (
     render_completion_feedback,
+    render_weekly_review_continuation_card,
 )
 from views.error_feedback import render_unexpected_error
 from views.gamification_state import queue_gamification_notifications
@@ -174,6 +176,8 @@ def complete_task_and_rerun(
     supabase,
     task_id,
     scheduled_date,
+    plan: dict,
+    plan_tasks: list[dict],
 ):
     try:
         with st.spinner(
@@ -219,6 +223,16 @@ def complete_task_and_rerun(
                 "daily_bonus_exp",
                 0,
             ),
+            "completed_plan_id": (
+                str(plan["id"])
+                if not result["already_completed"]
+                and is_plan_fully_completed(
+                    plan_tasks,
+                    completing_task_id=str(task_id),
+                )
+                else None
+            ),
+            "completed_plan_title": plan.get("title"),
         }
 
         st.session_state.saved_plan_pending_open_date = (
@@ -264,6 +278,7 @@ def _render_saved_task_card(
     supabase,
     user_id: str,
     selected_plan: dict,
+    plan_tasks: list[dict],
     task: dict,
     today: str,
 ) -> None:
@@ -376,6 +391,8 @@ def _render_saved_task_card(
                         supabase=supabase,
                         task_id=task["id"],
                         scheduled_date=task["scheduled_date"],
+                        plan=selected_plan,
+                        plan_tasks=plan_tasks,
                     )
 
                 if st.button(
@@ -402,6 +419,8 @@ def _render_saved_task_card(
                     supabase=supabase,
                     task_id=task["id"],
                     scheduled_date=task["scheduled_date"],
+                    plan=selected_plan,
+                    plan_tasks=plan_tasks,
                 )
 
 
@@ -548,6 +567,13 @@ def render_saved_plans(supabase, user):
         )
         return
 
+    if is_plan_fully_completed(saved_tasks):
+        render_weekly_review_continuation_card(
+            plan_id=str(selected_plan_id),
+            plan_title=str(selected_plan["title"]),
+            widget_scope="saved_plan",
+        )
+
     render_learning_objective_connections(
         supabase=supabase,
         user_id=str(user.id),
@@ -604,6 +630,7 @@ def render_saved_plans(supabase, user):
             supabase=supabase,
             user_id=str(user.id),
             selected_plan=selected_plan,
+            plan_tasks=saved_tasks,
             task=task,
             today=today,
         )

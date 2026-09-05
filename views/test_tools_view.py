@@ -19,6 +19,7 @@ from services.study_plan_repository import (
     get_user_study_plans,
     reset_today_test_progress,
 )
+from services.time_service import get_seoul_today
 from services.test_tools_repository import can_use_test_tools
 from views.error_feedback import render_unexpected_error
 from views.profile_state import update_profile_snapshot
@@ -30,6 +31,11 @@ from views.study_plan_data_state import (
     get_study_plan_list_snapshot,
     get_study_plan_tasks_snapshot,
     invalidate_study_task_snapshots,
+)
+from views.test_sample_input_state import (
+    SAMPLE_INPUT_LABELS,
+    SAMPLE_INPUT_OPTIONS,
+    apply_sample_input,
 )
 from views.streak_presentation import (
     get_streak_tier_label,
@@ -53,6 +59,9 @@ ACCESS_CHECKED_KEY = "test_tools_access_checked"
 ACCESS_ALLOWED_KEY = "test_tools_access_allowed"
 STREAK_PREVIEW_KEY = "test_tools_streak_preview_days"
 STREAK_PREVIEW_OPTIONS = (None, 0, 1, 3, 7, 14, 30)
+SAMPLE_INPUT_SELECT_KEY = "test_tools_sample_input_type"
+SAMPLE_INPUT_MESSAGE_KEY = "test_tools_sample_input_message"
+PENDING_NAVIGATION_KEY = "test_tools_pending_navigation"
 
 
 def _is_streak_preview_option(value: object) -> bool:
@@ -206,6 +215,37 @@ def _render_reset_tool(supabase) -> None:
         width="stretch",
     ):
         st.session_state[RESET_CONFIRM_KEY] = True
+        st.rerun()
+
+
+def _render_sample_input_tool() -> None:
+    """유료 호출이나 저장 없이 선택 화면의 샘플 입력을 채웁니다."""
+
+    st.markdown("**샘플 입력 자동 채우기**")
+    st.caption(
+        "선택한 화면으로 이동해 입력만 채웁니다. AI 생성과 저장은 직접 "
+        "버튼을 눌러 실행합니다."
+    )
+    sample_type = st.selectbox(
+        "샘플을 채울 기능",
+        options=SAMPLE_INPUT_OPTIONS,
+        format_func=lambda value: SAMPLE_INPUT_LABELS[value],
+        key=SAMPLE_INPUT_SELECT_KEY,
+    )
+    if st.button(
+        "선택한 샘플 입력 채우기",
+        key="test_tools_apply_sample_input",
+        type="primary",
+        icon=":material/edit_note:",
+        width="stretch",
+    ):
+        target_page, message = apply_sample_input(
+            st.session_state,
+            sample_type,
+            get_seoul_today(),
+        )
+        st.session_state[SAMPLE_INPUT_MESSAGE_KEY] = message
+        st.session_state[PENDING_NAVIGATION_KEY] = target_page
         st.rerun()
 
 
@@ -669,6 +709,8 @@ def render_sidebar_test_tools(
             if SHOP_TEST_MESSAGE_KEY in st.session_state:
                 st.success(st.session_state.pop(SHOP_TEST_MESSAGE_KEY))
 
+            _render_sample_input_tool()
+            st.divider()
             _render_reset_tool(supabase)
             _render_plan_completion_tool(
                 supabase=supabase,

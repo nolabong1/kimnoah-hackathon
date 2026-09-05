@@ -1,4 +1,6 @@
+from collections.abc import MutableMapping
 from datetime import timedelta
+from typing import Any
 
 import streamlit as st
 
@@ -26,6 +28,31 @@ CURRENT_LEVEL_OPTIONS = {
     9: "심화 · 어려운 문제를 효율적으로 해결하는 단계",
     10: "숙련 · 다른 사람에게 설명하고 확장하는 단계",
 }
+COURSE_NAME_INPUT_KEY = "create_plan_course_name"
+STUDY_GOAL_INPUT_KEY = "create_plan_study_goal"
+CURRENT_LEVEL_INPUT_KEY = "create_plan_current_level"
+START_DATE_INPUT_KEY = "create_plan_start_date"
+
+
+def get_available_minutes_input_key(day_offset: int) -> str:
+    """계획 생성 화면의 일차별 학습 가능 시간 위젯 키를 반환합니다."""
+
+    return f"available_minutes_{day_offset}"
+
+
+def clear_create_plan_input_state(
+    state: MutableMapping[str, Any],
+) -> None:
+    """로그아웃 시 계획 생성 입력값만 제거합니다."""
+
+    for key in (
+        COURSE_NAME_INPUT_KEY,
+        STUDY_GOAL_INPUT_KEY,
+        CURRENT_LEVEL_INPUT_KEY,
+        START_DATE_INPUT_KEY,
+        *(get_available_minutes_input_key(day_offset) for day_offset in range(7)),
+    ):
+        state.pop(key, None)
 
 
 def render_create_plan(supabase, user):
@@ -43,6 +70,7 @@ def render_create_plan(supabase, user):
                 "과목 또는 학습 주제",
                 placeholder="예: 파이썬 기초",
                 max_chars=100,
+                key=COURSE_NAME_INPUT_KEY,
             )
 
             study_goal = st.text_area(
@@ -52,6 +80,7 @@ def render_create_plan(supabase, user):
                     "간단한 프로그램 만들기"
                 ),
                 max_chars=1000,
+                key=STUDY_GOAL_INPUT_KEY,
             )
 
             level_column, date_column = st.columns(
@@ -70,6 +99,7 @@ def render_create_plan(supabase, user):
                         "현재 과목에 대한 자신의 수준과 가장 가까운 "
                         "단계를 선택하세요."
                     ),
+                    key=CURRENT_LEVEL_INPUT_KEY,
                 )
                 st.caption(
                     "1단계는 처음 배우는 수준, "
@@ -80,6 +110,7 @@ def render_create_plan(supabase, user):
                 start_date = st.date_input(
                     "학습 시작일",
                     value=get_seoul_today(),
+                    key=START_DATE_INPUT_KEY,
                 )
 
             st.markdown("#### 2. 하루별 학습 가능 시간")
@@ -106,10 +137,7 @@ def render_create_plan(supabase, user):
                             max_value=480,
                             value=60,
                             step=10,
-                            key=(
-                                f"available_minutes_"
-                                f"{day_offset}"
-                            ),
+                            key=get_available_minutes_input_key(day_offset),
                         )
                     )
 
