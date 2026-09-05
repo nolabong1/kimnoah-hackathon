@@ -7,6 +7,10 @@ from services.pdf_visual_extraction_service import (
 from services.image_visual_extraction_service import (
     IMAGE_VISUAL_EXTRACTION_PROMPT_VERSION,
 )
+from services.learning_assessment_service import (
+    LEARNING_ASSESSMENT_PROMPT_VERSION,
+)
+from services.mock_exam_service import MOCK_EXAM_PROMPT_VERSION
 from services.quiz_service import QUIZ_PROMPT_VERSION
 from services.review_material_service import (
     REVIEW_MATERIAL_PROMPT_VERSION,
@@ -32,6 +36,8 @@ class PromptVersionTests(unittest.TestCase):
             WEEKLY_REVIEW_PROMPT_VERSION,
             PDF_VISUAL_EXTRACTION_PROMPT_VERSION,
             IMAGE_VISUAL_EXTRACTION_PROMPT_VERSION,
+            LEARNING_ASSESSMENT_PROMPT_VERSION,
+            MOCK_EXAM_PROMPT_VERSION,
         )
 
         for version in versions:

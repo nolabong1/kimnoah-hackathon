@@ -265,17 +265,31 @@ path = "supabase_image_source_material.sql"
 validation = "supabase_image_source_material_validation.sql"
 depends_on = ["038_learning_objective_auto_reviews"]
 
+[[migrations]]
+order = 40
+id = "040_learning_assessments"
+path = "supabase_learning_assessments.sql"
+validation = "supabase_learning_assessments_validation.sql"
+depends_on = ["039_image_source_material"]
+
+[[migrations]]
+order = 41
+id = "041_mock_exams"
+path = "supabase_mock_exams.sql"
+validation = "supabase_mock_exams_validation.sql"
+depends_on = ["040_learning_assessments"]
+
 [[standalone_checks]]
 id = "adaptive_learning_integration"
 path = "supabase_adaptive_learning_integration_validation.sql"
-after = "039_image_source_material"
+after = "041_mock_exams"
 
 [[standalone_checks]]
 id = "shop_room_integration"
 path = "supabase_shop_room_integration_validation.sql"
-after = "039_image_source_material"
+after = "041_mock_exams"
 
 [[standalone_checks]]
 id = "learning_objective_integration"
 path = "supabase_learning_objective_integration_validation.sql"
-after = "039_image_source_material"
+after = "041_mock_exams"

@@ -412,6 +412,10 @@ class LearningPerformanceViewTests(unittest.TestCase):
                 "views.learning_performance_view.get_weekly_review_by_plan",
                 return_value=None,
             ) as load_review,
+            patch(
+                "views.learning_performance_view."
+                "render_learning_assessment_section",
+            ) as render_assessment,
         ):
             app.run()
 
@@ -424,6 +428,7 @@ class LearningPerformanceViewTests(unittest.TestCase):
             plan_id=PLAN_ID,
         )
         load_review.assert_called_once()
+        render_assessment.assert_called_once()
 
     def test_report_view_separates_student_reflection_from_ai_review(self):
         data = _performance_data()
@@ -462,6 +467,10 @@ class LearningPerformanceViewTests(unittest.TestCase):
             patch(
                 "views.learning_performance_view.get_weekly_review_by_plan",
                 return_value=review,
+            ),
+            patch(
+                "views.learning_performance_view."
+                "render_learning_assessment_section",
             ),
         ):
             app.run()

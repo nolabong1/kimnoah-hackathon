@@ -15,6 +15,8 @@ from services.study_plan_repository import get_user_study_plans
 from services.weekly_review_repository import get_weekly_review_by_plan
 from services.weekly_review_service import REFLECTION_QUESTIONS
 from views.error_feedback import render_unexpected_error
+from views.learning_assessment_state import consume_pending_assessment_plan
+from views.learning_assessment_ui import render_learning_assessment_section
 from views.study_plan_data_state import get_study_plan_list_snapshot
 from views.ui_components import (
     MetricItem,
@@ -174,9 +176,9 @@ def _render_quiz_evidence(report: LearningPerformanceReport) -> None:
 
 
 def _render_before_after_evidence(report: LearningPerformanceReport) -> None:
-    """첫 평가와 마지막 평가 시점의 직접 비교를 표시합니다."""
+    """퀴즈 재응시와 문항별 숙련도 변화 근거를 표시합니다."""
 
-    st.subheader("학습 전후 비교")
+    st.subheader("퀴즈·숙련도 변화")
     summary = summarize_before_after_evidence(report)
     render_metric_row(
         [
@@ -211,7 +213,7 @@ def _render_before_after_evidence(report: LearningPerformanceReport) -> None:
     )
     st.caption(
         "퀴즈 평균은 각 퀴즈의 첫 응시와 최근 응시를 비교합니다. 개념 숙련도는 "
-        "이 계획 문항의 첫 평가 직전과 마지막 평가 직후를 비교하며, 변화와 "
+        "이 계획 퀴즈 문항의 첫 응시 직전과 마지막 응시 직후를 비교하며, 변화와 "
         "학습의 인과관계를 단정하지 않습니다."
     )
 
@@ -388,6 +390,9 @@ def render_learning_performance(supabase, user) -> None:
 
     plans_by_id = {str(plan["id"]): plan for plan in plans}
     plan_options = list(plans_by_id)
+    pending_plan_id = consume_pending_assessment_plan(st.session_state)
+    if pending_plan_id in plans_by_id:
+        st.session_state[PERFORMANCE_PLAN_SELECT_KEY] = pending_plan_id
     selected_state = st.session_state.get(PERFORMANCE_PLAN_SELECT_KEY)
     if selected_state not in plan_options:
         st.session_state.pop(PERFORMANCE_PLAN_SELECT_KEY, None)
@@ -434,9 +439,16 @@ def render_learning_performance(supabase, user) -> None:
     st.subheader(report.plan_title)
     _render_report_download(report, existing_review)
 
-    overview_tab, objective_tab, evidence_tab = st.tabs(
-        ["성과 요약", "학습목표별 성과", "성장 근거"]
+    assessment_tab, overview_tab, objective_tab, evidence_tab = st.tabs(
+        ["학습 전·후 평가", "성과 요약", "학습목표별 성과", "성장 근거"]
     )
+    with assessment_tab:
+        render_learning_assessment_section(
+            supabase=supabase,
+            user=user,
+            plan=performance_data["plan"],
+            objectives=performance_data["objectives"],
+        )
     with overview_tab:
         _render_overview(report)
     with objective_tab:

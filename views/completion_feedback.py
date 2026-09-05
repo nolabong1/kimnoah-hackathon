@@ -2,6 +2,9 @@ import streamlit as st
 
 from views.interaction_feedback import render_interaction_event_batch
 from views.interaction_state import pop_completion_interaction_events
+from views.learning_assessment_state import (
+    request_learning_assessment_navigation,
+)
 from views.weekly_review_state import request_weekly_review_navigation
 
 
@@ -11,22 +14,54 @@ def render_weekly_review_continuation_card(
     plan_title: str,
     widget_scope: str,
 ) -> None:
-    """완료한 7일 계획을 회고와 다음 계획으로 연결하는 안내를 표시합니다."""
+    """완료 계획을 사후 평가와 회고·다음 계획으로 연결합니다."""
 
     with st.container(border=True):
-        st.markdown("#### 다음 7일도 이어서 학습해볼까요?")
+        st.markdown("#### 학습 결과를 확인하고 다음 7일로 이어가세요")
         st.caption(
-            f"‘{plan_title}’의 기록을 회고하면 AI 추천을 반영한 "
-            "다음 7일 계획을 바로 만들 수 있습니다."
+            f"‘{plan_title}’의 사후 평가에서 학습 전후 변화를 확인한 뒤 "
+            "주간 회고와 다음 계획으로 이어갈 수 있습니다."
         )
         if st.button(
-            "회고하고 다음 계획 이어가기",
-            key=f"{widget_scope}_continue_weekly_review_{plan_id}",
+            "사후 평가 확인하기",
+            key=f"{widget_scope}_continue_assessment_{plan_id}",
             type="primary",
-            icon=":material/arrow_forward:",
+            icon=":material/assignment_turned_in:",
+            width="stretch",
+        ):
+            request_learning_assessment_navigation(st.session_state, plan_id)
+            st.rerun()
+        if st.button(
+            "회고로 바로가기",
+            key=f"{widget_scope}_continue_weekly_review_{plan_id}",
+            type="tertiary",
+            icon=":material/rate_review:",
             width="stretch",
         ):
             request_weekly_review_navigation(st.session_state, plan_id)
+            st.rerun()
+
+
+def render_learning_assessment_entry_card(
+    *,
+    plan_id: str,
+    widget_scope: str,
+) -> None:
+    """진행 중인 계획에서 학습 전·후 평가로 이동하는 짧은 안내입니다."""
+
+    with st.container(border=True):
+        st.markdown("#### 학습 전·후 변화를 남겨보세요")
+        st.caption(
+            "학습 시작 전 진단을 준비하면 계획 종료 후 같은 목표의 "
+            "사후 평가와 비교할 수 있습니다."
+        )
+        if st.button(
+            "학습 전·후 평가 열기",
+            key=f"{widget_scope}_open_assessment_{plan_id}",
+            icon=":material/assignment:",
+            width="stretch",
+        ):
+            request_learning_assessment_navigation(st.session_state, plan_id)
             st.rerun()
 
 

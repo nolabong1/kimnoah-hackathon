@@ -8,6 +8,9 @@ from services.study_plan_repository import save_weekly_study_plan
 from services.study_plan_service import generate_weekly_study_plan
 from services.time_service import get_seoul_today
 from views.error_feedback import render_unexpected_error
+from views.learning_assessment_state import (
+    request_learning_assessment_navigation,
+)
 from views.operation_feedback import operation_status
 from views.study_plan_data_state import (
     invalidate_learning_objective_snapshots,
@@ -299,6 +302,19 @@ def render_create_plan(supabase, user):
                 "이 학습계획은 Supabase에 저장되었습니다.",
                 icon=":material/cloud_done:",
             )
+            saved_plan_id = st.session_state.get("saved_plan_id")
+            if saved_plan_id and st.button(
+                "학습 전 진단 시작하기",
+                key=f"create_plan_start_assessment_{saved_plan_id}",
+                type="primary",
+                icon=":material/assignment:",
+                width="stretch",
+            ):
+                request_learning_assessment_navigation(
+                    st.session_state,
+                    str(saved_plan_id),
+                )
+                st.rerun()
             return
 
         if st.button(

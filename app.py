@@ -36,6 +36,12 @@ from views.interaction_feedback import render_interaction_feedback
 from views.interaction_state import clear_interaction_state
 from views.mastery_dashboard_view import render_mastery_dashboard
 from views.learning_performance_view import render_learning_performance
+from views.learning_assessment_state import (
+    PENDING_NAVIGATION_KEY as LEARNING_ASSESSMENT_PENDING_NAVIGATION_KEY,
+    clear_learning_assessment_state,
+)
+from views.mock_exam_state import clear_mock_exam_state
+from views.mock_exam_view import render_mock_exam
 from views.learning_context_state import (
     PENDING_NAVIGATION_KEY as LEARNING_CONTEXT_PENDING_NAVIGATION_KEY,
     clear_learning_context,
@@ -93,6 +99,8 @@ def _logout_current_user(supabase) -> None:
         st.session_state.pop(key, None)
 
     clear_tutor_state(st.session_state)
+    clear_learning_assessment_state(st.session_state)
+    clear_mock_exam_state(st.session_state)
     clear_learning_context(st.session_state)
     clear_weekly_review_state(st.session_state)
     clear_gamification_state(st.session_state)
@@ -304,6 +312,16 @@ def show_tutor() -> None:
         )
 
 
+def show_mock_exam() -> None:
+    """시험 대비 모의 평가 화면을 표시합니다."""
+
+    with content_frame(DASHBOARD_CONTENT_WIDTH):
+        render_mock_exam(
+            supabase=supabase,
+            user=user,
+        )
+
+
 def show_weekly_review() -> None:
     """주간 학습 회고 화면을 표시합니다."""
 
@@ -407,6 +425,12 @@ tutor_page = st.Page(
     icon=":material/psychology:",
     url_path="tutor",
 )
+mock_exam_page = st.Page(
+    show_mock_exam,
+    title="시험 대비 모의 평가",
+    icon=":material/quiz:",
+    url_path="mock-exam",
+)
 weekly_review_page = st.Page(
     show_weekly_review,
     title="주간 학습 회고",
@@ -464,6 +488,7 @@ pages_by_title = {
     "저장된 계획": saved_plans_page,
     "AI 복습 자료 만들기": source_review_page,
     "단계별 힌트 AI 튜터": tutor_page,
+    "시험 대비 모의 평가": mock_exam_page,
     "과목별 숙련도": mastery_dashboard_page,
     "학습 성과 리포트": learning_performance_page,
     "업적·도전과제": gamification_page,
@@ -481,6 +506,7 @@ selected_page = st.navigation(
             dashboard_page,
             saved_plans_page,
             create_plan_page,
+            mock_exam_page,
         ],
         "AI로 도움받기": [tutor_page, source_review_page],
         "성장 확인하기": [
@@ -512,6 +538,11 @@ if pending_navigation is None:
 if pending_navigation is None:
     pending_navigation = st.session_state.pop(
         WEEKLY_REVIEW_PENDING_NAVIGATION_KEY,
+        None,
+    )
+if pending_navigation is None:
+    pending_navigation = st.session_state.pop(
+        LEARNING_ASSESSMENT_PENDING_NAVIGATION_KEY,
         None,
     )
 if pending_navigation is None:

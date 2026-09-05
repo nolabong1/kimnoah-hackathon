@@ -22,7 +22,7 @@ def test_help_dialog_explains_the_core_learning_flow() -> None:
 
     assert not app.exception
     assert any(
-        "계획 만들기 → 오늘 학습 → 퀴즈·복습 → 완료하기" in info.value
+        "계획 만들기 → 사전 진단 → 오늘 학습 → 퀴즈·복습" in info.value
         for info in app.info
     )
     markdown_values = [markdown.value for markdown in app.markdown]
@@ -32,12 +32,17 @@ def test_help_dialog_explains_the_core_learning_flow() -> None:
         *(success.value for success in app.success),
     ]
     assert any("1. 계획 만들기" in value for value in markdown_values)
-    assert any("4. 완료하기" in value for value in markdown_values)
-    assert any("5. 주간 학습 회고" in value for value in markdown_values)
-    assert any("6. 다음 7일 이어가기" in value for value in markdown_values)
-    assert any("회고하고 다음 계획 이어가기" in value for value in help_text_values)
+    assert any("2. 사전 진단" in value for value in markdown_values)
+    assert any("5. 완료하기" in value for value in markdown_values)
+    assert any("6. 사후 평가" in value for value in markdown_values)
+    assert any("7. 주간 학습 회고" in value for value in markdown_values)
+    assert any("8. 다음 7일 이어가기" in value for value in markdown_values)
+    assert any("학습 전 진단 시작하기" in value for value in help_text_values)
+    assert any("사후 평가 확인하기" in value for value in help_text_values)
+    assert any("주간 회고로 이어가기" in value for value in help_text_values)
     assert any("과목별 숙련도" in value for value in markdown_values)
     assert any("학습 성과 리포트" in value for value in markdown_values)
+    assert any("시험 대비 모의 평가" in value for value in markdown_values)
     assert any("PDF" in value for value in markdown_values)
     assert any("1·3·7일" in value for value in help_text_values)
     assert any("집중 타이머" in value for value in help_text_values)
@@ -77,6 +82,8 @@ def test_help_dialog_preserves_reward_and_completion_rules() -> None:
     assert "모든 문항을 맞혀야" in visible_text
     assert "EXP와 별개" in visible_text
     assert "EXP가 지급되지 않습니다" in visible_text
+    assert "사전·사후 평가" in visible_text
+    assert "모의 평가" in visible_text
 
 
 def test_sidebar_uses_a_prominent_help_button() -> None:

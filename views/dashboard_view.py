@@ -11,6 +11,7 @@ from services.time_service import get_seoul_today
 from services.weekly_review_service import is_plan_fully_completed
 from views.completion_feedback import (
     render_completion_feedback,
+    render_learning_assessment_entry_card,
     render_weekly_review_continuation_card,
 )
 from views.error_feedback import render_unexpected_error
@@ -595,6 +596,11 @@ def render_dashboard(supabase, user, profile: dict | None = None):
         render_weekly_review_continuation_card(
             plan_id=str(selected_plan_id),
             plan_title=str(selected_plan["title"]),
+            widget_scope="dashboard",
+        )
+    else:
+        render_learning_assessment_entry_card(
+            plan_id=str(selected_plan_id),
             widget_scope="dashboard",
         )
 

@@ -44,7 +44,8 @@ def get_learning_performance_data(
     plan_response = (
         supabase.table("study_plans")
         .select(
-            "id, user_id, title, course_name, start_date, target_date, status"
+            "id, user_id, title, course_name, goal, current_level, "
+            "start_date, target_date, status"
         )
         .eq("id", normalized_plan_id)
         .eq("user_id", normalized_user_id)
